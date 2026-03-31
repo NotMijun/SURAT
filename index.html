@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Logbook Security RS - Prototype</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page page-center">
+      <main class="card card-lg">
+        <header class="card-header">
+          <div class="brand">
+            <div class="brand-mark" aria-hidden="true">LS</div>
+            <div class="brand-text">
+              <div class="brand-title">Logbook Security RS</div>
+              <div class="brand-subtitle">Prototype web sederhana (statis)</div>
+            </div>
+          </div>
+          <button class="button button-secondary button-sm" type="button" data-theme-toggle>Mode: Gelap</button>
+        </header>
+
+        <section class="card-body">
+          <form class="form" id="loginForm">
+            <div class="field">
+              <label class="label" for="username">Username</label>
+              <input class="input" id="username" name="username" type="text" autocomplete="username" placeholder="mis. utas" required autofocus />
+            </div>
+
+            <div class="field">
+              <label class="label" for="password">Password</label>
+              <input class="input" id="password" name="password" type="password" autocomplete="current-password" placeholder="••••••••" required />
+            </div>
+
+            <div class="grid grid-2">
+              <div class="field">
+                <label class="label" for="shift">Shift</label>
+                <select class="select" id="shift" name="shift">
+                  <option value="Pagi">Pagi</option>
+                  <option value="Sore">Sore</option>
+                  <option value="Malam">Malam</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="label" for="post">Pos</label>
+                <input class="input" id="post" name="post" type="text" value="IGD" />
+              </div>
+            </div>
+
+            <div class="row row-split">
+              <label class="checkbox">
+                <input type="checkbox" name="remember" />
+                <span>Ingat saya</span>
+              </label>
+              <a class="link" href="app.html">Masuk langsung (jika sudah login)</a>
+            </div>
+
+            <button class="button button-primary" type="submit">Masuk</button>
+          </form>
+
+          <div class="hint" id="loginError" hidden></div>
+
+          <div class="hint">
+            Fokus prototype: form input cepat, daftar data, pencarian, status pinjam/belum kembali, dan laporan ringkas.
+          </div>
+        </section>
+
+        <footer class="card-footer">
+          <div class="muted">Versi statis. Belum ada penyimpanan data, otorisasi, dan audit trail.</div>
+        </footer>
+      </main>
+    </div>
+
+    <script>
+      (() => {
+        const storageKey = "logbook-theme";
+        const tokenKey = "logbook-token";
+
+        const applyTheme = (theme) => {
+          document.documentElement.dataset.theme = theme;
+          const toggle = document.querySelector("[data-theme-toggle]");
+          if (!toggle) return;
+          toggle.textContent = theme === "light" ? "Mode: Terang" : "Mode: Gelap";
+        };
+
+        const saved = localStorage.getItem(storageKey);
+        applyTheme(saved === "light" ? "light" : "dark");
+
+        const themeToggle = document.querySelector("[data-theme-toggle]");
+        if (themeToggle) {
+          themeToggle.addEventListener("click", () => {
+            const current = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+            const next = current === "light" ? "dark" : "light";
+            localStorage.setItem(storageKey, next);
+            applyTheme(next);
+          });
+        }
+
+        const form = document.getElementById("loginForm");
+        const errorEl = document.getElementById("loginError");
+        const showError = (msg) => {
+          if (!errorEl) return;
+          errorEl.textContent = msg;
+          errorEl.hidden = false;
+        };
+
+        if (window.location.protocol === "file:") {
+          showError("Halaman ini harus dibuka lewat server lokal (bukan file). Jalankan: python app.py, lalu buka http://127.0.0.1:5173/");
+        }
+        if (form) {
+          form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            if (errorEl) errorEl.hidden = true;
+            const payload = {
+              username: document.getElementById("username")?.value || "",
+              password: document.getElementById("password")?.value || "",
+              shift: document.getElementById("shift")?.value || "Pagi",
+              post: document.getElementById("post")?.value || "IGD",
+            };
+            try {
+              const healthRes = await fetch("/api/health", { method: "GET" });
+              const health = await healthRes.json().catch(() => null);
+              if (!healthRes.ok || !health || health.ok !== true) {
+                showError("Server yang jalan belum mode aplikasi (API tidak ditemukan). Pastikan yang dijalankan adalah: python app.py (bukan python -m http.server).");
+                return;
+              }
+
+              const res = await fetch("/api/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+              });
+              const data = await res.json().catch(() => null);
+              if (!res.ok) {
+                let msg = data?.error;
+                if (!msg) {
+                  const text = await res.text().catch(() => "");
+                  msg = `Login gagal (${res.status}). ${text ? text.slice(0, 120) : ""}`.trim();
+                }
+                showError(msg);
+                return;
+              }
+              if (data?.token) {
+                localStorage.setItem(tokenKey, data.token);
+                window.location.href = `/app.html?token=${encodeURIComponent(data.token)}#dashboard`;
+                return;
+              }
+              window.location.href = "/app.html#dashboard";
+            } catch (err) {
+              showError("Tidak bisa terhubung ke server lokal. Pastikan buka http://127.0.0.1:5173/ dan server menyala (python app.py).");
+            }
+          });
+        }
+      })();
+    </script>
+  </body>
+</html>

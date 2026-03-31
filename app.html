@@ -1,0 +1,1977 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Logbook Security RS - Aplikasi</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="toastContainer"></div>
+    <div id="confirmOverlay">
+      <div id="confirmBox">
+        <div id="confirmMessage"></div>
+        <div id="confirmActions">
+          <button class="button button-secondary button-sm" type="button" data-confirm="no">Batal</button>
+          <button class="button button-primary button-sm" type="button" data-confirm="yes">Lanjut</button>
+        </div>
+      </div>
+    </div>
+    <a class="skip-link" href="#main">Lewati ke konten</a>
+
+    <div class="shell">
+      <header class="topbar">
+        <div class="topbar-left">
+          <div class="topbar-title">
+            <div class="title">Logbook Security</div>
+            <div class="subtitle">Rumah Sakit · Prototype</div>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <div class="pill" id="pillShift">Shift: -</div>
+          <div class="pill pill-muted" id="pillUser">Petugas: -</div>
+          <button class="button button-secondary button-sm" type="button" data-theme-toggle>Mode: Gelap</button>
+          <button class="button button-secondary button-sm" type="button" data-compact-toggle>Ringkas: Off</button>
+          <div class="pill" id="pillOverdue" hidden>Kunci overdue: 0</div>
+          <button class="button button-ghost" type="button" data-logout>Keluar</button>
+        </div>
+      </header>
+
+      <div class="tabsbar">
+        <div class="tabs" role="tablist" aria-label="Modul">
+          <button class="tab" id="tab-dashboard" type="button" role="tab" aria-selected="true" aria-controls="dashboard" data-tab="dashboard">Dashboard</button>
+          <button class="tab" id="tab-mutasi" type="button" role="tab" aria-selected="false" aria-controls="mutasi" data-tab="mutasi">Buku Mutasi</button>
+          <button class="tab" id="tab-kunci" type="button" role="tab" aria-selected="false" aria-controls="kunci" data-tab="kunci">Penitipan Kunci</button>
+          <button class="tab" id="tab-tamu" type="button" role="tab" aria-selected="false" aria-controls="tamu" data-tab="tamu">Buku Tamu</button>
+          <button class="tab" id="tab-tugas" type="button" role="tab" aria-selected="false" aria-controls="tugas" data-tab="tugas">Tugas Operasional</button>
+          <button class="tab" id="tab-laporan" type="button" role="tab" aria-selected="false" aria-controls="laporan" data-tab="laporan">Laporan</button>
+          <button class="tab" id="tab-admin" type="button" role="tab" aria-selected="false" aria-controls="admin" data-tab="admin">Admin</button>
+        </div>
+      </div>
+
+      <main class="content" id="main">
+        <div class="print-header">Logbook Security RS</div>
+        <section class="section module" id="dashboard" role="tabpanel" aria-labelledby="tab-dashboard" tabindex="-1" data-module="dashboard">
+          <div class="section-header">
+            <h1 class="h1">Dashboard</h1>
+            <div class="section-actions">
+              <div class="search">
+                <span class="search-icon" aria-hidden="true">⌕</span>
+                <input class="search-input" id="dashSearch" type="search" placeholder="Cari nama / ruangan / kegiatan..." />
+              </div>
+              <button class="button button-secondary" type="button" data-action="export-dashboard">Export</button>
+            </div>
+          </div>
+
+          <div class="grid grid-4">
+            <article class="stat">
+              <div class="stat-label">Penitipan aktif</div>
+              <div class="stat-value" id="statKeysOpen">0</div>
+              <div class="stat-meta">Belum diambil</div>
+            </article>
+            <article class="stat">
+              <div class="stat-label">Tamu hari ini</div>
+              <div class="stat-value" id="statGuestsTotal">0</div>
+              <div class="stat-meta">Masuk/keluar</div>
+            </article>
+            <article class="stat">
+              <div class="stat-label">Tugas operasional</div>
+              <div class="stat-value" id="statTasksTotal">0</div>
+              <div class="stat-meta">Per shift</div>
+            </article>
+            <article class="stat">
+              <div class="stat-label">Catatan mutasi</div>
+              <div class="stat-value" id="statMutasiTotal">0</div>
+              <div class="stat-meta">Kejadian khusus</div>
+            </article>
+          </div>
+
+          <div class="grid grid-2">
+            <section class="card">
+              <header class="card-header">
+                <div class="card-title">Kunci belum diambil</div>
+                <a class="link" href="#kunci">Lihat semua</a>
+              </header>
+              <div class="card-body">
+                <div class="table-wrap">
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>Nama</th>
+                        <th>Ruangan/Kunci</th>
+                        <th>Jam titip</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="dashKeysOpenBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+
+            <section class="card">
+              <header class="card-header">
+                <div class="card-title">Ringkasan shift</div>
+                <div class="row">
+                  <button class="button button-secondary button-sm" type="button" onclick="window.print()">Cetak</button>
+                </div>
+              </header>
+              <div class="card-body">
+                <div class="list">
+                  <div class="list-item">
+                    <div class="list-title">Pergantian petugas</div>
+                    <div class="list-meta">07:00 · UTAS ← ARDI</div>
+                  </div>
+                  <div class="list-item">
+                    <div class="list-title">Pengantaran sampel</div>
+                    <div class="list-meta">08:45 · Lab</div>
+                  </div>
+                  <div class="list-item">
+                    <div class="list-title">Katering turun</div>
+                    <div class="list-meta">11:30 · 24 porsi</div>
+                  </div>
+                  <div class="list-item">
+                    <div class="list-title">Galon</div>
+                    <div class="list-meta">12:10 · masuk 6, kosong 6</div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="section module" id="mutasi" role="tabpanel" aria-labelledby="tab-mutasi" tabindex="-1" data-module="mutasi" hidden>
+          <div class="section-header">
+            <h2 class="h2">Buku Mutasi Harian</h2>
+            <div class="section-actions">
+              <div class="pill pill-muted">Pos: IGD</div>
+              <input class="input input-sm" id="mutasiSearch" type="search" placeholder="Cari mutasi..." />
+              <button class="button button-secondary" type="button" data-action="focus-mutasi">Tambah</button>
+            </div>
+          </div>
+
+          <section class="card" id="mutasi-form">
+            <header class="card-header">
+              <div class="card-title">Catat kejadian</div>
+              <div class="muted">Sederhana dan cepat seperti buku mutasi</div>
+            </header>
+            <div class="card-body">
+              <form class="form grid grid-3" id="mutasiForm">
+                <div class="field">
+                  <label class="label" for="mutasiJam">Jam</label>
+                  <input class="input" id="mutasiJam" name="time" type="time" value="08:00" />
+                  <div class="chips">
+                    <button class="chip" type="button" data-time-chip="-5">-5m</button>
+                    <button class="chip" type="button" data-time-chip="now">Sekarang</button>
+                    <button class="chip" type="button" data-time-chip="+5">+5m</button>
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="label" for="mutasiJenis">Jenis</label>
+                  <select class="select" id="mutasiJenis" name="kind">
+                    <option>Kejadian khusus</option>
+                    <option>Pergantian petugas</option>
+                    <option>Pengantaran sampel</option>
+                    <option>Pengiriman surat</option>
+                    <option>Katering</option>
+                    <option>Galon</option>
+                    <option>Lainnya</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="label" for="mutasiPetugas">Petugas</label>
+                  <input class="input" id="mutasiPetugas" type="text" value="-" disabled />
+                </div>
+                <div class="field grid-span-3">
+                  <label class="label" for="mutasiDesk">Deskripsi</label>
+                  <textarea class="textarea" id="mutasiDesk" name="description" rows="3" placeholder="Tulis kejadian singkat..."></textarea>
+                </div>
+                <div class="row row-right grid-span-3">
+                  <button class="button button-primary" type="submit">Simpan</button>
+                </div>
+              </form>
+            </div>
+          </section>
+
+          <section class="card">
+            <header class="card-header">
+              <div class="card-title">Daftar catatan</div>
+              <div class="row">
+                <input class="input input-sm" id="mutasiDate" type="date" />
+                <button class="button button-secondary button-sm" type="button">Filter</button>
+              </div>
+            </header>
+            <div class="card-body">
+              <div class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Jam</th>
+                      <th>Jenis</th>
+                      <th>Deskripsi</th>
+                      <th>Petugas</th>
+                    </tr>
+                  </thead>
+                  <tbody id="mutasiBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section class="section module" id="kunci" role="tabpanel" aria-labelledby="tab-kunci" tabindex="-1" data-module="kunci" hidden>
+          <div class="section-header">
+            <h2 class="h2">Penitipan Kunci</h2>
+            <div class="section-actions">
+              <div class="pill">Prioritas</div>
+              <input class="input input-sm" id="keySearch" type="search" placeholder="Cari nama / kunci..." />
+              <select class="select select-sm" id="keySort" aria-label="Urutkan">
+                <option value="checkout_desc">Terbaru</option>
+                <option value="checkout_asc">Terlama</option>
+                <option value="name_asc">Nama A-Z</option>
+                <option value="name_desc">Nama Z-A</option>
+              </select>
+              <button class="button button-secondary" type="button" data-action="focus-kunci">Titip</button>
+              <button class="button button-secondary button-sm" type="button" data-action="export-keys-open">Export CSV</button>
+            </div>
+          </div>
+
+          <section class="card" id="kunci-form">
+            <header class="card-header">
+              <div class="card-title">Titip kunci</div>
+              <div class="muted">Minimal field biar cepat saat kondisi ramai</div>
+            </header>
+            <div class="card-body">
+              <form class="form grid grid-4" id="keyForm">
+                <div class="field">
+                  <label class="label" for="kunciNama">Nama penitip</label>
+                  <input class="input" id="kunciNama" name="borrower_name" type="text" placeholder="Nama penitip (boleh kosong jika buru-buru)" />
+                </div>
+                <div class="field">
+                  <label class="label" for="kunciUnit">Unit/Divisi</label>
+                  <input class="input" id="kunciUnit" name="unit" type="text" placeholder="mis. Perawat" />
+                </div>
+                <div class="field">
+                  <label class="label" for="kunciRuang">Kunci/Ruangan</label>
+                  <input class="input" id="kunciRuang" name="key_name" type="text" placeholder="mis. Farmasi" required />
+                </div>
+                <div class="field">
+                  <label class="label" for="kunciJam">Jam titip</label>
+                  <input class="input" id="kunciJam" name="time" type="time" value="08:00" />
+                  <div class="chips">
+                    <button class="chip" type="button" data-time-chip="-5">-5m</button>
+                    <button class="chip" type="button" data-time-chip="now">Sekarang</button>
+                    <button class="chip" type="button" data-time-chip="+5">+5m</button>
+                  </div>
+                </div>
+                <div class="field grid-span-4">
+                  <label class="label" for="kunciCatatan">Catatan</label>
+                  <input class="input" id="kunciCatatan" name="notes" type="text" placeholder="mis. estimasi kembali 30 menit" />
+                </div>
+                <div class="field">
+                  <label class="label" for="kunciPetugas">Petugas</label>
+                  <input class="input" id="kunciPetugas" type="text" value="-" disabled />
+                </div>
+                <div class="row row-right grid-span-3">
+                  <button class="button button-primary" type="submit">Simpan</button>
+                </div>
+              </form>
+            </div>
+          </section>
+
+          <div class="grid grid-2">
+            <section class="card">
+              <header class="card-header">
+                <div class="card-title">Penitipan aktif</div>
+                <div class="row">
+                  <select class="select select-sm" aria-label="Filter status">
+                    <option>Belum diambil</option>
+                    <option>Semua</option>
+                    <option>Selesai</option>
+                  </select>
+                  <button class="button button-secondary button-sm" type="button">Filter</button>
+                  <button class="button button-secondary button-sm" type="button" data-action="export-keys-open">Export CSV</button>
+                </div>
+              </header>
+              <div class="card-body">
+                <div class="table-wrap">
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>Nama</th>
+                        <th>Ruangan</th>
+                        <th>Titip</th>
+                        <th>Petugas</th>
+                        <th>Status</th>
+                        <th>Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody id="keysOpenBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+
+            <section class="card">
+              <header class="card-header">
+                <div class="card-title">Riwayat hari ini</div>
+                <div class="row">
+                  <input class="input input-sm" id="keysClosedDate" type="date" />
+                  <button class="button button-secondary button-sm" type="button">Filter</button>
+                  <button class="button button-secondary button-sm" type="button" data-action="export-keys-closed">Export CSV</button>
+                </div>
+              </header>
+              <div class="card-body">
+                <div class="table-wrap">
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>Nama</th>
+                        <th>Ruangan</th>
+                        <th>Titip</th>
+                        <th>Ambil</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="keysClosedBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="section module" id="tamu" role="tabpanel" aria-labelledby="tab-tamu" tabindex="-1" data-module="tamu" hidden>
+          <div class="section-header">
+            <h2 class="h2">Buku Tamu</h2>
+            <div class="section-actions">
+              <input class="input input-sm" id="guestSearch" type="search" placeholder="Cari tamu / instansi..." />
+              <button class="button button-secondary" type="button" data-action="focus-tamu">Tamu Masuk</button>
+              <select class="select select-sm" id="guestSort" aria-label="Urutkan">
+                <option value="checkin_desc">Masuk terbaru</option>
+                <option value="checkin_asc">Masuk terlama</option>
+                <option value="name_asc">Nama A-Z</option>
+                <option value="name_desc">Nama Z-A</option>
+              </select>
+              <button class="button button-secondary button-sm" type="button" data-action="export-guests">Export CSV</button>
+            </div>
+          </div>
+
+          <section class="card" id="tamu-form">
+            <header class="card-header">
+              <div class="card-title">Tamu masuk</div>
+              <div class="muted">Input cepat, update jam keluar belakangan</div>
+            </header>
+            <div class="card-body">
+              <form class="form grid grid-4" id="guestForm">
+                <div class="field">
+                  <label class="label" for="tamuNama">Nama</label>
+                  <input class="input" id="tamuNama" name="name" type="text" placeholder="Nama tamu (boleh kosong jika buru-buru)" />
+                </div>
+                <div class="field">
+                  <label class="label" for="tamuInstansi">Instansi</label>
+                  <input class="input" id="tamuInstansi" name="instansi" type="text" placeholder="mis. Vendor" />
+                </div>
+                <div class="field">
+                  <label class="label" for="tamuTujuan">Tujuan</label>
+                  <input class="input" id="tamuTujuan" name="purpose" type="text" placeholder="mis. IT / HRD" />
+                </div>
+                <div class="field">
+                  <label class="label" for="tamuJam">Jam masuk</label>
+                  <input class="input" id="tamuJam" name="time" type="time" value="08:00" />
+                  <div class="chips">
+                    <button class="chip" type="button" data-time-chip="-5">-5m</button>
+                    <button class="chip" type="button" data-time-chip="now">Sekarang</button>
+                    <button class="chip" type="button" data-time-chip="+5">+5m</button>
+                  </div>
+                </div>
+                <div class="field grid-span-4">
+                  <label class="label" for="tamuOrang">Orang yang ditemui</label>
+                  <input class="input" id="tamuOrang" name="meet_person" type="text" placeholder="Nama staf/unit" />
+                </div>
+                <div class="field grid-span-4">
+                  <label class="label" for="tamuCatatan">Catatan</label>
+                  <input class="input" id="tamuCatatan" name="notes" type="text" placeholder="opsional" />
+                </div>
+                <div class="row row-right grid-span-4">
+                  <button class="button button-primary" type="submit">Simpan</button>
+                </div>
+              </form>
+            </div>
+          </section>
+
+          <section class="card">
+            <header class="card-header">
+              <div class="card-title">Daftar tamu</div>
+              <div class="row">
+                <input class="input input-sm" id="guestDate" type="date" />
+                <button class="button button-secondary button-sm" type="button">Filter</button>
+              </div>
+            </header>
+            <div class="card-body">
+              <div class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Nama</th>
+                      <th>Instansi</th>
+                      <th>Tujuan</th>
+                      <th>Ditemui</th>
+                      <th>Masuk</th>
+                      <th>Keluar</th>
+                      <th>Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody id="guestsBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section class="section module" id="tugas" role="tabpanel" aria-labelledby="tab-tugas" tabindex="-1" data-module="tugas" hidden>
+          <div class="section-header">
+            <h2 class="h2">Tugas Operasional Security</h2>
+            <div class="section-actions">
+              <input class="input input-sm" id="taskSearch" type="search" placeholder="Cari tugas..." />
+              <button class="button button-secondary" type="button" data-action="focus-tugas">Tambah</button>
+              <button class="button button-secondary button-sm" type="button" data-action="export-tasks">Export CSV</button>
+            </div>
+          </div>
+
+          <section class="card">
+            <header class="card-header">
+              <div class="card-title">Catat tugas</div>
+              <div class="muted">Antar sampel, surat, pom catering, galon, berkas</div>
+            </header>
+            <div class="card-body">
+              <form class="form grid grid-4" id="taskForm">
+                <div class="field">
+                  <label class="label" for="tugasJenis">Jenis tugas</label>
+                  <select class="select" id="tugasJenis" name="kind">
+                    <option>Antar sampel</option>
+                    <option>Antar surat</option>
+                    <option>Pom catering</option>
+                    <option>Galon</option>
+                    <option>Antar berkas</option>
+                    <option>Lainnya</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="label" for="tugasJam">Jam</label>
+                  <input class="input" id="tugasJam" name="time" type="time" value="08:00" />
+                  <div class="chips">
+                    <button class="chip" type="button" data-time-chip="-5">-5m</button>
+                    <button class="chip" type="button" data-time-chip="now">Sekarang</button>
+                    <button class="chip" type="button" data-time-chip="+5">+5m</button>
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="label" for="tugasTujuan">Tujuan</label>
+                  <input class="input" id="tugasTujuan" name="destination" type="text" placeholder="mis. Lab / Poli" />
+                </div>
+                <div class="field">
+                  <label class="label" for="tugasPetugas">Petugas</label>
+                  <input class="input" id="tugasPetugas" type="text" value="-" disabled />
+                </div>
+                <div class="field grid-span-4">
+                  <label class="label" for="tugasCatatan">Catatan</label>
+                  <input class="input" id="tugasCatatan" name="notes" type="text" placeholder="mis. jumlah/berkas/porsi/galon" />
+                </div>
+                <div class="row row-right grid-span-4">
+                  <button class="button button-primary" type="submit">Simpan</button>
+                </div>
+              </form>
+            </div>
+          </section>
+
+          <section class="card">
+            <header class="card-header">
+              <div class="card-title">Daftar tugas</div>
+              <div class="row">
+                <input class="input input-sm" id="taskDate" type="date" />
+                <button class="button button-secondary button-sm" type="button">Filter</button>
+              </div>
+            </header>
+            <div class="card-body">
+              <div class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Jam</th>
+                      <th>Jenis</th>
+                      <th>Tujuan</th>
+                      <th>Catatan</th>
+                      <th>Petugas</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tasksBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section class="section module" id="laporan" role="tabpanel" aria-labelledby="tab-laporan" tabindex="-1" data-module="laporan" hidden>
+          <div class="section-header">
+            <h2 class="h2">Pencarian & Laporan</h2>
+            <div class="section-actions">
+              <button class="button button-secondary" type="button" onclick="window.print()">Cetak</button>
+              <button class="button button-secondary" type="button" data-action="export-mutasi">Export Mutasi CSV</button>
+            </div>
+          </div>
+
+          <section class="card">
+            <header class="card-header">
+              <div class="card-title">Filter laporan</div>
+              <div class="muted">Rekap harian/mingguan/bulanan (contoh)</div>
+            </header>
+            <div class="card-body">
+              <form class="form grid grid-4">
+                <div class="field">
+                  <label class="label" for="lapJenis">Jenis</label>
+                  <select class="select" id="lapJenis">
+                    <option>Shift (ringkas)</option>
+                    <option>Penitipan kunci</option>
+                    <option>Buku tamu</option>
+                    <option>Tugas operasional</option>
+                    <option>Mutasi harian</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="label" for="lapMulai">Mulai</label>
+                  <input class="input" id="lapMulai" type="date" />
+                </div>
+                <div class="field">
+                  <label class="label" for="lapSampai">Sampai</label>
+                  <input class="input" id="lapSampai" type="date" />
+                </div>
+                <div class="field">
+                  <label class="label" for="lapQuery">Kata kunci</label>
+                  <input class="input" id="lapQuery" type="text" placeholder="Nama / ruangan / tujuan" />
+                </div>
+                <div class="row row-right grid-span-4">
+                  <button class="button button-primary" type="button" data-action="report-apply">Tampilkan</button>
+                </div>
+              </form>
+            </div>
+          </section>
+
+          <section class="card">
+            <header class="card-header">
+              <div class="card-title">Laporan shift</div>
+              <div class="muted" id="reportSubtitle">-</div>
+            </header>
+            <div class="card-body">
+              <div class="report">
+                <div class="report-grid">
+                  <div class="report-item">
+                    <div class="report-label">Petugas</div>
+                    <div class="report-value" id="reportUser">-</div>
+                  </div>
+                  <div class="report-item">
+                    <div class="report-label">Tamu</div>
+                    <div class="report-value" id="reportGuestsTotal">0</div>
+                  </div>
+                  <div class="report-item">
+                    <div class="report-label">Penitipan kunci</div>
+                    <div class="report-value" id="reportKeysTotal">0</div>
+                  </div>
+                  <div class="report-item">
+                    <div class="report-label">Belum diambil</div>
+                    <div class="report-value" id="reportKeysOpen">0</div>
+                  </div>
+                </div>
+
+                <hr class="hr" />
+
+                <h3 class="h3">Catatan penting</h3>
+                <div class="muted">
+                  - Ada antrean APM, beberapa pasien tidak sabar.<br />
+                  - Kunci Radiologi belum diambil (titip 10:20).
+                </div>
+
+                <h3 class="h3">Daftar kunci belum diambil</h3>
+                <div class="table-wrap">
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>Nama</th>
+                        <th>Ruangan/Kunci</th>
+                        <th>Titip</th>
+                        <th>Petugas</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="reportKeysOpenBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section class="section module" id="admin" role="tabpanel" aria-labelledby="tab-admin" tabindex="-1" data-module="admin" hidden>
+          <div class="section-header">
+            <h2 class="h2">Admin</h2>
+            <div class="section-actions">
+              <input class="input input-sm" id="adminUserSearch" type="search" placeholder="Cari user..." />
+              <input class="input input-sm" id="adminAuditSearch" type="search" placeholder="Cari audit..." />
+            </div>
+          </div>
+
+          <section class="card">
+            <header class="card-header">
+              <div class="card-title">Securities</div>
+              <div class="muted">Daftar Security & Komandan Security (Danru)</div>
+            </header>
+            <div class="card-body">
+              <div class="grid grid-2">
+                <div class="card" style="box-shadow:none">
+                  <div class="card-body">
+                    <div class="muted" style="margin-bottom: 10px">Klik nama untuk lihat riwayat</div>
+                    <div class="table-wrap">
+                      <table class="table">
+                        <thead>
+                          <tr>
+                            <th>Nama</th>
+                            <th>Title</th>
+                            <th>Aktif</th>
+                          </tr>
+                        </thead>
+                        <tbody id="adminSecuritiesBody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+                <div class="card" style="box-shadow:none">
+                  <div class="card-body">
+                    <div class="row row-split" style="margin-bottom: 10px">
+                      <div>
+                        <div class="card-title" id="adminHistoryTitle">Riwayat</div>
+                        <div class="muted" id="adminHistorySubtitle">Pilih salah satu security.</div>
+                      </div>
+                      <div class="row">
+                        <select class="select select-sm" id="adminHistoryLimit" aria-label="Jumlah riwayat">
+                          <option value="10">10</option>
+                          <option value="20">20</option>
+                          <option value="50" selected>50</option>
+                        </select>
+                        <button class="button button-secondary button-sm" type="button" data-action="admin-refresh-history" hidden>Refresh</button>
+                        <button class="button button-secondary button-sm" type="button" data-action="admin-clear-history" hidden>Hapus Riwayat</button>
+                      </div>
+                    </div>
+                    <div class="table-wrap">
+                      <table class="table">
+                        <thead>
+                          <tr>
+                            <th>Waktu</th>
+                            <th>Shift/Pos</th>
+                            <th>Aksi</th>
+                            <th>Target</th>
+                          </tr>
+                        </thead>
+                        <tbody id="adminHistoryBody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="card">
+            <header class="card-header">
+              <div class="card-title">Manajemen User</div>
+              <div class="muted">Tambah user, ubah role, aktif/nonaktif, reset password</div>
+            </header>
+            <div class="card-body">
+              <form class="form grid grid-4" id="adminCreateUserForm">
+                <div class="field">
+                  <label class="label" for="adminNewUsername">Username</label>
+                  <input class="input" id="adminNewUsername" name="username" type="text" placeholder="mis. satpam3" required />
+                </div>
+                <div class="field">
+                  <label class="label" for="adminNewDisplayName">Nama tampil</label>
+                  <input class="input" id="adminNewDisplayName" name="display_name" type="text" placeholder="mis. SATPAM 3" />
+                </div>
+                <div class="field">
+                  <label class="label" for="adminNewRole">Role</label>
+                  <select class="select" id="adminNewRole" name="role">
+                    <option value="guard">guard</option>
+                    <option value="supervisor">supervisor</option>
+                    <option value="admin">admin</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="label" for="adminNewPassword">Password awal</label>
+                  <input class="input" id="adminNewPassword" name="password" type="text" placeholder="min 4 karakter" required />
+                </div>
+                <div class="row row-right grid-span-4">
+                  <button class="button button-primary" type="submit">Tambah User</button>
+                </div>
+              </form>
+
+              <div class="table-wrap" style="margin-top: 14px">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Username</th>
+                      <th>Nama tampil</th>
+                      <th>Role</th>
+                      <th>Aktif</th>
+                      <th>Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody id="adminUsersBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section class="card">
+            <header class="card-header">
+              <div class="card-title">Kelola Data</div>
+              <div class="muted">Hapus data yang salah input (admin saja)</div>
+            </header>
+            <div class="card-body">
+              <form class="form grid grid-4" id="adminDeleteRecordForm">
+                <div class="field">
+                  <label class="label" for="adminDeleteTable">Jenis data</label>
+                  <select class="select" id="adminDeleteTable" name="table">
+                    <option value="key_transactions">Penitipan kunci</option>
+                    <option value="mutasi_entries">Buku mutasi</option>
+                    <option value="guest_entries">Buku tamu</option>
+                    <option value="task_entries">Tugas operasional</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="label" for="adminDeleteId">ID data</label>
+                  <input class="input" id="adminDeleteId" name="id" type="number" min="1" placeholder="mis. 12" required />
+                </div>
+                <div class="field grid-span-2">
+                  <label class="label" for="adminDeleteNote">Catatan (opsional)</label>
+                  <input class="input" id="adminDeleteNote" name="note" type="text" placeholder="alasan hapus (opsional)" />
+                </div>
+                <div class="row row-right grid-span-4">
+                  <button class="button button-primary" type="submit">Hapus Data</button>
+                </div>
+              </form>
+              <div class="hint">Catatan: Penitipan kunci akan di-void (bukan dihapus permanen), agar jejak audit tetap ada.</div>
+            </div>
+          </section>
+
+          <section class="card">
+            <header class="card-header">
+              <div class="card-title">Audit Log</div>
+              <div class="muted">Riwayat perubahan data (backend)</div>
+            </header>
+            <div class="card-body">
+              <div class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Waktu</th>
+                      <th>Aktor</th>
+                      <th>Aksi</th>
+                      <th>Target</th>
+                    </tr>
+                  </thead>
+                  <tbody id="adminAuditBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <footer class="footer">
+          <div class="muted">Prototype UI · Statis · HTML + CSS</div>
+        </footer>
+      </main>
+    </div>
+
+    <script>
+      (() => {
+        const storageKey = "logbook-theme";
+        const tokenKey = "logbook-token";
+        const apiBase = "";
+
+        if (window.location.protocol === "file:") {
+          alert("Halaman ini harus dibuka lewat server lokal: buka http://localhost:5173/ (jalankan: python app.py).");
+          return;
+        }
+
+        const url = new URL(window.location.href);
+        const tokenFromUrl = url.searchParams.get("token") || "";
+        if (tokenFromUrl) {
+          localStorage.setItem(tokenKey, tokenFromUrl);
+          url.searchParams.delete("token");
+          history.replaceState(null, "", url.pathname + url.search + url.hash);
+        }
+
+        const applyTheme = (theme) => {
+          document.documentElement.dataset.theme = theme;
+          const toggle = document.querySelector("[data-theme-toggle]");
+          if (!toggle) return;
+          toggle.textContent = theme === "light" ? "Mode: Terang" : "Mode: Gelap";
+        };
+
+        const saved = localStorage.getItem(storageKey);
+        applyTheme(saved === "light" ? "light" : "dark");
+
+        const themeToggle = document.querySelector("[data-theme-toggle]");
+        if (themeToggle) {
+          themeToggle.addEventListener("click", () => {
+            const current = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+            const next = current === "light" ? "dark" : "light";
+            localStorage.setItem(storageKey, next);
+            applyTheme(next);
+          });
+        }
+
+        const compactKey = "logbook-compact";
+        const applyCompact = (flag) => {
+          document.documentElement.dataset.compact = flag ? "true" : "false";
+          const btn = document.querySelector("[data-compact-toggle]");
+          if (btn) btn.textContent = flag ? "Ringkas: On" : "Ringkas: Off";
+        };
+        const compactSaved = localStorage.getItem(compactKey) === "true";
+        applyCompact(compactSaved);
+        const compactToggle = document.querySelector("[data-compact-toggle]");
+        if (compactToggle) {
+          compactToggle.addEventListener("click", () => {
+            const next = document.documentElement.dataset.compact === "true" ? false : true;
+            localStorage.setItem(compactKey, String(next));
+            applyCompact(next);
+          });
+        }
+
+        const byId = (id) => document.getElementById(id);
+
+        const toastContainer = byId("toastContainer");
+        const showToast = (msg, kind = "error") => {
+          if (!toastContainer) return;
+          const el = document.createElement("div");
+          el.className = "toast " + (kind === "success" ? "toast-success" : kind === "warn" ? "toast-warn" : "toast-error");
+          const btn = document.createElement("button");
+          btn.className = "toast-close";
+          btn.type = "button";
+          btn.textContent = "×";
+          btn.addEventListener("click", () => el.remove());
+          const text = document.createElement("div");
+          text.textContent = msg;
+          el.appendChild(text);
+          el.appendChild(btn);
+          toastContainer.appendChild(el);
+          setTimeout(() => el.remove(), 4000);
+        };
+
+        const confirmOverlay = byId("confirmOverlay");
+        const confirmMessage = byId("confirmMessage");
+        const confirmDialog = (msg) => {
+          return new Promise((resolve) => {
+            if (!confirmOverlay || !confirmMessage) {
+              const ok = window.confirm(msg);
+              resolve(!!ok);
+              return;
+            }
+            confirmMessage.textContent = msg;
+            confirmOverlay.style.display = "flex";
+            const onClick = (e) => {
+              const yes = e.target.closest("[data-confirm=\"yes\"]");
+              const no = e.target.closest("[data-confirm=\"no\"]");
+              if (yes || no) {
+                confirmOverlay.removeEventListener("click", onClick);
+                confirmOverlay.style.display = "none";
+                resolve(!!yes);
+              }
+            };
+            confirmOverlay.addEventListener("click", onClick);
+          });
+        };
+
+        const esc = (v) => {
+          const s = String(v ?? "");
+          return s.replace(/[&<>"']/g, (ch) => {
+            if (ch === "&") return "&amp;";
+            if (ch === "<") return "&lt;";
+            if (ch === ">") return "&gt;";
+            if (ch === '"') return "&quot;";
+            return "&#39;";
+          });
+        };
+        const escAttr = (v) => esc(v);
+        const csvSafe = (v) => {
+          const s = String(v ?? "");
+          return /^[=+\-@]/.test(s) ? "'" + s : s;
+        };
+        const csvText = (rows) => {
+          const lines = rows.map((r) => r.map((x) => `"${String(csvSafe(x)).replace(/"/g, '""')}"`).join(","));
+          return "\ufeff" + lines.join("\n");
+        };
+
+        const skeletonRows = (tbodyId, cols, rows) => {
+          const body = byId(tbodyId);
+          if (!body) return;
+          let html = "";
+          for (let i = 0; i < rows; i++) {
+            html += "<tr class=\"skeleton-row\">";
+            for (let c = 0; c < cols; c++) {
+              html += "<td class=\"skeleton-cell\"><span class=\"shimmer\"></span></td>";
+            }
+            html += "</tr>";
+          }
+          body.innerHTML = html;
+        };
+
+        const setStatLoading = (id, flag) => {
+          const el = byId(id);
+          if (!el) return;
+          el.innerHTML = flag ? "<span class=\"shimmer shimmer-inline\"></span>" : el.textContent;
+        };
+
+        const setLoading = (flag) => {
+          setStatLoading("statKeysOpen", flag);
+          setStatLoading("statGuestsTotal", flag);
+          setStatLoading("statTasksTotal", flag);
+          setStatLoading("statMutasiTotal", flag);
+          if (flag) {
+            skeletonRows("dashKeysOpenBody", 4, 6);
+            skeletonRows("keysOpenBody", 6, 6);
+            skeletonRows("keysClosedBody", 5, 6);
+            skeletonRows("mutasiBody", 4, 6);
+            skeletonRows("guestsBody", 7, 6);
+            skeletonRows("tasksBody", 5, 6);
+            skeletonRows("reportKeysOpenBody", 5, 6);
+            skeletonRows("adminUsersBody", 6, 6);
+            skeletonRows("adminAuditBody", 5, 6);
+            skeletonRows("adminSecuritiesBody", 3, 6);
+            skeletonRows("adminHistoryBody", 4, 8);
+          }
+        };
+
+        const toYmd = (d) => {
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, "0");
+          const day = String(d.getDate()).padStart(2, "0");
+          return `${y}-${m}-${day}`;
+        };
+
+        const toIsoLocal = (ymd, hm) => `${ymd}T${hm}:00`;
+
+        const startOfDayIso = (ymd) => `${ymd}T00:00:00`;
+        const endOfDayIso = (ymd) => `${ymd}T23:59:59`;
+
+        const apiRequest = async (path, options = {}) => {
+          const token = localStorage.getItem(tokenKey) || "";
+          const headers = { ...(options.headers || {}) };
+          if (token) headers.Authorization = `Bearer ${token}`;
+          const res = await fetch(apiBase + path, { ...options, headers });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            const err = data?.error || `Request gagal (${res.status})`;
+            throw new Error(err);
+          }
+          return data;
+        };
+
+        const apiGet = (path) => apiRequest(path);
+        const apiPost = (path, payload) =>
+          apiRequest(path, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload || {}),
+          });
+        const apiPatch = (path, payload) =>
+          apiRequest(path, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload || {}),
+          });
+        const apiDelete = (path) =>
+          apiRequest(path, {
+            method: "DELETE",
+          });
+
+        const badgeForKeyStatus = (item) => {
+          if (item.status === "closed") return '<span class="badge badge-ok">Diambil</span>';
+          if (item.status === "void") return '<span class="badge badge-danger">Void</span>';
+          return '<span class="badge badge-warn">Dititipkan</span>';
+        };
+
+        const fmtTime = (iso) => {
+          if (!iso) return "—";
+          const t = iso.includes("T") ? iso.split("T")[1] : iso;
+          return t.slice(0, 5);
+        };
+
+        const setText = (id, value) => {
+          const el = byId(id);
+          if (el) el.textContent = value;
+        };
+
+        const renderTableEmpty = (tbodyId, colSpan, text) => {
+          const body = byId(tbodyId);
+          if (!body) return;
+          body.innerHTML = `<tr><td class="muted" colspan="${colSpan}">${esc(text)}</td></tr>`;
+        };
+
+        const renderKeysOpen = (items, { tbodyId, mode }) => {
+          const body = byId(tbodyId);
+          if (!body) return;
+          if (!items.length) {
+            renderTableEmpty(tbodyId, mode === "dash" ? 4 : 6, "Tidak ada data.");
+            return;
+          }
+          if (mode === "dash") {
+            body.innerHTML = items
+              .slice(0, 10)
+              .map(
+                (r) => `
+                <tr>
+                  <td>${esc(r.borrower_name)}</td>
+                  <td>${esc(r.key_name)}</td>
+                  <td>${fmtTime(r.checkout_at)}</td>
+                  <td>${badgeForKeyStatus(r)}</td>
+                </tr>
+              `
+              )
+              .join("");
+            return;
+          }
+          if (mode === "report") {
+            body.innerHTML = items
+              .slice(0, 50)
+              .map(
+                (r) => `
+                <tr>
+                  <td>${esc(r.borrower_name)}</td>
+                  <td>${esc(r.key_name)}</td>
+                  <td>${fmtTime(r.checkout_at)}</td>
+                  <td>${esc(r.created_by_name || "-")}</td>
+                  <td>${badgeForKeyStatus(r)}</td>
+                </tr>
+              `
+              )
+              .join("");
+            return;
+          }
+          body.innerHTML = items
+            .map(
+              (r) => `
+              <tr>
+                <td>${esc(r.borrower_name)}</td>
+                <td>${esc(r.key_name)}</td>
+                <td>${fmtTime(r.checkout_at)}</td>
+                <td>${esc(r.created_by_name || "-")}</td>
+                <td>${badgeForKeyStatus(r)}</td>
+                <td><button class="button button-sm" type="button" data-action="key-return" data-id="${r.id}">Ambil</button></td>
+              </tr>
+            `
+            )
+            .join("");
+        };
+
+        const renderKeysClosed = (items) => {
+          const body = byId("keysClosedBody");
+          if (!body) return;
+          if (!items.length) {
+            renderTableEmpty("keysClosedBody", 5, "Tidak ada data.");
+            return;
+          }
+          body.innerHTML = items
+            .slice(0, 200)
+            .map(
+              (r) => `
+              <tr>
+                <td>${esc(r.borrower_name)}</td>
+                <td>${esc(r.key_name)}</td>
+                <td>${fmtTime(r.checkout_at)}</td>
+                <td>${fmtTime(r.checkin_at)}</td>
+                <td>${badgeForKeyStatus(r)}</td>
+              </tr>
+            `
+            )
+            .join("");
+        };
+
+        const renderMutasi = (items) => {
+          const body = byId("mutasiBody");
+          if (!body) return;
+          if (!items.length) {
+            renderTableEmpty("mutasiBody", 4, "Tidak ada data.");
+            return;
+          }
+          body.innerHTML = items
+            .slice(0, 200)
+            .map(
+              (r) => `
+              <tr>
+                <td>${fmtTime(r.occurred_at)}</td>
+                <td>${esc(r.kind)}</td>
+                <td>${esc(r.description)}</td>
+                <td>${esc(r.created_by_name || "-")}</td>
+              </tr>
+            `
+            )
+            .join("");
+        };
+
+        const renderGuests = (items) => {
+          const body = byId("guestsBody");
+          if (!body) return;
+          if (!items.length) {
+            renderTableEmpty("guestsBody", 7, "Tidak ada data.");
+            return;
+          }
+          body.innerHTML = items
+            .slice(0, 200)
+            .map((r) => {
+              const action =
+                r.status === "in"
+                  ? `<button class="button button-sm" type="button" data-action="guest-checkout" data-id="${r.id}">Keluar</button>`
+                  : `<button class="button button-sm" type="button" data-action="guest-detail" data-id="${r.id}">Detail</button>`;
+              return `
+                <tr>
+                  <td>${esc(r.name)}</td>
+                  <td>${esc(r.instansi)}</td>
+                  <td>${esc(r.purpose)}</td>
+                  <td>${esc(r.meet_person)}</td>
+                  <td>${fmtTime(r.checkin_at)}</td>
+                  <td>${r.checkout_at ? fmtTime(r.checkout_at) : '<span class="muted">—</span>'}</td>
+                  <td>${action}</td>
+                </tr>
+              `;
+            })
+            .join("");
+        };
+
+        const renderTasks = (items) => {
+          const body = byId("tasksBody");
+          if (!body) return;
+          if (!items.length) {
+            renderTableEmpty("tasksBody", 5, "Tidak ada data.");
+            return;
+          }
+          body.innerHTML = items
+            .slice(0, 200)
+            .map(
+              (r) => `
+              <tr>
+                <td>${fmtTime(r.occurred_at)}</td>
+                <td>${esc(r.kind)}</td>
+                <td>${esc(r.destination)}</td>
+                <td>${esc(r.notes || "")}</td>
+                <td>${esc(r.created_by_name || "-")}</td>
+              </tr>
+            `
+            )
+            .join("");
+        };
+
+        const renderAdminUsers = (items) => {
+          const body = byId("adminUsersBody");
+          if (!body) return;
+          if (!items.length) {
+            renderTableEmpty("adminUsersBody", 6, "Tidak ada data.");
+            return;
+          }
+          body.innerHTML = items
+            .slice(0, 200)
+            .map((u) => {
+              const activeChecked = u.is_active === 1 ? "checked" : "";
+              return `
+              <tr data-user-id="${u.id}">
+                <td>${u.id}</td>
+                <td>${esc(u.username)}</td>
+                <td><input class="input input-sm" type="text" data-field="display_name" value="${escAttr(u.display_name || "")}" /></td>
+                <td>
+                  <select class="select select-sm" data-field="role">
+                    <option value="guard" ${u.role === "guard" ? "selected" : ""}>guard</option>
+                    <option value="supervisor" ${u.role === "supervisor" ? "selected" : ""}>supervisor</option>
+                    <option value="admin" ${u.role === "admin" ? "selected" : ""}>admin</option>
+                  </select>
+                </td>
+                <td>
+                  <label class="checkbox">
+                    <input type="checkbox" data-field="is_active" ${activeChecked} />
+                    <span>${u.is_active === 1 ? "Aktif" : "Nonaktif"}</span>
+                  </label>
+                </td>
+                <td class="row">
+                  <button class="button button-sm" type="button" data-action="admin-save-user" data-id="${u.id}">Simpan</button>
+                  <button class="button button-sm" type="button" data-action="admin-reset-password" data-id="${u.id}">Reset Password</button>
+                  <button class="button button-sm" type="button" data-action="admin-delete-user" data-id="${u.id}">Hapus</button>
+                </td>
+              </tr>
+            `;
+            })
+            .join("");
+        };
+
+        const titleForRole = (role) => {
+          if (role === "admin") return "Komandan Security";
+          return "Security";
+        };
+
+        const badgeForRole = (role) => {
+          if (role === "admin") return '<span class="badge badge-gold">Komandan</span>';
+          if (role === "supervisor") return '<span class="badge badge-gold">Komandan</span>';
+          return '<span class="badge badge-silver">Security</span>';
+        };
+
+        let adminSelectedUserId = "";
+
+        const renderAdminSecurities = (items) => {
+          const body = byId("adminSecuritiesBody");
+          if (!body) return;
+          if (!items.length) {
+            renderTableEmpty("adminSecuritiesBody", 3, "Tidak ada data.");
+            return;
+          }
+          const sorted = items.slice().sort((a, b) => {
+            const ar = a.role === "admin" ? 0 : 1;
+            const br = b.role === "admin" ? 0 : 1;
+            if (ar !== br) return ar - br;
+            return (a.display_name || a.username).localeCompare(b.display_name || b.username);
+          });
+          body.innerHTML = sorted
+            .map((u) => {
+              const active = u.is_active === 1;
+              const selected = String(u.id) === String(adminSelectedUserId);
+              const name = u.display_name || u.username;
+              return `
+                <tr data-action="admin-select-security" data-id="${u.id}" style="${selected ? "background: rgba(212,175,55,.10)" : ""}">
+                  <td>
+                    <div style="font-weight: 850">${esc(name)}</div>
+                    <div class="muted" style="font-size: 12px">${esc(u.username)}</div>
+                  </td>
+                  <td>${badgeForRole(u.role)} <span class="muted">${titleForRole(u.role)}</span></td>
+                  <td>${active ? '<span class="badge badge-ok">Aktif</span>' : '<span class="badge badge-danger">Nonaktif</span>'}</td>
+                </tr>
+              `;
+            })
+            .join("");
+        };
+
+        const renderAdminHistory = (items, user) => {
+          const body = byId("adminHistoryBody");
+          if (!body) return;
+          if (!items.length) {
+            renderTableEmpty("adminHistoryBody", 4, "Belum ada riwayat.");
+            return;
+          }
+          const tableLabel = (tableName) => {
+            if (tableName === "key_transactions") return "Penitipan kunci";
+            if (tableName === "guest_entries") return "Buku tamu";
+            if (tableName === "mutasi_entries") return "Buku mutasi";
+            if (tableName === "task_entries") return "Tugas operasional";
+            if (tableName === "users") return "User";
+            if (tableName === "auth") return "Akun";
+            return "Data";
+          };
+          const shortText = (s, max = 46) => {
+            const t = String(s || "").trim();
+            if (!t) return "";
+            return t.length > max ? t.slice(0, max - 1) + "…" : t;
+          };
+          const targetHuman = (h) => {
+            const src = h?.after || h?.before || {};
+            const label = tableLabel(h.table_name);
+            const id = h.record_id ? ` #${h.record_id}` : "";
+            if (h.table_name === "auth") {
+              const nm = user?.display_name || user?.username || "";
+              return nm ? `Akun · ${nm}` : `${label}${id}`;
+            }
+            if (h.table_name === "key_transactions") {
+              const key = src.key_name || "";
+              const who = src.borrower_name || "";
+              const parts = [key, who].filter(Boolean).join(" — ");
+              return parts ? `${label}${id} · ${shortText(parts, 56)}` : `${label}${id}`;
+            }
+            if (h.table_name === "guest_entries") {
+              const name = src.name || "";
+              const inst = src.instansi || "";
+              const parts = [name, inst].filter(Boolean).join(" — ");
+              return parts ? `${label}${id} · ${shortText(parts, 56)}` : `${label}${id}`;
+            }
+            if (h.table_name === "mutasi_entries") {
+              const kind = src.kind || "";
+              const desc = src.description || "";
+              const parts = [kind, desc].filter(Boolean).join(" — ");
+              return parts ? `${label}${id} · ${shortText(parts, 56)}` : `${label}${id}`;
+            }
+            if (h.table_name === "task_entries") {
+              const kind = src.kind || "";
+              const dest = src.destination || "";
+              const parts = [kind, dest].filter(Boolean).join(" — ");
+              return parts ? `${label}${id} · ${shortText(parts, 56)}` : `${label}${id}`;
+            }
+            if (h.table_name === "users") {
+              const uname = src.username || "";
+              const dname = src.display_name || "";
+              const parts = [dname, uname].filter(Boolean).join(" — ");
+              return parts ? `${label}${id} · ${shortText(parts, 56)}` : `${label}${id}`;
+            }
+            return `${label}${id}`;
+          };
+          body.innerHTML = items
+            .slice(0, 200)
+            .map((h) => {
+              const when = h.created_at || "-";
+              const shiftPos = `${h.actor_shift || "-"} / ${h.actor_post || "-"}`;
+              const action = h.action || "-";
+              const target = targetHuman(h);
+              return `
+                <tr>
+                  <td>${esc(when)}</td>
+                  <td>${esc(shiftPos)}</td>
+                  <td>${esc(action)}</td>
+                  <td>${esc(target)}</td>
+                </tr>
+              `;
+            })
+            .join("");
+          const titleEl = byId("adminHistoryTitle");
+          const subEl = byId("adminHistorySubtitle");
+          if (titleEl) titleEl.textContent = `Riwayat · ${user?.display_name || user?.username || "-"}`;
+          if (subEl) subEl.textContent = `Menampilkan login/logout + aktivitas input/edit/hapus.`;
+          const refreshBtn = document.querySelector('[data-action="admin-refresh-history"]');
+          if (refreshBtn) refreshBtn.hidden = false;
+          const clearBtn = document.querySelector('[data-action="admin-clear-history"]');
+          if (clearBtn) clearBtn.hidden = false;
+        };
+
+        const renderAdminAudit = (items) => {
+          const body = byId("adminAuditBody");
+          if (!body) return;
+          if (!items.length) {
+            renderTableEmpty("adminAuditBody", 5, "Tidak ada data.");
+            return;
+          }
+          const tableLabel = (tableName) => {
+            if (tableName === "key_transactions") return "Penitipan kunci";
+            if (tableName === "guest_entries") return "Buku tamu";
+            if (tableName === "mutasi_entries") return "Buku mutasi";
+            if (tableName === "task_entries") return "Tugas operasional";
+            if (tableName === "users") return "User";
+            if (tableName === "auth") return "Akun";
+            return "Data";
+          };
+          body.innerHTML = items
+            .slice(0, 200)
+            .map((a) => {
+              const label = tableLabel(a.table_name);
+              const id = a.record_id ? ` #${a.record_id}` : "";
+              const target = `${label}${id}`;
+              return `
+              <tr>
+                <td>${esc(a.id)}</td>
+                <td>${esc(a.created_at || "-")}</td>
+                <td>${esc(a.actor_name || "-")}</td>
+                <td>${esc(a.action || "-")}</td>
+                <td>${esc(target)}</td>
+              </tr>
+            `;
+            })
+            .join("");
+        };
+
+        const refreshAll = async () => {
+          setLoading(true);
+          try {
+            const me = await apiGet("/api/me");
+            const now = new Date();
+            const today = toYmd(now);
+            const dashQ = (byId("dashSearch")?.value || "").trim();
+            const keyQ = (byId("keySearch")?.value || "").trim();
+            const mutasiQ = (byId("mutasiSearch")?.value || "").trim();
+            const guestQ = (byId("guestSearch")?.value || "").trim();
+            const taskQ = (byId("taskSearch")?.value || "").trim();
+            const mutasiDate = byId("mutasiDate")?.value || today;
+            const keysClosedDate = byId("keysClosedDate")?.value || today;
+            const guestDate = byId("guestDate")?.value || today;
+            const taskDate = byId("taskDate")?.value || today;
+            const lapMulai = byId("lapMulai")?.value || today;
+            const lapSampai = byId("lapSampai")?.value || today;
+
+            setText("pillShift", `Shift: ${me.shift} · Pos: ${me.post}`);
+            setText("pillUser", `Petugas: ${me.user.display_name}`);
+            setText("mutasiPetugas", me.user.display_name);
+            setText("kunciPetugas", me.user.display_name);
+            setText("tugasPetugas", me.user.display_name);
+
+            const adminTab = byId("tab-admin");
+            const adminPanel = byId("admin");
+            const isAdmin = me.user.role === "admin";
+            if (adminTab) adminTab.hidden = !isAdmin;
+            if (adminPanel) adminPanel.hidden = !isAdmin;
+            if (!isAdmin && window.location.hash === "#admin") {
+              window.location.hash = "#dashboard";
+            }
+
+            const reportDate = lapMulai || today;
+            const report = await apiGet(`/api/report/shift?date=${encodeURIComponent(reportDate)}&shift=${encodeURIComponent(me.shift)}&post=${encodeURIComponent(me.post)}`);
+            setText("statKeysOpen", String(report.counts.keys_open));
+            setText("statGuestsTotal", String(report.counts.guests_total));
+            setText("statTasksTotal", String(report.counts.tasks_total));
+            setText("statMutasiTotal", String(report.counts.mutasi_total));
+
+            setText("reportSubtitle", `${report.date} · Shift ${report.shift} · Pos ${report.post}`);
+            setText("reportUser", me.user.display_name);
+            setText("reportGuestsTotal", String(report.counts.guests_total));
+            setText("reportKeysTotal", String(report.counts.keys_total));
+            setText("reportKeysOpen", String(report.counts.keys_open));
+
+            const keysOpenForModule = await apiGet(`/api/keys?status=open&q=${encodeURIComponent(keyQ)}`);
+            let kOpen = keysOpenForModule.items || [];
+            const keySort = byId("keySort")?.value || "checkout_desc";
+            if (keySort === "checkout_asc") kOpen = kOpen.slice().sort((a,b)=>(a.checkout_at||"").localeCompare(b.checkout_at||""));
+            if (keySort === "checkout_desc") kOpen = kOpen.slice().sort((a,b)=>(b.checkout_at||"").localeCompare(a.checkout_at||""));
+            if (keySort === "name_asc") kOpen = kOpen.slice().sort((a,b)=>(a.borrower_name||"").localeCompare(b.borrower_name||""));
+            if (keySort === "name_desc") kOpen = kOpen.slice().sort((a,b)=>(b.borrower_name||"").localeCompare(a.borrower_name||""));
+            window.__lastKeysOpen = kOpen.slice();
+            renderKeysOpen(kOpen, { tbodyId: "keysOpenBody", mode: "module" });
+
+            const keysClosedForModule = await apiGet(`/api/keys?status=closed&q=${encodeURIComponent(keyQ)}&start=${encodeURIComponent(startOfDayIso(keysClosedDate))}&end=${encodeURIComponent(endOfDayIso(keysClosedDate))}`);
+            let kClosed = keysClosedForModule.items || [];
+            window.__lastKeysClosed = kClosed.slice();
+            renderKeysClosed(kClosed);
+
+            const keysOpenForDash = await apiGet(`/api/keys?status=open&q=${encodeURIComponent(dashQ)}`);
+            let kDash = keysOpenForDash.items || [];
+            renderKeysOpen(kDash, { tbodyId: "dashKeysOpenBody", mode: "dash" });
+            const overdueEl = byId("pillOverdue");
+            if (overdueEl) {
+              const nowMs = Date.now();
+              const overdue = (kDash || []).filter(x=>{
+                if (!x.checkout_at) return false;
+                const d = new Date(x.checkout_at.replace(" ", "T"));
+                return nowMs - d.getTime() > 2*60*60*1000;
+              }).length;
+              overdueEl.hidden = overdue <= 0;
+              overdueEl.textContent = `Kunci overdue: ${overdue}`;
+            }
+
+            const keysOpenForReport = await apiGet("/api/keys?status=open");
+            window.__lastKeysReportOpen = (keysOpenForReport.items || []).slice();
+            renderKeysOpen(window.__lastKeysReportOpen, { tbodyId: "reportKeysOpenBody", mode: "report" });
+
+            const mutasi = await apiGet(`/api/mutasi?q=${encodeURIComponent(mutasiQ)}&start=${encodeURIComponent(startOfDayIso(mutasiDate))}&end=${encodeURIComponent(endOfDayIso(mutasiDate))}`);
+            window.__lastMutasi = (mutasi.items || []).slice();
+            renderMutasi(window.__lastMutasi);
+
+            const guests = await apiGet(`/api/guests?status=in&q=${encodeURIComponent(guestQ)}&start=${encodeURIComponent(startOfDayIso(guestDate))}&end=${encodeURIComponent(endOfDayIso(guestDate))}`);
+            let g = guests.items || [];
+            const guestSort = byId("guestSort")?.value || "checkin_desc";
+            if (guestSort === "checkin_asc") g = g.slice().sort((a,b)=>(a.checkin_at||"").localeCompare(b.checkin_at||""));
+            if (guestSort === "checkin_desc") g = g.slice().sort((a,b)=>(b.checkin_at||"").localeCompare(a.checkin_at||""));
+            if (guestSort === "name_asc") g = g.slice().sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+            if (guestSort === "name_desc") g = g.slice().sort((a,b)=>(b.name||"").localeCompare(a.name||""));
+            window.__lastGuests = g.slice();
+            renderGuests(g);
+
+            const tasks = await apiGet(`/api/tasks?q=${encodeURIComponent(taskQ)}&start=${encodeURIComponent(startOfDayIso(taskDate))}&end=${encodeURIComponent(endOfDayIso(taskDate))}`);
+            window.__lastTasks = (tasks.items || []).slice();
+            renderTasks(window.__lastTasks);
+
+            if (isAdmin) {
+              const userQ = (byId("adminUserSearch")?.value || "").trim();
+              const auditQ = (byId("adminAuditSearch")?.value || "").trim();
+              const users = await apiGet(`/api/admin/users?q=${encodeURIComponent(userQ)}`);
+              renderAdminUsers(users.items || []);
+              renderAdminSecurities(users.items || []);
+              const audit = await apiGet(`/api/admin/audit?q=${encodeURIComponent(auditQ)}&limit=120`);
+              renderAdminAudit(audit.items || []);
+
+              if (!adminSelectedUserId) {
+                const first = (users.items || []).find((u) => u.role === "guard") || (users.items || [])[0];
+                if (first) adminSelectedUserId = String(first.id);
+              }
+              const selected = (users.items || []).find((u) => String(u.id) === String(adminSelectedUserId));
+              if (selected) {
+                const limitRaw = byId("adminHistoryLimit")?.value || "50";
+                const limit = Math.max(10, Math.min(50, parseInt(limitRaw, 10) || 50));
+                const history = await apiGet(`/api/admin/security_history?user_id=${encodeURIComponent(String(selected.id))}&limit=${encodeURIComponent(String(limit))}`);
+                renderAdminHistory(history.items || [], selected);
+                renderAdminSecurities(users.items || []);
+              } else {
+                renderTableEmpty("adminHistoryBody", 4, "Pilih salah satu security.");
+              }
+            }
+          } finally {
+            setLoading(false);
+          }
+        };
+
+        let refreshTimer = 0;
+        const scheduleRefresh = () => {
+          window.clearTimeout(refreshTimer);
+          refreshTimer = window.setTimeout(() => {
+            refreshAll().catch(() => {});
+          }, 300);
+        };
+
+        const modules = Array.from(document.querySelectorAll(".module"));
+        const tabs = Array.from(document.querySelectorAll(".tab[data-tab]"));
+
+        const setActiveModule = (moduleId, { focusPanel } = { focusPanel: false }) => {
+          let found = false;
+
+          for (const m of modules) {
+            const isActive = m.id === moduleId;
+            m.hidden = !isActive;
+            if (isActive) found = true;
+          }
+
+          const finalId = found ? moduleId : "dashboard";
+
+          for (const t of tabs) {
+            const isActive = t.dataset.tab === finalId;
+            t.setAttribute("aria-selected", isActive ? "true" : "false");
+          }
+
+          if (focusPanel) {
+            const panel = document.getElementById(finalId);
+            if (panel) panel.focus({ preventScroll: true });
+          }
+        };
+
+        const resolveModuleFromHash = () => {
+          const raw = window.location.hash ? window.location.hash.slice(1) : "";
+          if (!raw) return "dashboard";
+
+          const target = document.getElementById(raw);
+          if (!target) return raw;
+
+          const panel = target.closest(".module");
+          return panel?.id || "dashboard";
+        };
+
+        const activateFromHash = () => {
+          const moduleId = resolveModuleFromHash();
+          setActiveModule(moduleId);
+        };
+
+        for (const tab of tabs) {
+          tab.addEventListener("click", () => {
+            const moduleId = tab.dataset.tab;
+            if (!moduleId) return;
+            window.location.hash = `#${moduleId}`;
+            setActiveModule(moduleId, { focusPanel: true });
+          });
+        }
+
+        document.addEventListener("click", (e) => {
+          const a = e.target.closest('a[href^="#"]');
+          if (!a) return;
+          const targetId = a.getAttribute("href").slice(1);
+          if (!targetId) return;
+          const target = document.getElementById(targetId);
+          if (!target) return;
+          const panel = target.closest(".module");
+          if (!panel?.id) return;
+          setActiveModule(panel.id);
+        });
+
+        document.addEventListener("click", async (e) => {
+          const btn = e.target.closest("button");
+          if (!btn) return;
+
+          if (btn.hasAttribute("data-logout")) {
+            try {
+              await apiPost("/api/logout", {});
+            } finally {
+              localStorage.removeItem(tokenKey);
+              window.location.href = "/";
+            }
+          }
+
+          if (btn.dataset.action === "key-return") {
+            const id = btn.dataset.id;
+            if (!id) return;
+            btn.disabled = true;
+            try {
+              await apiPost(`/api/keys/${id}/return`, {});
+              await refreshAll();
+            } catch (err) {
+              showToast(err.message || "Gagal memproses", "error");
+            } finally {
+              btn.disabled = false;
+            }
+          }
+
+          if (btn.dataset.action === "guest-checkout") {
+            const id = btn.dataset.id;
+            if (!id) return;
+            btn.disabled = true;
+            try {
+              await apiPost(`/api/guests/${id}/checkout`, {});
+              await refreshAll();
+            } catch (err) {
+              showToast(err.message || "Gagal memproses", "error");
+            } finally {
+              btn.disabled = false;
+            }
+          }
+
+          if (btn.dataset.action === "admin-save-user") {
+            const id = btn.dataset.id;
+            if (!id) return;
+            const row = btn.closest("tr[data-user-id]");
+            if (!row) return;
+            btn.disabled = true;
+            try {
+              const displayName = row.querySelector('[data-field="display_name"]')?.value || "";
+              const role = row.querySelector('[data-field="role"]')?.value || "guard";
+              const isActive = row.querySelector('[data-field="is_active"]')?.checked ? 1 : 0;
+              await apiPatch(`/api/admin/users/${id}`, { display_name: displayName, role, is_active: isActive });
+              await refreshAll();
+            } catch (err) {
+              showToast(err.message || "Gagal menyimpan user", "error");
+            } finally {
+              btn.disabled = false;
+            }
+          }
+
+          if (btn.dataset.action === "admin-reset-password") {
+            const id = btn.dataset.id;
+            if (!id) return;
+            const ok = await confirmDialog("Reset password user ini? Password lama akan diganti.");
+            if (!ok) return;
+            btn.disabled = true;
+            try {
+              const res = await apiPost(`/api/admin/users/${id}/reset_password`, {});
+              await refreshAll();
+              showToast(`Password baru: ${res.temp_password}`, "success");
+            } catch (err) {
+              showToast(err.message || "Gagal reset password", "error");
+            } finally {
+              btn.disabled = false;
+            }
+          }
+
+          if (btn.dataset.action === "admin-delete-user") {
+            const id = btn.dataset.id;
+            if (!id) return;
+            const ok = await confirmDialog("Hapus akun ini? Jika tidak bisa dihapus karena ada relasi data, akun akan dinonaktifkan.");
+            if (!ok) return;
+            btn.disabled = true;
+            try {
+              const res = await apiDelete(`/api/admin/users/${id}/delete`);
+              await refreshAll();
+              showToast(res.mode === "deleted" ? "Akun dihapus" : "Akun dinonaktifkan", "success");
+            } catch (err) {
+              showToast(err.message || "Gagal menghapus akun", "error");
+            } finally {
+              btn.disabled = false;
+            }
+          }
+
+          if (btn.dataset.action === "admin-refresh-history") {
+            btn.disabled = true;
+            try {
+              await refreshAll();
+            } finally {
+              btn.disabled = false;
+            }
+          }
+          if (btn.dataset.action === "admin-clear-history") {
+            if (!adminSelectedUserId) return;
+            const ok = await confirmDialog("Hapus semua riwayat security ini? Ini akan menghapus catatan login/logout dan aktivitasnya.");
+            if (!ok) return;
+            btn.disabled = true;
+            try {
+              const res = await apiDelete(`/api/admin/security_history?user_id=${encodeURIComponent(String(adminSelectedUserId))}&keep=0`);
+              await refreshAll();
+              showToast(`Riwayat dihapus (${res.deleted} entri)`, "success");
+            } catch (err) {
+              showToast(err.message || "Gagal hapus riwayat", "error");
+            } finally {
+              btn.disabled = false;
+            }
+          }
+          if (btn.dataset.action === "report-apply") {
+            await refreshAll();
+            window.location.hash = "#laporan";
+          }
+          if (btn.dataset.action === "export-dashboard") {
+            const keys = (window.__lastKeysOpen || []).slice(0, 50);
+            const guests = (window.__lastGuests || []).slice(0, 50);
+            const tasks = (window.__lastTasks || []).slice(0, 50);
+            const mutasi = (window.__lastMutasi || []).slice(0, 50);
+            const parts = [];
+            parts.push(["DASHBOARD EXPORT"]);
+            parts.push(["Generated", new Date().toISOString()]);
+            parts.push([]);
+            parts.push(["Kunci (Open)"]);
+            parts.push(["Nama","Kunci","Titip","Petugas","Status"]);
+            for (const r of keys) parts.push([r.borrower_name||"", r.key_name||"", r.checkout_at||"", r.created_by_name||"", r.status||""]);
+            parts.push([]);
+            parts.push(["Tamu (In)"]);
+            parts.push(["Nama","Instansi","Tujuan","Ditemui","Masuk","Status"]);
+            for (const r of guests) parts.push([r.name||"", r.instansi||"", r.purpose||"", r.meet_person||"", r.checkin_at||"", r.status||""]);
+            parts.push([]);
+            parts.push(["Tugas"]);
+            parts.push(["Jam","Jenis","Tujuan","Catatan","Petugas"]);
+            for (const r of tasks) parts.push([r.occurred_at||"", r.kind||"", r.destination||"", r.notes||"", r.created_by_name||""]);
+            parts.push([]);
+            parts.push(["Mutasi"]);
+            parts.push(["Jam","Jenis","Deskripsi","Petugas"]);
+            for (const r of mutasi) parts.push([r.occurred_at||"", r.kind||"", r.description||"", r.created_by_name||""]);
+            const blob = new Blob([csvText(parts)],{type:"text/csv;charset=utf-8"});
+            const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "dashboard_export.csv"; a.click();
+          }
+          if (btn.dataset.action === "focus-mutasi") {
+            window.location.hash = "#mutasi";
+            const el = byId("mutasiDesk") || byId("mutasiJam");
+            if (el) el.focus();
+          }
+          if (btn.dataset.action === "focus-kunci") {
+            window.location.hash = "#kunci";
+            const el = byId("kunciRuang") || byId("kunciNama");
+            if (el) el.focus();
+          }
+          if (btn.dataset.action === "focus-tamu") {
+            window.location.hash = "#tamu";
+            const el = byId("tamuNama") || byId("tamuInstansi");
+            if (el) el.focus();
+          }
+          if (btn.dataset.action === "focus-tugas") {
+            window.location.hash = "#tugas";
+            const el = byId("tugasTujuan") || byId("tugasCatatan");
+            if (el) el.focus();
+          }
+          if (btn.dataset.action === "export-keys-open") {
+            const rows = window.__lastKeysOpen || [];
+            if (!rows.length) { showToast("Tidak ada data untuk diexport", "warn"); return; }
+            const csv = [["Nama","Kunci","Titip","Petugas","Status"]].concat(rows.map(r=>[r.borrower_name||"",r.key_name||"",r.checkout_at||"",r.created_by_name||"",r.status||""]));
+            const blob = new Blob([csvText(csv)],{type:"text/csv;charset=utf-8"});
+            const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "keys_open.csv"; a.click();
+          }
+          if (btn.dataset.action === "export-keys-closed") {
+            const rows = window.__lastKeysClosed || [];
+            if (!rows.length) { showToast("Tidak ada data untuk diexport", "warn"); return; }
+            const csv = [["Nama","Kunci","Titip","Ambil","Status"]].concat(rows.map(r=>[r.borrower_name||"",r.key_name||"",r.checkout_at||"",r.checkin_at||"",r.status||""]));
+            const blob = new Blob([csvText(csv)],{type:"text/csv;charset=utf-8"});
+            const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "keys_closed.csv"; a.click();
+          }
+          if (btn.dataset.action === "export-guests") {
+            const rows = window.__lastGuests || [];
+            if (!rows.length) { showToast("Tidak ada data untuk diexport", "warn"); return; }
+            const csv = [["Nama","Instansi","Tujuan","Ditemui","Masuk","Keluar","Status"]].concat(rows.map(r=>[r.name||"",r.instansi||"",r.purpose||"",r.meet_person||"",r.checkin_at||"",r.checkout_at||"",r.status||""]));
+            const blob = new Blob([csvText(csv)],{type:"text/csv;charset=utf-8"});
+            const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "guests.csv"; a.click();
+          }
+          if (btn.dataset.action === "export-tasks") {
+            const rows = window.__lastTasks || [];
+            if (!rows.length) { showToast("Tidak ada data untuk diexport", "warn"); return; }
+            const csv = [["Jam","Jenis","Tujuan","Catatan","Petugas"]].concat(rows.map(r=>[r.occurred_at||"",r.kind||"",r.destination||"",r.notes||"",r.created_by_name||""]));
+            const blob = new Blob([csvText(csv)],{type:"text/csv;charset=utf-8"});
+            const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "tasks.csv"; a.click();
+          }
+          if (btn.dataset.action === "export-mutasi") {
+            const rows = window.__lastMutasi || [];
+            if (!rows.length) { showToast("Tidak ada data untuk diexport", "warn"); return; }
+            const csv = [["Jam","Jenis","Deskripsi","Petugas"]].concat(rows.map(r=>[r.occurred_at||"",r.kind||"",r.description||"",r.created_by_name||""]));
+            const blob = new Blob([csvText(csv)],{type:"text/csv;charset=utf-8"});
+            const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "mutasi.csv"; a.click();
+          }
+        });
+
+        document.addEventListener("click", async (e) => {
+          const row = e.target.closest('tr[data-action="admin-select-security"]');
+          if (!row) return;
+          const id = row.getAttribute("data-id");
+          if (!id) return;
+          adminSelectedUserId = String(id);
+          scheduleRefresh();
+        });
+        document.addEventListener("click", (e) => {
+          const chip = e.target.closest("[data-time-chip]");
+          if (!chip) return;
+          const field = chip.closest(".field");
+          if (!field) return;
+          const input = field.querySelector('input[type="time"]');
+          if (!input) return;
+          const val = chip.getAttribute("data-time-chip");
+          const now = new Date();
+          if (val === "now") {
+            const hh = String(now.getHours()).padStart(2,"0");
+            const mm = String(now.getMinutes()).padStart(2,"0");
+            input.value = hh+":"+mm;
+            return;
+          }
+          const m = parseInt(val,10);
+          if (!isNaN(m)) {
+            const d = new Date(now.getTime() + m*60*1000);
+            const hh = String(d.getHours()).padStart(2,"0");
+            const mm = String(d.getMinutes()).padStart(2,"0");
+            input.value = hh+":"+mm;
+          }
+        });
+
+        const handleForm = (formId, handler) => {
+          const form = byId(formId);
+          if (!form) return;
+          form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+            try {
+              await handler(form);
+              form.reset();
+              await refreshAll();
+            } catch (err) {
+              showToast(err.message || "Gagal menyimpan", "error");
+            } finally {
+              if (submitBtn) submitBtn.disabled = false;
+            }
+          });
+        };
+
+        handleForm("keyForm", async (form) => {
+          const now = new Date();
+          const ymd = toYmd(now);
+          const time = form.querySelector('[name="time"]')?.value || `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+          const payload = {
+            borrower_name: form.querySelector('[name="borrower_name"]')?.value || "",
+            unit: form.querySelector('[name="unit"]')?.value || "",
+            key_name: form.querySelector('[name="key_name"]')?.value || "",
+            checkout_at: toIsoLocal(ymd, time),
+            notes: form.querySelector('[name="notes"]')?.value || "",
+          };
+          try {
+            await apiPost("/api/keys", payload);
+          } catch (err) {
+            if (err.message && err.message.toLowerCase().includes("kunci")) {
+              const ok = await confirmDialog(`${err.message}\nTetap simpan sebagai duplikasi?`);
+              if (ok) {
+                await apiPost("/api/keys", { ...payload, force: true });
+                return;
+              }
+            }
+            const ok2 = await confirmDialog(`${err.message}\nTetap simpan?`);
+            if (ok2) {
+              await apiPost("/api/keys", { ...payload, force: true });
+              return;
+            }
+            throw err;
+          }
+        });
+
+        handleForm("mutasiForm", async (form) => {
+          const now = new Date();
+          const ymd = toYmd(now);
+          const time = form.querySelector('[name="time"]')?.value || `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+          const payload = {
+            occurred_at: toIsoLocal(ymd, time),
+            kind: form.querySelector('[name="kind"]')?.value || "Lainnya",
+            description: form.querySelector('[name="description"]')?.value || "",
+          };
+          await apiPost("/api/mutasi", payload);
+        });
+
+        handleForm("guestForm", async (form) => {
+          const now = new Date();
+          const ymd = toYmd(now);
+          const time = form.querySelector('[name="time"]')?.value || `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+          const payload = {
+            name: form.querySelector('[name="name"]')?.value || "",
+            instansi: form.querySelector('[name="instansi"]')?.value || "",
+            purpose: form.querySelector('[name="purpose"]')?.value || "",
+            meet_person: form.querySelector('[name="meet_person"]')?.value || "",
+            checkin_at: toIsoLocal(ymd, time),
+            notes: form.querySelector('[name="notes"]')?.value || "",
+          };
+          await apiPost("/api/guests", payload);
+        });
+
+        handleForm("taskForm", async (form) => {
+          const now = new Date();
+          const ymd = toYmd(now);
+          const time = form.querySelector('[name="time"]')?.value || `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+          const payload = {
+            kind: form.querySelector('[name="kind"]')?.value || "Lainnya",
+            occurred_at: toIsoLocal(ymd, time),
+            destination: form.querySelector('[name="destination"]')?.value || "",
+            notes: form.querySelector('[name="notes"]')?.value || "",
+          };
+          await apiPost("/api/tasks", payload);
+        });
+
+        handleForm("adminCreateUserForm", async (form) => {
+          const payload = {
+            username: form.querySelector('[name="username"]')?.value || "",
+            display_name: form.querySelector('[name="display_name"]')?.value || "",
+            role: form.querySelector('[name="role"]')?.value || "guard",
+            password: form.querySelector('[name="password"]')?.value || "",
+          };
+          await apiPost("/api/admin/users", payload);
+        });
+
+        handleForm("adminDeleteRecordForm", async (form) => {
+          const table = form.querySelector('[name="table"]')?.value || "";
+          const id = form.querySelector('[name="id"]')?.value || "";
+          const note = form.querySelector('[name="note"]')?.value || "";
+          const ok = await confirmDialog(`Hapus data ${table} ID ${id}?`);
+          if (!ok) return;
+          await apiDelete(`/api/admin/records/${encodeURIComponent(table)}?id=${encodeURIComponent(id)}&note=${encodeURIComponent(note)}`);
+        });
+
+        for (const id of ["dashSearch", "keySearch", "mutasiSearch", "guestSearch", "taskSearch", "adminUserSearch", "adminAuditSearch"]) {
+          const el = byId(id);
+          if (el) el.addEventListener("input", scheduleRefresh);
+        }
+        const historyLimit = byId("adminHistoryLimit");
+        if (historyLimit) historyLimit.addEventListener("change", scheduleRefresh);
+        const keySort = byId("keySort");
+        if (keySort) keySort.addEventListener("change", scheduleRefresh);
+        const guestSort = byId("guestSort");
+        if (guestSort) guestSort.addEventListener("change", scheduleRefresh);
+        for (const id of ["mutasiDate", "keysClosedDate", "guestDate", "taskDate", "lapMulai", "lapSampai"]) {
+          const el = byId(id);
+          if (el) el.addEventListener("change", scheduleRefresh);
+        }
+
+        let idleTimer = 0;
+        const resetIdle = () => {
+          window.clearTimeout(idleTimer);
+          idleTimer = window.setTimeout(async () => {
+            try {
+              await apiPost("/api/logout", {});
+            } finally {
+              localStorage.removeItem(tokenKey);
+              window.location.href = "/";
+            }
+          }, 15 * 60 * 1000);
+        };
+
+        for (const ev of ["mousemove", "mousedown", "keydown", "touchstart", "scroll"]) {
+          window.addEventListener(ev, resetIdle, { passive: true });
+        }
+        resetIdle();
+
+        window.addEventListener("hashchange", activateFromHash);
+        activateFromHash();
+
+        for (const id of ["mutasiDate", "keysClosedDate", "guestDate", "taskDate", "lapMulai", "lapSampai"]) {
+          const el = byId(id);
+          if (el && !el.value) el.value = toYmd(new Date());
+        }
+
+        refreshAll().catch((err) => {
+          const msg = String(err?.message || err || "");
+          if (/harus login/i.test(msg) || /unauthorized/i.test(msg)) {
+            localStorage.removeItem(tokenKey);
+            window.location.href = "/";
+            return;
+          }
+          showToast(msg || "Gagal memuat data.", "error");
+        });
+      })();
+    </script>
+  </body>
+</html>

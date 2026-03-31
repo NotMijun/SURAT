@@ -1,0 +1,6 @@
+@import '../../styles.css';
+
+.tab-active{
+  border-color:rgba(212,175,55,.65);
+  background:rgba(212,175,55,.18);
+}
