@@ -14,7 +14,11 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
+from dotenv import load_dotenv
+import os
 
+load_dotenv()  # Memuat variabel dari file .env
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 ROOT_DIR = Path(__file__).resolve().parent
 DB_PATH = ROOT_DIR / "logbook.db"
