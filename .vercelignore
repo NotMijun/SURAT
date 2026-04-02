@@ -1,0 +1,14 @@
+# Abaikan direktori Python bytecode
+*.pyc
+__pycache__
+
+# Abaikan file konfigurasi pribadi
+.env
+
+# Abaikan file sistem
+.git
+
+# Abaikan direktori build dan cache
+.vscode/
+.vercel/
+.cache/
