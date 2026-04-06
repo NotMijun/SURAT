@@ -2,6 +2,10 @@
 *.pyc
 __pycache__
 
+# Abaikan dependencies Node (sering bikin permission error kalau ikut terupload dari Windows)
+node_modules/
+react-ui/node_modules/
+
 # Abaikan file konfigurasi pribadi
 .env
 
