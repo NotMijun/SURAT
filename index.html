@@ -105,7 +105,7 @@
         };
 
         if (window.location.protocol === "file:") {
-          showError("Halaman ini harus dibuka lewat server lokal (bukan file). Jalankan: python app.py, lalu buka http://127.0.0.1:5173/");
+          showError("Halaman ini harus dibuka lewat server lokal (bukan file). Jalankan backend: python -m uvicorn api.index:app --reload --port 5173, lalu buka http://127.0.0.1:5173/");
         }
         if (form) {
           form.addEventListener("submit", async (e) => {
@@ -121,7 +121,12 @@
               const healthRes = await fetch("/api/health", { method: "GET" });
               const health = await healthRes.json().catch(() => null);
               if (!healthRes.ok || !health || health.ok !== true) {
-                showError("Server yang jalan belum mode aplikasi (API tidak ditemukan). Pastikan yang dijalankan adalah: python app.py (bukan python -m http.server).");
+                if (healthRes.status === 404) {
+                  showError("API tidak ditemukan. Jalankan backend FastAPI: python -m uvicorn api.index:app --reload --port 5173 (bukan python -m http.server).");
+                  return;
+                }
+                const detail = health?.error || health?.message || "";
+                showError(detail ? `Backend error: ${detail}` : `Backend error (${healthRes.status}). Pastikan DATABASE_URL sudah diset dan backend berjalan.`);
                 return;
               }
 
@@ -147,7 +152,7 @@
               }
               window.location.href = "/app.html#dashboard";
             } catch (err) {
-              showError("Tidak bisa terhubung ke server lokal. Pastikan buka http://127.0.0.1:5173/ dan server menyala (python app.py).");
+              showError("Tidak bisa terhubung ke server lokal. Pastikan buka http://127.0.0.1:5173/ dan backend menyala: python -m uvicorn api.index:app --reload --port 5173.");
             }
           });
         }

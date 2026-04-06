@@ -52,6 +52,7 @@ body{
   margin:0;
   font-family:var(--font);
   color:var(--text);
+  -webkit-text-size-adjust:100%;
   background:
     radial-gradient(900px 380px at 20% 0%, rgba(212,175,55,.15), transparent 60%),
     radial-gradient(700px 300px at 85% 10%, rgba(212,175,55,.10), transparent 55%),
@@ -418,6 +419,28 @@ a{color:inherit}
   .topbar-right{gap:8px}
   .card-header,.card-footer,.card-body{padding:14px}
   .page{padding:16px}
+  .topbar-title .subtitle{display:none}
+  .input,.select,.textarea{font-size:16px}
+  .input,.select{min-height:44px}
+  .button{min-height:44px}
+  .tabsbar{
+    position:fixed;
+    top:auto;
+    bottom:0;
+    left:0;
+    right:0;
+    border-bottom:0;
+    border-top:1px solid var(--border);
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  .content{padding-bottom:calc(92px + env(safe-area-inset-bottom))}
+  #toastContainer{
+    top:auto;
+    left:12px;
+    right:12px;
+    bottom:calc(92px + env(safe-area-inset-bottom));
+  }
+  .toast{min-width:auto;max-width:none;width:100%}
 }
 
 @media print{

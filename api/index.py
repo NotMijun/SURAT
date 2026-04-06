@@ -6,14 +6,18 @@ import os
 import secrets
 import threading
 import time
+import traceback
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from pathlib import Path
+from sys import stderr
 from typing import Any, Literal
 
 import psycopg2
 import psycopg2.extras
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from dotenv import load_dotenv
 from pydantic import BaseModel
 
 SESSION_TTL_SECONDS = 60 * 60 * 2
@@ -22,8 +26,12 @@ LOGIN_RATE_MAX_ATTEMPTS = 8
 
 _schema_lock = threading.Lock()
 _schema_ready = False
+_users_has_password = False
+_users_has_password_hash = True
 
 app = FastAPI()
+ROOT_DIR = Path(__file__).resolve().parents[1]
+load_dotenv(dotenv_path=str(ROOT_DIR / ".env"), override=True)
 
 
 @app.exception_handler(HTTPException)
@@ -32,8 +40,33 @@ async def _http_exception_handler(_: Request, exc: HTTPException):
 
 
 @app.exception_handler(Exception)
-async def _unhandled_exception_handler(_: Request, __: Exception):
+async def _unhandled_exception_handler(_: Request, exc: Exception):
+    traceback.print_exception(type(exc), exc, exc.__traceback__, file=stderr)
+    if (os.getenv("DEBUG") or "").strip() == "1":
+        return JSONResponse(status_code=500, content={"error": str(exc)})
     return JSONResponse(status_code=500, content={"error": "Kesalahan server"})
+
+
+def _serve_root_file(name: str, content_type: str):
+    file_path = ROOT_DIR / name
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(path=str(file_path), media_type=content_type)
+
+
+@app.get("/")
+def root_index():
+    return _serve_root_file("index.html", "text/html; charset=utf-8")
+
+
+@app.get("/app.html")
+def root_app_html():
+    return _serve_root_file("app.html", "text/html; charset=utf-8")
+
+
+@app.get("/styles.css")
+def root_styles():
+    return _serve_root_file("styles.css", "text/css; charset=utf-8")
 
 
 def utc_now_iso() -> str:
@@ -64,15 +97,30 @@ def pbkdf2_verify_password(password: str, stored: str) -> bool:
 
 
 def _database_url() -> str:
+    pooler = (os.getenv("DATABASE_URL_POOLER") or "").strip()
+    if pooler:
+        return pooler
+
     url = (os.getenv("DATABASE_URL") or "").strip()
     if not url:
-        raise HTTPException(status_code=500, detail="DATABASE_URL belum dikonfigurasi")
+        raise HTTPException(status_code=500, detail="DATABASE_URL belum dikonfigurasi (set di environment atau file .env)")
+
+    prefer_pooler = (os.getenv("PREFER_POOLER") or "1").strip() == "1"
+    if prefer_pooler and "db." in url and ".supabase.co" in url and "pooler" not in url:
+        raise HTTPException(
+            status_code=500,
+            detail="Isi DATABASE_URL_POOLER (Supabase Connection Pooler). Direct connection ke db.*.supabase.co tidak cocok untuk jaringan ini.",
+        )
     return url
 
 
 @contextmanager
 def db_connect():
-    conn = psycopg2.connect(_database_url(), connect_timeout=5)
+    hostaddr = (os.getenv("DATABASE_HOSTADDR") or "").strip()
+    if hostaddr:
+        conn = psycopg2.connect(_database_url(), connect_timeout=5, hostaddr=hostaddr)
+    else:
+        conn = psycopg2.connect(_database_url(), connect_timeout=5)
     try:
         _ensure_schema(conn)
         yield conn
@@ -82,6 +130,8 @@ def db_connect():
 
 def _ensure_schema(conn) -> None:
     global _schema_ready
+    global _users_has_password
+    global _users_has_password_hash
     if _schema_ready:
         return
     with _schema_lock:
@@ -101,6 +151,56 @@ def _ensure_schema(conn) -> None:
                 )
                 """
             )
+            cur.execute("ALTER TABLE public.users ADD COLUMN IF NOT EXISTS display_name TEXT")
+            cur.execute("ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password_hash TEXT")
+            cur.execute("ALTER TABLE public.users ADD COLUMN IF NOT EXISTS role TEXT")
+            cur.execute("ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_active INTEGER")
+            cur.execute("ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_at TEXT")
+            cur.execute(
+                """
+                DO $$
+                BEGIN
+                  IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='users' AND column_name='is_active' AND data_type='boolean'
+                  ) THEN
+                    ALTER TABLE public.users ALTER COLUMN is_active DROP DEFAULT;
+                    ALTER TABLE public.users
+                      ALTER COLUMN is_active TYPE INTEGER
+                      USING (CASE WHEN is_active THEN 1 ELSE 0 END);
+                  END IF;
+                END $$;
+                """
+            )
+            cur.execute("UPDATE public.users SET display_name = COALESCE(display_name, username) WHERE display_name IS NULL")
+            cur.execute("UPDATE public.users SET role = COALESCE(role, 'admin') WHERE role IS NULL")
+            cur.execute("UPDATE public.users SET is_active = COALESCE(is_active, 1) WHERE is_active IS NULL")
+            cur.execute("ALTER TABLE public.users ALTER COLUMN role SET DEFAULT 'guard'")
+            cur.execute("ALTER TABLE public.users ALTER COLUMN is_active SET DEFAULT 1")
+            cur.execute(
+                """
+                DO $$
+                BEGIN
+                  IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='users' AND column_name='created_at'
+                      AND data_type IN ('timestamp without time zone', 'timestamp with time zone')
+                  ) THEN
+                    UPDATE public.users SET created_at = COALESCE(created_at, now()) WHERE created_at IS NULL;
+                    ALTER TABLE public.users ALTER COLUMN created_at SET DEFAULT now();
+                  ELSE
+                    UPDATE public.users SET created_at = COALESCE(created_at, (now() AT TIME ZONE 'utc')::text) WHERE created_at IS NULL;
+                    ALTER TABLE public.users ALTER COLUMN created_at SET DEFAULT (now() AT TIME ZONE 'utc')::text;
+                  END IF;
+                END $$;
+                """
+            )
+            cur.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='users'"
+            )
+            cols = {r[0] for r in cur.fetchall()}
+            _users_has_password = "password" in cols
+            _users_has_password_hash = "password_hash" in cols
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS sessions (
@@ -247,14 +347,27 @@ def _maybe_bootstrap_admin(conn) -> None:
     if not password:
         return
     with conn.cursor() as cur:
-        cur.execute("SELECT COUNT(1) FROM users")
-        c = int(cur.fetchone()[0] or 0)
-        if c != 0:
-            return
-        cur.execute(
-            "INSERT INTO users(username, display_name, password_hash, role, is_active, created_at) VALUES (%s,%s,%s,%s,%s,%s)",
-            (normalize_text(username), display_name, pbkdf2_hash_password(password), "admin", 1, utc_now_iso()),
-        )
+        hashed = pbkdf2_hash_password(password)
+        if _users_has_password:
+            cur.execute(
+                """
+                INSERT INTO users(username, display_name, password, password_hash, role, is_active, created_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (username)
+                DO UPDATE SET display_name=EXCLUDED.display_name, password=EXCLUDED.password, password_hash=EXCLUDED.password_hash, role='admin', is_active=1
+                """,
+                (normalize_text(username), display_name, hashed, hashed, "admin", 1, utc_now_iso()),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO users(username, display_name, password_hash, role, is_active, created_at)
+                VALUES (%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (username)
+                DO UPDATE SET display_name=EXCLUDED.display_name, password_hash=EXCLUDED.password_hash, role='admin', is_active=1
+                """,
+                (normalize_text(username), display_name, hashed, "admin", 1, utc_now_iso()),
+            )
     conn.commit()
 
 
@@ -465,16 +578,33 @@ class CreateTaskBody(BaseModel):
 
 @app.get("/api/health")
 def health():
-    with db_connect() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1;")
-            cur.fetchone()
-    return {"ok": True, "message": "Backend hidup dan database tersambung"}
+    try:
+        with db_connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1;")
+                cur.fetchone()
+        return {"ok": True, "message": "Backend hidup dan database tersambung"}
+    except psycopg2.OperationalError as e:
+        detail = str(e)
+        hint = "Tidak bisa konek ke database. Host Supabase kamu resolve ke IPv6, tapi jaringan ini tidak punya koneksi IPv6 (network unreachable). Pakai Supabase Connection Pooler (isi DATABASE_URL_POOLER di .env / Vercel env), atau gunakan jaringan yang support IPv6."
+        if (os.getenv("DEBUG") or "").strip() == "1":
+            raise HTTPException(status_code=503, detail=f"{hint} Detail: {detail}")
+        raise HTTPException(status_code=503, detail=hint)
 
 
 @app.post("/api/login")
 def login(body: LoginBody, request: Request):
     with db_connect() as conn:
+        with conn.cursor() as cur:
+            pw_expr = "COALESCE(password_hash, '')"
+            if _users_has_password and _users_has_password_hash:
+                pw_expr = "COALESCE(password_hash, password, '')"
+            elif _users_has_password and not _users_has_password_hash:
+                pw_expr = "COALESCE(password, '')"
+            cur.execute(f"SELECT COUNT(1) FROM users WHERE {pw_expr} <> '' AND is_active = 1")
+            user_count = int((cur.fetchone() or [0])[0] or 0)
+        if user_count == 0 and not (os.getenv("BOOTSTRAP_ADMIN_PASSWORD") or "").strip():
+            raise HTTPException(status_code=503, detail="Belum ada user. Set BOOTSTRAP_ADMIN_PASSWORD di environment/.env lalu restart backend untuk membuat admin pertama.")
         if _rate_limit_login(conn, request):
             raise HTTPException(status_code=429, detail="Terlalu banyak percobaan login. Coba lagi beberapa menit.")
         username = normalize_text(body.username or "")
@@ -485,16 +615,24 @@ def login(body: LoginBody, request: Request):
             _record_login_attempt(conn, request, success=False)
             raise HTTPException(status_code=400, detail="Username dan password wajib diisi")
 
+        fields = ["id", "username", "display_name", "role", "is_active"]
+        if _users_has_password_hash:
+            fields.append("password_hash")
+        if _users_has_password:
+            fields.append("password")
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT id, username, display_name, password_hash, role, is_active FROM users WHERE username=%s",
-                (username,),
-            )
+            cur.execute(f"SELECT {', '.join(fields)} FROM users WHERE username=%s", (username,))
             user = cur.fetchone()
             if not user or int(user["is_active"]) != 1:
                 _record_login_attempt(conn, request, success=False)
                 raise HTTPException(status_code=401, detail="Login gagal")
-            if not pbkdf2_verify_password(password, str(user["password_hash"])):
+            stored = (user.get("password_hash") or "") if _users_has_password_hash else ""
+            if not stored and _users_has_password:
+                stored = user.get("password") or ""
+            if not stored:
+                _record_login_attempt(conn, request, success=False)
+                raise HTTPException(status_code=401, detail="Login gagal")
+            if not pbkdf2_verify_password(password, str(stored)):
                 _record_login_attempt(conn, request, success=False)
                 raise HTTPException(status_code=401, detail="Login gagal")
 
@@ -1045,10 +1183,17 @@ def admin_create_user(body: CreateUserBody, request: Request):
         now = utc_now_iso()
         try:
             with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO users(username, display_name, password_hash, role, is_active, created_at) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id",
-                    (username, display_name, pbkdf2_hash_password(password), role, 1, now),
-                )
+                hashed = pbkdf2_hash_password(password)
+                if _users_has_password:
+                    cur.execute(
+                        "INSERT INTO users(username, display_name, password, password_hash, role, is_active, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+                        (username, display_name, hashed, hashed, role, 1, now),
+                    )
+                else:
+                    cur.execute(
+                        "INSERT INTO users(username, display_name, password_hash, role, is_active, created_at) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id",
+                        (username, display_name, hashed, role, 1, now),
+                    )
                 record_id = int(cur.fetchone()[0])
                 _audit(
                     conn,
@@ -1113,7 +1258,11 @@ def admin_reset_password(user_id: str, request: Request):
                 raise HTTPException(status_code=404, detail="User tidak ditemukan")
             temp_password = secrets.token_urlsafe(9)[:10]
             before = dict(row)
-            cur.execute("UPDATE users SET password_hash=%s WHERE id=%s", (pbkdf2_hash_password(temp_password), user_id))
+            hashed = pbkdf2_hash_password(temp_password)
+            if _users_has_password:
+                cur.execute("UPDATE users SET password=%s, password_hash=%s WHERE id=%s", (hashed, hashed, user_id))
+            else:
+                cur.execute("UPDATE users SET password_hash=%s WHERE id=%s", (hashed, user_id))
             after = {**before}
             _audit(conn, sess, "users", str(user_id), "reset_password", before, after)
         conn.commit()
