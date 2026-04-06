@@ -781,7 +781,7 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/react" or path == "/react/index.html":
-            react_index = ROOT_DIR / "react-ui" / "dist" / "index.html"
+            react_index = ROOT_DIR / "react-ui" / "dist" / "react" / "index.html"
             if react_index.exists():
                 self._serve_file(react_index, "text/html; charset=utf-8")
                 return
@@ -790,7 +790,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
         if path.startswith("/react/assets/"):
             rel = path.removeprefix("/react/")
-            file_path = ROOT_DIR / "react-ui" / "dist" / rel
+            file_path = ROOT_DIR / "react-ui" / "dist" / "react" / rel
             ext = file_path.suffix.lower()
             if ext == ".js":
                 ctype = "text/javascript; charset=utf-8"

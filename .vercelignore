@@ -5,6 +5,9 @@ __pycache__
 # Abaikan file konfigurasi pribadi
 .env
 
+# Abaikan database lokal
+*.db
+
 # Abaikan file sistem
 .git
 

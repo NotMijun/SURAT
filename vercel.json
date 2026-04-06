@@ -1,1 +1,15 @@
-{}
+{
+  "version": 2,
+  "builds": [
+    { "src": "api/index.py", "use": "@vercel/python" },
+    { "src": "react-ui/package.json", "use": "@vercel/static-build", "config": { "distDir": "dist" } },
+    { "src": "index.html", "use": "@vercel/static" },
+    { "src": "app.html", "use": "@vercel/static" },
+    { "src": "styles.css", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/api/(.*)", "dest": "api/index.py" },
+    { "handle": "filesystem" },
+    { "src": "/react(/.*)?", "dest": "/react/index.html" }
+  ]
+}
