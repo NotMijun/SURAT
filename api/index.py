@@ -76,6 +76,17 @@ def utc_now_iso() -> str:
 def normalize_text(s: str) -> str:
     return " ".join((s or "").strip().lower().split())
 
+def _day_bounds(date_str: str) -> tuple[str, str] | None:
+    d = (date_str or "").strip()
+    if len(d) != 10:
+        return None
+    if d[4] != "-" or d[7] != "-":
+        return None
+    y, m, day = d.split("-", 2)
+    if not (y.isdigit() and m.isdigit() and day.isdigit()):
+        return None
+    return (f"{d}T00:00:00", f"{d}T23:59:59")
+
 
 def pbkdf2_hash_password(password: str, salt: bytes | None = None) -> str:
     salt = salt or secrets.token_bytes(16)
@@ -675,6 +686,16 @@ def logout(request: Request):
             conn.commit()
     return {"ok": True}
 
+@app.post("/api/logout_all")
+def logout_all(request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM sessions WHERE user_id=%s", (int(sess["user_id"]),))
+            deleted = int(cur.rowcount or 0)
+        conn.commit()
+        return {"ok": True, "deleted": deleted}
+
 
 @app.get("/api/handover")
 def handover(request: Request):
@@ -705,11 +726,14 @@ def handover(request: Request):
 
 
 @app.get("/api/keys")
-def list_keys(request: Request, status: str = "open", q: str = ""):
+def list_keys(request: Request, status: str = "open", q: str = "", date: str = "", sort: str = "checkout_desc", limit: int = 200):
     with db_connect() as conn:
         _require_session(conn, request)
         status = (status or "open").strip()
         qn = normalize_text(q)
+        bounds = _day_bounds(date)
+        sort = (sort or "checkout_desc").strip()
+        limit = max(1, min(500, int(limit or 200)))
         where = []
         params: list[Any] = []
         if status in ("open", "closed", "void"):
@@ -718,6 +742,12 @@ def list_keys(request: Request, status: str = "open", q: str = ""):
         if qn:
             where.append("(kt.borrower_name_norm LIKE %s OR kt.key_name_norm LIKE %s)")
             params.extend([f"%{qn}%", f"%{qn}%"])
+        if bounds:
+            where.append("kt.checkout_at BETWEEN %s AND %s")
+            params.extend([bounds[0], bounds[1]])
+        order = "kt.checkout_at DESC"
+        if sort == "checkout_asc":
+            order = "kt.checkout_at ASC"
         sql = """
           SELECT kt.id, kt.borrower_name, kt.unit, kt.key_name, kt.checkout_at, kt.checkin_at, kt.notes, kt.status,
                  u.display_name AS created_by_name,
@@ -729,7 +759,8 @@ def list_keys(request: Request, status: str = "open", q: str = ""):
         """
         if where:
             sql += " WHERE " + " AND ".join(where)
-        sql += " ORDER BY kt.checkout_at DESC LIMIT 200"
+        sql += f" ORDER BY {order} LIMIT %s"
+        params.append(limit)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
@@ -883,15 +914,24 @@ def patch_key(key_id: str, body: PatchKeyBody, request: Request):
 
 
 @app.get("/api/mutasi")
-def list_mutasi(request: Request, q: str = ""):
+def list_mutasi(request: Request, q: str = "", date: str = "", sort: str = "occurred_desc", limit: int = 200):
     with db_connect() as conn:
         _require_session(conn, request)
         qn = normalize_text(q)
+        bounds = _day_bounds(date)
+        sort = (sort or "occurred_desc").strip()
+        limit = max(1, min(500, int(limit or 200)))
         where = []
         params: list[Any] = []
         if qn:
             where.append("(lower(kind) LIKE %s OR lower(description) LIKE %s)")
             params.extend([f"%{qn}%", f"%{qn}%"])
+        if bounds:
+            where.append("m.occurred_at BETWEEN %s AND %s")
+            params.extend([bounds[0], bounds[1]])
+        order = "m.occurred_at DESC"
+        if sort == "occurred_asc":
+            order = "m.occurred_at ASC"
         sql = """
           SELECT m.id, m.occurred_at, m.kind, m.description, u.display_name AS created_by_name, m.shift, m.post
           FROM mutasi_entries m
@@ -899,7 +939,8 @@ def list_mutasi(request: Request, q: str = ""):
         """
         if where:
             sql += " WHERE " + " AND ".join(where)
-        sql += " ORDER BY m.occurred_at DESC LIMIT 200"
+        sql += f" ORDER BY {order} LIMIT %s"
+        params.append(limit)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
@@ -932,11 +973,14 @@ def create_mutasi(body: CreateMutasiBody, request: Request):
 
 
 @app.get("/api/guests")
-def list_guests(request: Request, status: str = "in", q: str = ""):
+def list_guests(request: Request, status: str = "in", q: str = "", date: str = "", sort: str = "checkin_desc", limit: int = 200):
     with db_connect() as conn:
         _require_session(conn, request)
         status = (status or "in").strip()
         qn = normalize_text(q)
+        bounds = _day_bounds(date)
+        sort = (sort or "checkin_desc").strip()
+        limit = max(1, min(500, int(limit or 200)))
         where = []
         params: list[Any] = []
         if status in ("in", "out"):
@@ -945,6 +989,12 @@ def list_guests(request: Request, status: str = "in", q: str = ""):
         if qn:
             where.append("(lower(g.name) LIKE %s OR lower(g.instansi) LIKE %s OR lower(g.purpose) LIKE %s)")
             params.extend([f"%{qn}%", f"%{qn}%", f"%{qn}%"])
+        if bounds:
+            where.append("g.checkin_at BETWEEN %s AND %s")
+            params.extend([bounds[0], bounds[1]])
+        order = "g.checkin_at DESC"
+        if sort == "checkin_asc":
+            order = "g.checkin_at ASC"
         sql = """
           SELECT g.id, g.name, g.instansi, g.purpose, g.meet_person, g.checkin_at, g.checkout_at, g.notes, g.status,
                  u.display_name AS created_by_name, g.shift, g.post
@@ -953,7 +1003,8 @@ def list_guests(request: Request, status: str = "in", q: str = ""):
         """
         if where:
             sql += " WHERE " + " AND ".join(where)
-        sql += " ORDER BY g.checkin_at DESC LIMIT 200"
+        sql += f" ORDER BY {order} LIMIT %s"
+        params.append(limit)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
@@ -964,14 +1015,12 @@ def list_guests(request: Request, status: str = "in", q: str = ""):
 def create_guest(body: CreateGuestBody, request: Request):
     with db_connect() as conn:
         sess = _require_session(conn, request)
-        name = (body.name or "").strip()
-        instansi = (body.instansi or "").strip()
-        purpose = (body.purpose or "").strip()
-        meet = (body.meet_person or "").strip()
+        name = (body.name or "").strip() or "Tidak diketahui"
+        instansi = (body.instansi or "").strip() or "-"
+        purpose = (body.purpose or "").strip() or "-"
+        meet = (body.meet_person or "").strip() or "-"
         checkin_at = (body.checkin_at or "").strip() or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         notes = (body.notes or "").strip()
-        if not name or not instansi or not purpose or not meet:
-            raise HTTPException(status_code=400, detail="Data tamu belum lengkap")
         now = utc_now_iso()
         with conn.cursor() as cur:
             cur.execute(
@@ -1022,15 +1071,24 @@ def checkout_guest(guest_id: str, request: Request):
 
 
 @app.get("/api/tasks")
-def list_tasks(request: Request, q: str = ""):
+def list_tasks(request: Request, q: str = "", date: str = "", sort: str = "occurred_desc", limit: int = 200):
     with db_connect() as conn:
         _require_session(conn, request)
         qn = normalize_text(q)
+        bounds = _day_bounds(date)
+        sort = (sort or "occurred_desc").strip()
+        limit = max(1, min(500, int(limit or 200)))
         where = []
         params: list[Any] = []
         if qn:
             where.append("(lower(t.kind) LIKE %s OR lower(t.destination) LIKE %s OR lower(t.notes) LIKE %s)")
             params.extend([f"%{qn}%", f"%{qn}%", f"%{qn}%"])
+        if bounds:
+            where.append("t.occurred_at BETWEEN %s AND %s")
+            params.extend([bounds[0], bounds[1]])
+        order = "t.occurred_at DESC"
+        if sort == "occurred_asc":
+            order = "t.occurred_at ASC"
         sql = """
           SELECT t.id, t.kind, t.occurred_at, t.destination, t.notes, u.display_name AS created_by_name, t.shift, t.post
           FROM task_entries t
@@ -1038,7 +1096,8 @@ def list_tasks(request: Request, q: str = ""):
         """
         if where:
             sql += " WHERE " + " AND ".join(where)
-        sql += " ORDER BY t.occurred_at DESC LIMIT 200"
+        sql += f" ORDER BY {order} LIMIT %s"
+        params.append(limit)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()

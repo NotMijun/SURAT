@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import { apiGet, apiPost } from '../lib/api'
-import { clearToken, compactKey, themeKey, tokenKey } from '../lib/storage'
+import { accentKey, clearToken, compactKey, themeKey, tokenKey } from '../lib/storage'
 import type { Me } from '../types'
 import { useToast } from '../components/ToastHost'
 import DashboardPage from './modules/Dashboard'
@@ -12,6 +12,8 @@ import MutasiPage from './modules/Mutasi'
 import AdminPage from './modules/Admin'
 
 const tabClass = ({ isActive }: { isActive: boolean }) => `tab${isActive ? ' tab-active' : ''}`
+const accents = ['gold', 'blue', 'green', 'mono'] as const
+type Accent = (typeof accents)[number]
 
 export default function Shell() {
   const nav = useNavigate()
@@ -21,6 +23,7 @@ export default function Shell() {
   const [loading, setLoading] = useState(true)
   const [theme, setTheme] = useState<'light' | 'dark'>(localStorage.getItem(themeKey) === 'light' ? 'light' : 'dark')
   const [compact, setCompact] = useState(localStorage.getItem(compactKey) === 'true')
+  const [accent, setAccent] = useState<Accent>((localStorage.getItem(accentKey) as Accent) || 'gold')
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -31,6 +34,11 @@ export default function Shell() {
     document.documentElement.dataset.compact = compact ? 'true' : 'false'
     localStorage.setItem(compactKey, String(compact))
   }, [compact])
+
+  useEffect(() => {
+    document.documentElement.dataset.accent = accent
+    localStorage.setItem(accentKey, accent)
+  }, [accent])
 
   useEffect(() => {
     if (!token) return
@@ -71,6 +79,17 @@ export default function Shell() {
     }
   }
 
+  const logoutAll = async () => {
+    const ok = window.confirm('Keluar dari semua perangkat?')
+    if (!ok) return
+    try {
+      await apiPost('/api/logout_all', {})
+    } finally {
+      clearToken()
+      nav('/login', { replace: true })
+    }
+  }
+
   return (
     <div className="shell">
       <div className="topbar">
@@ -88,8 +107,23 @@ export default function Shell() {
           <button className="button button-secondary button-sm topbar-action" type="button" onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}>
             {theme === 'light' ? 'Mode: Terang' : 'Mode: Gelap'}
           </button>
+          <button
+            className="button button-secondary button-sm topbar-action"
+            type="button"
+            onClick={() =>
+              setAccent((a) => {
+                const idx = accents.indexOf(a)
+                return accents[(idx + 1) % accents.length]
+              })
+            }
+          >
+            Tema: {accent}
+          </button>
           <button className="button button-secondary button-sm topbar-action topbar-compact-toggle" type="button" onClick={() => setCompact((x) => !x)}>
             {compact ? 'Ringkas: On' : 'Ringkas: Off'}
+          </button>
+          <button className="button button-ghost" type="button" onClick={logoutAll}>
+            Keluar Semua
           </button>
           <button className="button button-ghost" type="button" onClick={logout}>
             Keluar

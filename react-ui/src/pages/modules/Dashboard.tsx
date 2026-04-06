@@ -4,11 +4,18 @@ import type { KeyTx, Me, ShiftReport } from '../../types'
 import { fmtTime, toYmd } from '../../lib/time'
 import { useToast } from '../../components/ToastHost'
 
+type HandoverRes = {
+  open_keys: Array<{ id: number; borrower_name: string; unit: string; key_name: string; checkout_at: string; notes: string | null; status: string }>
+  guests_in: Array<{ id: number; name: string; instansi: string; purpose: string; meet_person: string; checkin_at: string; status: string }>
+}
+
 export default function DashboardPage({ me }: { me: Me }) {
   const toast = useToast()
   const today = useMemo(() => toYmd(new Date()), [])
   const [report, setReport] = useState<ShiftReport | null>(null)
   const [keysOpen, setKeysOpen] = useState<KeyTx[]>([])
+  const [handover, setHandover] = useState<HandoverRes | null>(null)
+  const [overdueCount, setOverdueCount] = useState(0)
   const [q, setQ] = useState('')
   const [loading, setLoading] = useState(true)
 
@@ -18,11 +25,13 @@ export default function DashboardPage({ me }: { me: Me }) {
     Promise.all([
       apiGet<ShiftReport>(`/api/report/shift?date=${encodeURIComponent(today)}&shift=${encodeURIComponent(me.shift)}&post=${encodeURIComponent(me.post)}`),
       apiGet<{ items: KeyTx[] }>(`/api/keys?status=open&q=${encodeURIComponent(q)}`),
+      apiGet<HandoverRes>('/api/handover'),
     ])
-      .then(([r, k]) => {
+      .then(([r, k, h]) => {
         if (cancelled) return
         setReport(r)
         setKeysOpen(k.items || [])
+        setHandover(h)
       })
       .catch((err: any) => {
         if (cancelled) return
@@ -36,6 +45,18 @@ export default function DashboardPage({ me }: { me: Me }) {
       cancelled = true
     }
   }, [me.post, me.shift, q, toast, today])
+
+  useEffect(() => {
+    const rows = handover?.open_keys || []
+    const now = Date.now()
+    let n = 0
+    for (const r of rows) {
+      const ts = Date.parse(r.checkout_at || '')
+      if (!Number.isFinite(ts)) continue
+      if (now - ts > 4 * 60 * 60 * 1000) n += 1
+    }
+    setOverdueCount(n)
+  }, [handover])
 
   return (
     <section className="section">
@@ -58,7 +79,7 @@ export default function DashboardPage({ me }: { me: Me }) {
         <article className="stat">
           <div className="stat-label">Penitipan aktif</div>
           <div className="stat-value">{loading ? '…' : String(report?.counts.keys_open ?? 0)}</div>
-          <div className="stat-meta">Belum diambil</div>
+          <div className="stat-meta">{overdueCount > 0 ? `${overdueCount} overdue` : 'Belum diambil'}</div>
         </article>
         <article className="stat">
           <div className="stat-label">Tamu hari ini</div>
@@ -84,7 +105,7 @@ export default function DashboardPage({ me }: { me: Me }) {
           </header>
           <div className="card-body">
             <div className="table-wrap">
-              <table className="table">
+              <table className="table table-mobile-cards">
                 <thead>
                   <tr>
                     <th>Nama</th>
@@ -96,9 +117,9 @@ export default function DashboardPage({ me }: { me: Me }) {
                 <tbody>
                   {keysOpen.slice(0, 10).map((r) => (
                     <tr key={r.id}>
-                      <td>{r.borrower_name}</td>
-                      <td>{r.key_name}</td>
-                      <td>{fmtTime(r.checkout_at)}</td>
+                      <td data-label="Nama">{r.borrower_name}</td>
+                      <td data-label="Ruangan/Kunci">{r.key_name}</td>
+                      <td data-label="Jam titip">{fmtTime(r.checkout_at)}</td>
                       <td>
                         <span className="badge badge-warn">Dititipkan</span>
                       </td>
@@ -144,7 +165,53 @@ export default function DashboardPage({ me }: { me: Me }) {
           </div>
         </section>
       </div>
+
+      <section className="card">
+        <header className="card-header">
+          <div className="card-title">Serah terima (ringkas)</div>
+          <div className="row">
+            <button className="button button-secondary button-sm" type="button" onClick={() => window.print()}>
+              Cetak
+            </button>
+          </div>
+        </header>
+        <div className="card-body">
+          <div className="grid grid-2">
+            <div className="list">
+              <div className="list-item">
+                <div className="list-title">Kunci masih dipinjam</div>
+                <div className="list-meta">{handover ? `${handover.open_keys.length} entri (limit 50)` : '—'}</div>
+              </div>
+              {(handover?.open_keys || []).slice(0, 6).map((r) => (
+                <div key={r.id} className="list-item">
+                  <div className="list-title">
+                    {r.key_name} · {r.borrower_name}
+                  </div>
+                  <div className="list-meta">
+                    {fmtTime(r.checkout_at)} · {r.unit || '-'} {r.notes ? `· ${r.notes}` : ''}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="list">
+              <div className="list-item">
+                <div className="list-title">Tamu masih di dalam</div>
+                <div className="list-meta">{handover ? `${handover.guests_in.length} entri (limit 50)` : '—'}</div>
+              </div>
+              {(handover?.guests_in || []).slice(0, 6).map((r) => (
+                <div key={r.id} className="list-item">
+                  <div className="list-title">
+                    {r.name} · {r.instansi}
+                  </div>
+                  <div className="list-meta">
+                    {fmtTime(r.checkin_at)} · {r.purpose} · {r.meet_person}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
     </section>
   )
 }
-

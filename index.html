@@ -51,7 +51,7 @@
                 <input type="checkbox" name="remember" />
                 <span>Ingat saya</span>
               </label>
-              <a class="link" href="app.html">Masuk langsung (jika sudah login)</a>
+              <a class="link" href="/react/#/">Masuk langsung</a>
             </div>
 
             <button class="button button-primary" type="submit">Masuk</button>
@@ -138,10 +138,10 @@
               }
               if (data?.token) {
                 localStorage.setItem(tokenKey, data.token);
-                window.location.href = `/app.html?token=${encodeURIComponent(data.token)}#dashboard`;
+                window.location.href = `/react/#/`;
                 return;
               }
-              window.location.href = "/app.html#dashboard";
+              window.location.href = "/react/#/";
             } catch (err) {
               showError("Tidak bisa terhubung ke server lokal. Pastikan buka http://127.0.0.1:5173/ dan backend menyala: python -m uvicorn api.index:app --reload --port 5173.");
             }

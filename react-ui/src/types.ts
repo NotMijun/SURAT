@@ -42,6 +42,8 @@ export type GuestEntry = {
   notes?: string
   status: 'in' | 'out'
   created_by_name?: string
+  shift?: string
+  post?: string
 }
 
 export type TaskEntry = {
@@ -51,6 +53,8 @@ export type TaskEntry = {
   destination: string
   notes: string
   created_by_name?: string
+  shift?: string
+  post?: string
 }
 
 export type MutasiEntry = {
@@ -59,6 +63,8 @@ export type MutasiEntry = {
   kind: string
   description: string
   created_by_name?: string
+  shift?: string
+  post?: string
 }
 
 export type AdminUser = {
@@ -80,4 +86,3 @@ export type AuditRow = {
   table_name: string
   record_id: string
 }
-
