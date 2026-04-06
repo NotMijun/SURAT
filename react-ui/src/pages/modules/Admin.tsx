@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../lib/api'
 import type { AdminUser, AuditRow, Me } from '../../types'
 import { useToast } from '../../components/ToastHost'
@@ -35,41 +35,45 @@ export default function AdminPage({ me }: { me: Me }) {
 
   const selectedUser = useMemo(() => users.find((u) => u.id === selectedUserId) || null, [selectedUserId, users])
 
-  const refresh = async () => {
-    setLoading(true)
-    try {
-      const [u, a] = await Promise.all([
-        apiGet<{ items: AdminUser[] }>(`/api/admin/users?q=${encodeURIComponent(userQ)}`),
-        apiGet<{ items: AuditRow[] }>(`/api/admin/audit?q=${encodeURIComponent(auditQ)}&limit=120`),
-      ])
-      const userItems = u.items || []
-      setUsers(userItems)
-      setAudit(a.items || [])
-      const fallbackId = selectedUserId ?? userItems.find((x) => x.role === 'guard')?.id ?? userItems[0]?.id ?? null
-      setSelectedUserId(fallbackId)
-      if (fallbackId) {
-        const h = await apiGet<{ items: SecurityHistoryRow[] }>(
-          `/api/admin/security_history?user_id=${encodeURIComponent(String(fallbackId))}&limit=${encodeURIComponent(String(historyLimit))}`,
-        )
-        setHistory(h.items || [])
-      } else {
-        setHistory([])
+  const refresh = useCallback(
+    async (opts: { userQ: string; auditQ: string; historyLimit: number; selectedUserId: number | null }) => {
+      const { userQ, auditQ, historyLimit, selectedUserId } = opts
+      setLoading(true)
+      try {
+        const [u, a] = await Promise.all([
+          apiGet<{ items: AdminUser[] }>(`/api/admin/users?q=${encodeURIComponent(userQ)}`),
+          apiGet<{ items: AuditRow[] }>(`/api/admin/audit?q=${encodeURIComponent(auditQ)}&limit=120`),
+        ])
+        const userItems = u.items || []
+        setUsers(userItems)
+        setAudit(a.items || [])
+        const fallbackId = selectedUserId ?? userItems.find((x) => x.role === 'guard')?.id ?? userItems[0]?.id ?? null
+        setSelectedUserId(fallbackId)
+        if (fallbackId) {
+          const h = await apiGet<{ items: SecurityHistoryRow[] }>(
+            `/api/admin/security_history?user_id=${encodeURIComponent(String(fallbackId))}&limit=${encodeURIComponent(String(historyLimit))}`,
+          )
+          setHistory(h.items || [])
+        } else {
+          setHistory([])
+        }
+      } catch (err: any) {
+        toast.push(String(err?.message || err || 'Gagal memuat admin'), 'error')
+      } finally {
+        setLoading(false)
       }
-    } catch (err: any) {
-      toast.push(String(err?.message || err || 'Gagal memuat admin'), 'error')
-    } finally {
-      setLoading(false)
-    }
-  }
+    },
+    [toast],
+  )
 
   useEffect(() => {
-    const t = window.setTimeout(() => refresh().catch(() => {}), 300)
+    const t = window.setTimeout(() => refresh({ userQ, auditQ, historyLimit, selectedUserId }).catch(() => {}), 300)
     return () => window.clearTimeout(t)
-  }, [userQ, auditQ, historyLimit])
+  }, [auditQ, historyLimit, refresh, selectedUserId, userQ])
 
   useEffect(() => {
-    refresh().catch(() => {})
-  }, [])
+    refresh({ userQ: '', auditQ: '', historyLimit, selectedUserId: null }).catch(() => {})
+  }, [historyLimit, refresh])
 
   const selectUser = async (id: number) => {
     setSelectedUserId(id)
@@ -87,7 +91,7 @@ export default function AdminPage({ me }: { me: Me }) {
     try {
       await apiPatch(`/api/admin/users/${u.id}`, patch)
       toast.push('User disimpan', 'success')
-      await refresh()
+      await refresh({ userQ, auditQ, historyLimit, selectedUserId })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal simpan user'), 'error')
     }
@@ -110,7 +114,7 @@ export default function AdminPage({ me }: { me: Me }) {
     try {
       const res = await apiDelete<{ mode: string }>(`/api/admin/users/${id}/delete`)
       toast.push(res.mode === 'deleted' ? 'Akun dihapus' : 'Akun dinonaktifkan', 'success')
-      await refresh()
+      await refresh({ userQ, auditQ, historyLimit, selectedUserId })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal hapus akun'), 'error')
     }
@@ -123,7 +127,7 @@ export default function AdminPage({ me }: { me: Me }) {
     try {
       const res = await apiDelete<{ deleted: number }>(`/api/admin/security_history?user_id=${encodeURIComponent(String(selectedUserId))}&keep=0`)
       toast.push(`Riwayat dihapus (${res.deleted} entri)`, 'success')
-      await refresh()
+      await refresh({ userQ, auditQ, historyLimit, selectedUserId })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal hapus riwayat'), 'error')
     }
@@ -142,7 +146,7 @@ export default function AdminPage({ me }: { me: Me }) {
       await apiDelete(`/api/admin/records/${encodeURIComponent(table)}?id=${encodeURIComponent(id)}&note=${encodeURIComponent(note)}`)
       toast.push('Data diproses', 'success')
       e.currentTarget.reset()
-      await refresh()
+      await refresh({ userQ, auditQ, historyLimit, selectedUserId })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal hapus data'), 'error')
     }
@@ -155,7 +159,7 @@ export default function AdminPage({ me }: { me: Me }) {
         <div className="section-actions">
           <input className="input input-sm" value={userQ} onChange={(e) => setUserQ(e.target.value)} placeholder="Cari user..." />
           <input className="input input-sm" value={auditQ} onChange={(e) => setAuditQ(e.target.value)} placeholder="Cari audit..." />
-          <button className="button button-secondary button-sm" type="button" onClick={() => refresh()}>
+          <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ userQ, auditQ, historyLimit, selectedUserId })}>
             Refresh
           </button>
         </div>
@@ -427,4 +431,3 @@ function AdminUserRow({
     </tr>
   )
 }
-

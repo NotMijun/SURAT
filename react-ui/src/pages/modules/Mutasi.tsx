@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPost } from '../../lib/api'
 import type { Me, MutasiEntry } from '../../types'
 import { fmtTime, toIsoLocal, toYmd } from '../../lib/time'
@@ -16,26 +16,26 @@ export default function MutasiPage({ me }: { me: Me }) {
   const [time, setTime] = useState('08:00')
   const [desc, setDesc] = useState('')
 
-  const refresh = async () => {
+  const refresh = useCallback(async (query: string) => {
     setLoading(true)
     try {
-      const res = await apiGet<{ items: MutasiEntry[] }>(`/api/mutasi?q=${encodeURIComponent(q)}`)
+      const res = await apiGet<{ items: MutasiEntry[] }>(`/api/mutasi?q=${encodeURIComponent(query)}`)
       setItems(res.items || [])
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal memuat mutasi'), 'error')
     } finally {
       setLoading(false)
     }
-  }
+  }, [toast])
 
   useEffect(() => {
-    const t = window.setTimeout(() => refresh().catch(() => {}), 250)
+    const t = window.setTimeout(() => refresh(q).catch(() => {}), 250)
     return () => window.clearTimeout(t)
-  }, [q])
+  }, [q, refresh])
 
   useEffect(() => {
-    refresh().catch(() => {})
-  }, [])
+    refresh('').catch(() => {})
+  }, [refresh])
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -45,7 +45,7 @@ export default function MutasiPage({ me }: { me: Me }) {
       await apiPost('/api/mutasi', { kind, occurred_at: toIsoLocal(today, time), description: desc })
       setDesc('')
       toast.push('Mutasi dicatat', 'success')
-      await refresh()
+      await refresh(q)
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal menyimpan'), 'error')
     } finally {
@@ -59,7 +59,7 @@ export default function MutasiPage({ me }: { me: Me }) {
         <h2 className="h2">Buku Mutasi</h2>
         <div className="section-actions">
           <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari kejadian..." />
-          <button className="button button-secondary button-sm" type="button" onClick={() => refresh()}>
+          <button className="button button-secondary button-sm" type="button" onClick={() => refresh(q)}>
             Refresh
           </button>
         </div>
@@ -139,4 +139,3 @@ export default function MutasiPage({ me }: { me: Me }) {
     </section>
   )
 }
-

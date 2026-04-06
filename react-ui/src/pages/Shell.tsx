@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
+import { Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import { apiGet, apiPost } from '../lib/api'
 import { clearToken, compactKey, themeKey, tokenKey } from '../lib/storage'
 import type { Me } from '../types'
@@ -79,17 +79,16 @@ export default function Shell() {
             <div className="brand-mark">LB</div>
             <div className="topbar-title">
               <div className="title">Logbook Security RS</div>
-              <div className="subtitle">Pencatatan shift · kunci · tamu · mutasi</div>
             </div>
           </div>
         </div>
         <div className="topbar-right">
           <div className="pill">{me ? `Shift: ${me.shift} · Pos: ${me.post}` : 'Shift: -'}</div>
           <div className="pill pill-muted">{me ? `Petugas: ${me.user.display_name}` : 'Petugas: -'}</div>
-          <button className="button button-secondary button-sm" type="button" onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}>
+          <button className="button button-secondary button-sm topbar-action" type="button" onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}>
             {theme === 'light' ? 'Mode: Terang' : 'Mode: Gelap'}
           </button>
-          <button className="button button-secondary button-sm" type="button" onClick={() => setCompact((x) => !x)}>
+          <button className="button button-secondary button-sm topbar-action topbar-compact-toggle" type="button" onClick={() => setCompact((x) => !x)}>
             {compact ? 'Ringkas: On' : 'Ringkas: Off'}
           </button>
           <button className="button button-ghost" type="button" onClick={logout}>
@@ -120,9 +119,6 @@ export default function Shell() {
               Admin
             </NavLink>
           )}
-          <Link className="tab" to="/app.html">
-            Versi HTML
-          </Link>
         </div>
       </div>
 
@@ -149,4 +145,3 @@ export default function Shell() {
     </div>
   )
 }
-

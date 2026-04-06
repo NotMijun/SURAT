@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPost } from '../../lib/api'
 import type { Me, TaskEntry } from '../../types'
 import { fmtTime, toIsoLocal, toYmd } from '../../lib/time'
@@ -17,26 +17,26 @@ export default function TasksPage({ me }: { me: Me }) {
   const [destination, setDestination] = useState('')
   const [notes, setNotes] = useState('')
 
-  const refresh = async () => {
+  const refresh = useCallback(async (query: string) => {
     setLoading(true)
     try {
-      const res = await apiGet<{ items: TaskEntry[] }>(`/api/tasks?q=${encodeURIComponent(q)}`)
+      const res = await apiGet<{ items: TaskEntry[] }>(`/api/tasks?q=${encodeURIComponent(query)}`)
       setItems(res.items || [])
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal memuat tugas'), 'error')
     } finally {
       setLoading(false)
     }
-  }
+  }, [toast])
 
   useEffect(() => {
-    const t = window.setTimeout(() => refresh().catch(() => {}), 250)
+    const t = window.setTimeout(() => refresh(q).catch(() => {}), 250)
     return () => window.clearTimeout(t)
-  }, [q])
+  }, [q, refresh])
 
   useEffect(() => {
-    refresh().catch(() => {})
-  }, [])
+    refresh('').catch(() => {})
+  }, [refresh])
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -52,7 +52,7 @@ export default function TasksPage({ me }: { me: Me }) {
       setDestination('')
       setNotes('')
       toast.push('Tugas dicatat', 'success')
-      await refresh()
+      await refresh(q)
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal menyimpan'), 'error')
     } finally {
@@ -66,7 +66,7 @@ export default function TasksPage({ me }: { me: Me }) {
         <h2 className="h2">Tugas Operasional Security</h2>
         <div className="section-actions">
           <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari tugas..." />
-          <button className="button button-secondary button-sm" type="button" onClick={() => refresh()}>
+          <button className="button button-secondary button-sm" type="button" onClick={() => refresh(q)}>
             Refresh
           </button>
         </div>
@@ -153,4 +153,3 @@ export default function TasksPage({ me }: { me: Me }) {
     </section>
   )
 }
-

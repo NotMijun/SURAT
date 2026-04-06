@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiGet, apiPost } from '../../lib/api'
 import type { KeyTx, Me } from '../../types'
 import { fmtTime, toIsoLocal, toYmd } from '../../lib/time'
@@ -25,12 +25,12 @@ export default function KeysPage({ me }: { me: Me }) {
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const refresh = async () => {
+  const refresh = useCallback(async (query: string) => {
     setLoading(true)
     try {
       const [a, b] = await Promise.all([
-        apiGet<{ items: KeyTx[] }>(`/api/keys?status=open&q=${encodeURIComponent(q)}`),
-        apiGet<{ items: KeyTx[] }>(`/api/keys?status=closed&q=${encodeURIComponent(q)}`),
+        apiGet<{ items: KeyTx[] }>(`/api/keys?status=open&q=${encodeURIComponent(query)}`),
+        apiGet<{ items: KeyTx[] }>(`/api/keys?status=closed&q=${encodeURIComponent(query)}`),
       ])
       setOpen(a.items || [])
       setClosed(b.items || [])
@@ -39,16 +39,16 @@ export default function KeysPage({ me }: { me: Me }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [toast])
 
   useEffect(() => {
-    const t = window.setTimeout(() => refresh().catch(() => {}), 250)
+    const t = window.setTimeout(() => refresh(q).catch(() => {}), 250)
     return () => window.clearTimeout(t)
-  }, [q])
+  }, [q, refresh])
 
   useEffect(() => {
-    refresh().catch(() => {})
-  }, [])
+    refresh('').catch(() => {})
+  }, [refresh])
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -75,7 +75,7 @@ export default function KeysPage({ me }: { me: Me }) {
       setKeyName('')
       setNotes('')
       toast.push('Disimpan', 'success')
-      await refresh()
+      await refresh(q)
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal menyimpan'), 'error')
     } finally {
@@ -87,7 +87,7 @@ export default function KeysPage({ me }: { me: Me }) {
     try {
       await apiPost(`/api/keys/${id}/return`, {})
       toast.push('Kunci ditandai diambil', 'success')
-      await refresh()
+      await refresh(q)
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal memproses'), 'error')
     }
@@ -99,7 +99,7 @@ export default function KeysPage({ me }: { me: Me }) {
         <h2 className="h2">Penitipan Kunci</h2>
         <div className="section-actions">
           <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nama / kunci..." />
-          <button className="button button-secondary button-sm" type="button" onClick={() => refresh()}>
+          <button className="button button-secondary button-sm" type="button" onClick={() => refresh(q)}>
             Refresh
           </button>
         </div>
@@ -231,4 +231,3 @@ export default function KeysPage({ me }: { me: Me }) {
     </section>
   )
 }
-
