@@ -13,12 +13,18 @@ from pathlib import Path
 from sys import stderr
 from typing import Any, Literal
 
-import psycopg2
-import psycopg2.extras
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from dotenv import load_dotenv
 from pydantic import BaseModel
+
+_psycopg2_import_error: str | None = None
+try:
+    import psycopg2  # type: ignore
+    import psycopg2.extras  # type: ignore
+except Exception as e:
+    psycopg2 = None  # type: ignore
+    _psycopg2_import_error = repr(e)
 
 SESSION_TTL_SECONDS = 60 * 60 * 2
 LOGIN_RATE_WINDOW_SECONDS = 10 * 60
@@ -153,6 +159,11 @@ def _database_url() -> str:
 
 @contextmanager
 def db_connect():
+    if psycopg2 is None:
+        hint = "Dependency psycopg2 tidak terpasang di environment server. Pastikan Vercel install requirements.txt untuk folder api/."
+        if (os.getenv("DEBUG") or "").strip() == "1":
+            raise HTTPException(status_code=500, detail=f"{hint} Detail: {_psycopg2_import_error}")
+        raise HTTPException(status_code=500, detail=hint)
     hostaddr = (os.getenv("DATABASE_HOSTADDR") or "").strip()
     if hostaddr:
         conn = psycopg2.connect(_database_url(), connect_timeout=5, hostaddr=hostaddr)
@@ -653,7 +664,7 @@ def health():
                 cur.execute("SELECT 1;")
                 cur.fetchone()
         return {"ok": True, "message": "Backend hidup dan database tersambung"}
-    except psycopg2.OperationalError as e:
+    except Exception as e:
         detail = str(e)
         hint = "Tidak bisa konek ke database. Host Supabase kamu resolve ke IPv6, tapi jaringan ini tidak punya koneksi IPv6 (network unreachable). Pakai Supabase Connection Pooler (isi DATABASE_URL_POOLER di .env / Vercel env), atau gunakan jaringan yang support IPv6."
         if (os.getenv("DEBUG") or "").strip() == "1":
