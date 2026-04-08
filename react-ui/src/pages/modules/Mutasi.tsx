@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react'
-import { apiGet, apiPost } from '../../lib/api'
+import { apiGet, apiPost, apiPostForm } from '../../lib/api'
 import type { Me, MutasiEntry } from '../../types'
 import { fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useToast } from '../../components/ToastHost'
@@ -18,6 +18,8 @@ export default function MutasiPage({ me }: { me: Me }) {
   const [kind, setKind] = useState('Kejadian khusus')
   const [time, setTime] = useState(nowHm())
   const [desc, setDesc] = useState('')
+  const [photo, setPhoto] = useState<File | null>(null)
+  const [photoKey, setPhotoKey] = useState(0)
 
   const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number }) => {
     const { q, date, sort, limit } = opts
@@ -60,8 +62,19 @@ export default function MutasiPage({ me }: { me: Me }) {
     if (busy) return
     setBusy(true)
     try {
-      await apiPost('/api/mutasi', { kind, occurred_at: toIsoLocal(today, time), description: desc })
+      if (photo) {
+        const form = new FormData()
+        form.set('kind', kind)
+        form.set('occurred_at', toIsoLocal(today, time))
+        form.set('description', desc)
+        form.set('photo', photo)
+        await apiPostForm('/api/mutasi_with_photo', form)
+      } else {
+        await apiPost('/api/mutasi', { kind, occurred_at: toIsoLocal(today, time), description: desc })
+      }
       setDesc('')
+      setPhoto(null)
+      setPhotoKey((x) => x + 1)
       toast.push('Mutasi dicatat', 'success')
       await refresh({ q, date, sort, limit })
     } catch (err: any) {
@@ -102,7 +115,9 @@ export default function MutasiPage({ me }: { me: Me }) {
             onClick={() =>
               downloadCsv(
                 `mutasi-${date || 'semua'}.csv`,
-                [['Jam', 'Jenis', 'Deskripsi', 'Petugas', 'Shift', 'Pos']].concat(items.map((r) => [fmtTime(r.occurred_at), r.kind, r.description, r.created_by_name || '-', r.shift || '-', r.post || '-'])),
+                [['Jam', 'Jenis', 'Deskripsi', 'Foto', 'Petugas', 'Shift', 'Pos']].concat(
+                  items.map((r) => [fmtTime(r.occurred_at), r.kind, r.description, r.has_photo ? 'Ya' : 'Tidak', r.created_by_name || '-', r.shift || '-', r.post || '-']),
+                ),
               )
             }
           >
@@ -156,6 +171,20 @@ export default function MutasiPage({ me }: { me: Me }) {
               </label>
               <input className="input" id="mutasiDesc" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Ringkasan kejadian" required />
             </div>
+            <div className="field grid-span-3">
+              <label className="label" htmlFor="mutasiPhoto">
+                Foto (opsional)
+              </label>
+              <input
+                key={photoKey}
+                className="input"
+                id="mutasiPhoto"
+                type="file"
+                accept="image/*"
+                onChange={(e) => setPhoto(e.target.files?.[0] || null)}
+              />
+              <div className="muted">{photo ? `Dipilih: ${photo.name}` : 'Tidak ada foto'}</div>
+            </div>
             <div className="row row-right grid-span-3">
               <button className="button button-primary" type="submit" disabled={busy}>
                 {busy ? 'Menyimpan...' : 'Simpan'}
@@ -178,6 +207,7 @@ export default function MutasiPage({ me }: { me: Me }) {
                   <th>Jam</th>
                   <th>Jenis</th>
                   <th>Deskripsi</th>
+                  <th>Foto</th>
                   <th>Petugas</th>
                 </tr>
               </thead>
@@ -187,12 +217,21 @@ export default function MutasiPage({ me }: { me: Me }) {
                     <td data-label="Jam">{fmtTime(r.occurred_at)}</td>
                     <td data-label="Jenis">{r.kind}</td>
                     <td data-label="Deskripsi">{r.description}</td>
+                    <td data-label="Foto">
+                      {r.has_photo && r.photo_url ? (
+                        <a className="button button-sm button-secondary" href={r.photo_url} target="_blank" rel="noreferrer">
+                          Foto
+                        </a>
+                      ) : (
+                        <span className="muted">-</span>
+                      )}
+                    </td>
                     <td data-label="Petugas">{r.created_by_name || '-'}</td>
                   </tr>
                 ))}
                 {items.length === 0 && (
                   <tr>
-                    <td className="muted" colSpan={4}>
+                    <td className="muted" colSpan={5}>
                       Tidak ada data.
                     </td>
                   </tr>

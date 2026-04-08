@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { apiGet, apiPost } from '../../lib/api'
+import { apiGet, apiPost, apiPostForm } from '../../lib/api'
 import type { KeyTx, Me } from '../../types'
 import { fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useToast } from '../../components/ToastHost'
@@ -26,6 +26,8 @@ export default function KeysPage({ me }: { me: Me }) {
   const [keyName, setKeyName] = useState('')
   const [time, setTime] = useState(nowHm())
   const [notes, setNotes] = useState('')
+  const [photo, setPhoto] = useState<File | null>(null)
+  const [photoKey, setPhotoKey] = useState(0)
   const [busy, setBusy] = useState(false)
 
   const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number }) => {
@@ -83,17 +85,42 @@ export default function KeysPage({ me }: { me: Me }) {
         notes,
       }
       try {
-        await apiPost('/api/keys', payload)
+        if (photo) {
+          const form = new FormData()
+          form.set('borrower_name', payload.borrower_name)
+          form.set('unit', payload.unit)
+          form.set('key_name', payload.key_name)
+          form.set('checkout_at', payload.checkout_at)
+          form.set('notes', payload.notes)
+          form.set('photo', photo)
+          await apiPostForm('/api/keys_with_photo', form)
+        } else {
+          await apiPost('/api/keys', payload)
+        }
       } catch (err: any) {
         const msg = String(err?.message || err || '')
         const ok = window.confirm(`${msg}\n\nTetap simpan?`)
         if (!ok) throw err
-        await apiPost('/api/keys', { ...payload, force: true })
+        if (photo) {
+          const form = new FormData()
+          form.set('borrower_name', payload.borrower_name)
+          form.set('unit', payload.unit)
+          form.set('key_name', payload.key_name)
+          form.set('checkout_at', payload.checkout_at)
+          form.set('notes', payload.notes)
+          form.set('force', 'true')
+          form.set('photo', photo)
+          await apiPostForm('/api/keys_with_photo', form)
+        } else {
+          await apiPost('/api/keys', { ...payload, force: true })
+        }
       }
       setBorrower('')
       setUnit('')
       setKeyName('')
       setNotes('')
+      setPhoto(null)
+      setPhotoKey((x) => x + 1)
       toast.push('Disimpan', 'success')
       await refresh({ q, date, sort, limit })
     } catch (err: any) {
@@ -144,13 +171,14 @@ export default function KeysPage({ me }: { me: Me }) {
             onClick={() =>
               downloadCsv(
                 `kunci-open-${date || 'semua'}.csv`,
-                [['Nama', 'Unit', 'Ruangan/Kunci', 'Jam titip', 'Catatan', 'Petugas', 'Status']].concat(
+                [['Nama', 'Unit', 'Ruangan/Kunci', 'Jam titip', 'Catatan', 'Foto', 'Petugas', 'Status']].concat(
                   open.map((r) => [
                     String(r.borrower_name || ''),
                     String(r.unit || ''),
                     String(r.key_name || ''),
                     String(fmtTime(r.checkout_at)),
                     String(r.notes || ''),
+                    r.has_photo ? 'Ya' : 'Tidak',
                     String(r.created_by_name || '-'),
                     String(r.status || ''),
                   ]),
@@ -214,6 +242,20 @@ export default function KeysPage({ me }: { me: Me }) {
               </label>
               <input className="input" id="keyNotes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="opsional" />
             </div>
+            <div className="field grid-span-4">
+              <label className="label" htmlFor="keyPhoto">
+                Foto (opsional)
+              </label>
+              <input
+                key={photoKey}
+                className="input"
+                id="keyPhoto"
+                type="file"
+                accept="image/*"
+                onChange={(e) => setPhoto(e.target.files?.[0] || null)}
+              />
+              <div className="muted">{photo ? `Dipilih: ${photo.name}` : 'Tidak ada foto'}</div>
+            </div>
             <div className="row row-right grid-span-4">
               <button className="button button-primary" type="submit" disabled={busy}>
                 {busy ? 'Menyimpan...' : 'Simpan'}
@@ -239,6 +281,7 @@ export default function KeysPage({ me }: { me: Me }) {
                     <th>Titip</th>
                     <th>Petugas</th>
                     <th>Status</th>
+                    <th>Foto</th>
                     <th>Aksi</th>
                   </tr>
                 </thead>
@@ -250,6 +293,15 @@ export default function KeysPage({ me }: { me: Me }) {
                       <td data-label="Titip">{fmtTime(r.checkout_at)}</td>
                       <td data-label="Petugas">{r.created_by_name || '-'}</td>
                       <td data-label="Status">{badge(r.status)}</td>
+                      <td data-label="Foto">
+                        {r.has_photo && r.photo_url ? (
+                          <a className="button button-sm button-secondary" href={r.photo_url} target="_blank" rel="noreferrer">
+                            Foto
+                          </a>
+                        ) : (
+                          <span className="muted">-</span>
+                        )}
+                      </td>
                       <td data-label="Aksi">
                         <button className="button button-sm" type="button" onClick={() => doReturn(r.id)}>
                           Ambil
@@ -259,7 +311,7 @@ export default function KeysPage({ me }: { me: Me }) {
                   ))}
                   {open.length === 0 && (
                     <tr>
-                      <td className="muted" colSpan={6}>
+                      <td className="muted" colSpan={7}>
                         Tidak ada data.
                       </td>
                     </tr>
@@ -285,6 +337,7 @@ export default function KeysPage({ me }: { me: Me }) {
                     <th>Titip</th>
                     <th>Ambil</th>
                     <th>Status</th>
+                    <th>Foto</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -295,11 +348,20 @@ export default function KeysPage({ me }: { me: Me }) {
                       <td data-label="Titip">{fmtTime(r.checkout_at)}</td>
                       <td data-label="Ambil">{fmtTime(r.checkin_at || '')}</td>
                       <td data-label="Status">{badge(r.status)}</td>
+                      <td data-label="Foto">
+                        {r.has_photo && r.photo_url ? (
+                          <a className="button button-sm button-secondary" href={r.photo_url} target="_blank" rel="noreferrer">
+                            Foto
+                          </a>
+                        ) : (
+                          <span className="muted">-</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                   {closed.length === 0 && (
                     <tr>
-                      <td className="muted" colSpan={5}>
+                      <td className="muted" colSpan={6}>
                         Tidak ada data.
                       </td>
                     </tr>

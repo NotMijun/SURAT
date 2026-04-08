@@ -15,14 +15,15 @@ from typing import Any, Literal
 
 import psycopg2
 import psycopg2.extras
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, Response
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
 SESSION_TTL_SECONDS = 60 * 60 * 2
 LOGIN_RATE_WINDOW_SECONDS = 10 * 60
 LOGIN_RATE_MAX_ATTEMPTS = 8
+MAX_PHOTO_BYTES = 3 * 1024 * 1024
 
 _schema_lock = threading.Lock()
 _schema_ready = False
@@ -105,6 +106,31 @@ def pbkdf2_verify_password(password: str, stored: str) -> bool:
         return hmac.compare_digest(dk, expected)
     except Exception:
         return False
+
+
+def _parse_truthy(v: Any) -> bool:
+    if v is None:
+        return False
+    if isinstance(v, bool):
+        return v
+    s = str(v).strip().lower()
+    return s in ("1", "true", "yes", "y", "on")
+
+
+def _read_photo_upload(photo: UploadFile | None) -> tuple[str | None, str | None, str | None, str | None]:
+    if not photo:
+        return (None, None, None, None)
+    ctype = (photo.content_type or "").strip().lower()
+    if not ctype.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File foto harus berupa gambar (image/*)")
+    data = photo.file.read()
+    if not data:
+        return (None, None, None, None)
+    if len(data) > MAX_PHOTO_BYTES:
+        raise HTTPException(status_code=413, detail="Ukuran foto terlalu besar (maks 3MB)")
+    b64 = base64.b64encode(data).decode("ascii")
+    name = (photo.filename or "").strip() or "photo"
+    return (b64, ctype, name, utc_now_iso())
 
 
 def _database_url() -> str:
@@ -255,11 +281,19 @@ def _ensure_schema(conn) -> None:
                   closed_shift TEXT,
                   closed_post TEXT,
                   void_reason TEXT,
+                  photo_b64 TEXT,
+                  photo_mime TEXT,
+                  photo_name TEXT,
+                  photo_uploaded_at TEXT,
                   created_at TEXT NOT NULL,
                   updated_at TEXT NOT NULL
                 )
                 """
             )
+            cur.execute("ALTER TABLE key_transactions ADD COLUMN IF NOT EXISTS photo_b64 TEXT")
+            cur.execute("ALTER TABLE key_transactions ADD COLUMN IF NOT EXISTS photo_mime TEXT")
+            cur.execute("ALTER TABLE key_transactions ADD COLUMN IF NOT EXISTS photo_name TEXT")
+            cur.execute("ALTER TABLE key_transactions ADD COLUMN IF NOT EXISTS photo_uploaded_at TEXT")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_key_open ON key_transactions(status, key_name_norm)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_key_borrower ON key_transactions(borrower_name_norm)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_key_checkout ON key_transactions(checkout_at)")
@@ -273,11 +307,19 @@ def _ensure_schema(conn) -> None:
                   created_by BIGINT NOT NULL REFERENCES users(id),
                   shift TEXT NOT NULL,
                   post TEXT NOT NULL,
+                  photo_b64 TEXT,
+                  photo_mime TEXT,
+                  photo_name TEXT,
+                  photo_uploaded_at TEXT,
                   created_at TEXT NOT NULL,
                   updated_at TEXT NOT NULL
                 )
                 """
             )
+            cur.execute("ALTER TABLE mutasi_entries ADD COLUMN IF NOT EXISTS photo_b64 TEXT")
+            cur.execute("ALTER TABLE mutasi_entries ADD COLUMN IF NOT EXISTS photo_mime TEXT")
+            cur.execute("ALTER TABLE mutasi_entries ADD COLUMN IF NOT EXISTS photo_name TEXT")
+            cur.execute("ALTER TABLE mutasi_entries ADD COLUMN IF NOT EXISTS photo_uploaded_at TEXT")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_mutasi_occurred ON mutasi_entries(occurred_at)")
             cur.execute(
                 """
@@ -294,11 +336,19 @@ def _ensure_schema(conn) -> None:
                   created_by BIGINT NOT NULL REFERENCES users(id),
                   shift TEXT NOT NULL,
                   post TEXT NOT NULL,
+                  photo_b64 TEXT,
+                  photo_mime TEXT,
+                  photo_name TEXT,
+                  photo_uploaded_at TEXT,
                   created_at TEXT NOT NULL,
                   updated_at TEXT NOT NULL
                 )
                 """
             )
+            cur.execute("ALTER TABLE guest_entries ADD COLUMN IF NOT EXISTS photo_b64 TEXT")
+            cur.execute("ALTER TABLE guest_entries ADD COLUMN IF NOT EXISTS photo_mime TEXT")
+            cur.execute("ALTER TABLE guest_entries ADD COLUMN IF NOT EXISTS photo_name TEXT")
+            cur.execute("ALTER TABLE guest_entries ADD COLUMN IF NOT EXISTS photo_uploaded_at TEXT")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_guest_status ON guest_entries(status)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_guest_checkin ON guest_entries(checkin_at)")
             cur.execute(
@@ -312,11 +362,19 @@ def _ensure_schema(conn) -> None:
                   created_by BIGINT NOT NULL REFERENCES users(id),
                   shift TEXT NOT NULL,
                   post TEXT NOT NULL,
+                  photo_b64 TEXT,
+                  photo_mime TEXT,
+                  photo_name TEXT,
+                  photo_uploaded_at TEXT,
                   created_at TEXT NOT NULL,
                   updated_at TEXT NOT NULL
                 )
                 """
             )
+            cur.execute("ALTER TABLE task_entries ADD COLUMN IF NOT EXISTS photo_b64 TEXT")
+            cur.execute("ALTER TABLE task_entries ADD COLUMN IF NOT EXISTS photo_mime TEXT")
+            cur.execute("ALTER TABLE task_entries ADD COLUMN IF NOT EXISTS photo_name TEXT")
+            cur.execute("ALTER TABLE task_entries ADD COLUMN IF NOT EXISTS photo_uploaded_at TEXT")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_task_occurred ON task_entries(occurred_at)")
             cur.execute(
                 """
@@ -750,6 +808,7 @@ def list_keys(request: Request, status: str = "open", q: str = "", date: str = "
             order = "kt.checkout_at ASC"
         sql = """
           SELECT kt.id, kt.borrower_name, kt.unit, kt.key_name, kt.checkout_at, kt.checkin_at, kt.notes, kt.status,
+                 CASE WHEN kt.photo_b64 IS NULL OR kt.photo_b64='' THEN 0 ELSE 1 END AS has_photo,
                  u.display_name AS created_by_name,
                  u2.display_name AS closed_by_name,
                  kt.created_shift, kt.created_post, kt.closed_shift, kt.closed_post
@@ -764,80 +823,176 @@ def list_keys(request: Request, status: str = "open", q: str = "", date: str = "
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
+        for r in rows:
+            r["has_photo"] = bool(int(r.get("has_photo") or 0))
+            if r["has_photo"]:
+                r["photo_url"] = f"/api/keys/{int(r['id'])}/photo"
         return {"items": rows}
+
+
+@app.get("/api/keys/{key_id}/photo")
+def get_key_photo(key_id: str, request: Request):
+    with db_connect() as conn:
+        _require_session(conn, request)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT photo_b64, photo_mime, photo_name FROM key_transactions WHERE id=%s", (key_id,))
+            row = cur.fetchone()
+            if not row or not (row.get("photo_b64") or ""):
+                raise HTTPException(status_code=404, detail="Foto tidak ditemukan")
+            data = base64.b64decode((row["photo_b64"] or "").encode("ascii"))
+            mime = (row.get("photo_mime") or "application/octet-stream").strip()
+            name = (row.get("photo_name") or "photo").strip()
+            headers = {"Content-Disposition": f'inline; filename="{name}"'}
+            return Response(content=data, media_type=mime, headers=headers)
+
+
+def _create_key_tx(
+    conn,
+    sess,
+    borrower_name: str | None,
+    unit: str | None,
+    key_name: str,
+    checkout_at: str | None,
+    notes: str | None,
+    force: bool,
+    photo_b64: str | None,
+    photo_mime: str | None,
+    photo_name: str | None,
+    photo_uploaded_at: str | None,
+) -> int:
+    borrower_name = (borrower_name or "").strip() or "Tidak diketahui"
+    unit = (unit or "").strip() or "-"
+    key_name = (key_name or "").strip()
+    checkout_at = (checkout_at or "").strip() or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    notes = (notes or "").strip()
+    if not key_name:
+        raise HTTPException(status_code=400, detail="Kunci/ruangan wajib diisi")
+    key_norm = normalize_text(key_name)
+    borrower_norm = normalize_text(borrower_name)
+
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            "SELECT id, borrower_name, unit, key_name, checkout_at FROM key_transactions WHERE status='open' AND key_name_norm=%s",
+            (key_norm,),
+        )
+        existing_open = cur.fetchone()
+        if existing_open and not force:
+            raise HTTPException(status_code=409, detail=f"Kunci '{existing_open['key_name']}' masih tercatat dipinjam (ID {existing_open['id']}).")
+
+        cur.execute(
+            """
+            SELECT id FROM key_transactions
+            WHERE borrower_name_norm=%s AND key_name_norm=%s AND status='open'
+            LIMIT 1
+            """,
+            (borrower_norm, key_norm),
+        )
+        recent_dup = cur.fetchone()
+        if recent_dup and not force:
+            raise HTTPException(status_code=409, detail=f"Transaksi serupa sudah ada (ID {recent_dup['id']}).")
+
+        now = utc_now_iso()
+        cur.execute(
+            """
+            INSERT INTO key_transactions(
+              borrower_name, borrower_name_norm, unit, key_name, key_name_norm, checkout_at, checkin_at, notes, status,
+              created_by, created_shift, created_post, photo_b64, photo_mime, photo_name, photo_uploaded_at, created_at, updated_at
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+            """,
+            (
+                borrower_name,
+                borrower_norm,
+                unit,
+                key_name,
+                key_norm,
+                checkout_at,
+                None,
+                notes,
+                "open",
+                sess["user_id"],
+                sess["shift"],
+                sess["post"],
+                photo_b64,
+                photo_mime,
+                photo_name,
+                photo_uploaded_at,
+                now,
+                now,
+            ),
+        )
+        record_id = int(cur.fetchone()["id"])
+        _audit(
+            conn,
+            sess,
+            "key_transactions",
+            str(record_id),
+            "create",
+            None,
+            {
+                "borrower_name": borrower_name,
+                "unit": unit,
+                "key_name": key_name,
+                "checkout_at": checkout_at,
+                "notes": notes,
+                "status": "open",
+                "has_photo": bool(photo_b64),
+                "photo_name": photo_name if photo_b64 else None,
+            },
+        )
+    return record_id
+
 
 
 @app.post("/api/keys")
 def create_key(body: CreateKeyBody, request: Request):
     with db_connect() as conn:
         sess = _require_session(conn, request)
-        borrower_name = (body.borrower_name or "").strip() or "Tidak diketahui"
-        unit = (body.unit or "").strip() or "-"
-        key_name = (body.key_name or "").strip()
-        checkout_at = (body.checkout_at or "").strip() or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-        notes = (body.notes or "").strip()
-        if not key_name:
-            raise HTTPException(status_code=400, detail="Kunci/ruangan wajib diisi")
-        key_norm = normalize_text(key_name)
-        borrower_norm = normalize_text(borrower_name)
+        record_id = _create_key_tx(
+            conn,
+            sess,
+            body.borrower_name,
+            body.unit,
+            body.key_name,
+            body.checkout_at,
+            body.notes,
+            bool(body.force),
+            None,
+            None,
+            None,
+            None,
+        )
+        conn.commit()
+        return {"ok": True, "id": record_id}
 
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT id, borrower_name, unit, key_name, checkout_at FROM key_transactions WHERE status='open' AND key_name_norm=%s",
-                (key_norm,),
-            )
-            existing_open = cur.fetchone()
-            if existing_open and not body.force:
-                raise HTTPException(status_code=409, detail=f"Kunci '{existing_open['key_name']}' masih tercatat dipinjam (ID {existing_open['id']}).")
-
-            cur.execute(
-                """
-                SELECT id FROM key_transactions
-                WHERE borrower_name_norm=%s AND key_name_norm=%s AND status='open'
-                LIMIT 1
-                """,
-                (borrower_norm, key_norm),
-            )
-            recent_dup = cur.fetchone()
-            if recent_dup and not body.force:
-                raise HTTPException(status_code=409, detail=f"Transaksi serupa sudah ada (ID {recent_dup['id']}).")
-
-            now = utc_now_iso()
-            cur.execute(
-                """
-                INSERT INTO key_transactions(
-                  borrower_name, borrower_name_norm, unit, key_name, key_name_norm, checkout_at, checkin_at, notes, status,
-                  created_by, created_shift, created_post, created_at, updated_at
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                RETURNING id
-                """,
-                (
-                    borrower_name,
-                    borrower_norm,
-                    unit,
-                    key_name,
-                    key_norm,
-                    checkout_at,
-                    None,
-                    notes,
-                    "open",
-                    sess["user_id"],
-                    sess["shift"],
-                    sess["post"],
-                    now,
-                    now,
-                ),
-            )
-            record_id = int(cur.fetchone()["id"])
-            _audit(
-                conn,
-                sess,
-                "key_transactions",
-                str(record_id),
-                "create",
-                None,
-                {"borrower_name": borrower_name, "unit": unit, "key_name": key_name, "checkout_at": checkout_at, "notes": notes, "status": "open"},
-            )
+@app.post("/api/keys_with_photo")
+def create_key_with_photo(
+    request: Request,
+    key_name: str = Form(...),
+    borrower_name: str | None = Form(None),
+    unit: str | None = Form(None),
+    checkout_at: str | None = Form(None),
+    notes: str | None = Form(None),
+    force: str | None = Form(None),
+    photo: UploadFile | None = File(None),
+):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        (photo_b64, photo_mime, photo_name, photo_uploaded_at) = _read_photo_upload(photo)
+        record_id = _create_key_tx(
+            conn,
+            sess,
+            borrower_name,
+            unit,
+            key_name,
+            checkout_at,
+            notes,
+            _parse_truthy(force),
+            photo_b64,
+            photo_mime,
+            photo_name,
+            photo_uploaded_at,
+        )
         conn.commit()
         return {"ok": True, "id": record_id}
 
@@ -933,7 +1088,9 @@ def list_mutasi(request: Request, q: str = "", date: str = "", sort: str = "occu
         if sort == "occurred_asc":
             order = "m.occurred_at ASC"
         sql = """
-          SELECT m.id, m.occurred_at, m.kind, m.description, u.display_name AS created_by_name, m.shift, m.post
+          SELECT m.id, m.occurred_at, m.kind, m.description,
+                 CASE WHEN m.photo_b64 IS NULL OR m.photo_b64='' THEN 0 ELSE 1 END AS has_photo,
+                 u.display_name AS created_by_name, m.shift, m.post
           FROM mutasi_entries m
           JOIN users u ON u.id = m.created_by
         """
@@ -944,30 +1101,89 @@ def list_mutasi(request: Request, q: str = "", date: str = "", sort: str = "occu
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
+        for r in rows:
+            r["has_photo"] = bool(int(r.get("has_photo") or 0))
+            if r["has_photo"]:
+                r["photo_url"] = f"/api/mutasi/{int(r['id'])}/photo"
         return {"items": rows}
+
+
+@app.get("/api/mutasi/{mutasi_id}/photo")
+def get_mutasi_photo(mutasi_id: str, request: Request):
+    with db_connect() as conn:
+        _require_session(conn, request)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT photo_b64, photo_mime, photo_name FROM mutasi_entries WHERE id=%s", (mutasi_id,))
+            row = cur.fetchone()
+            if not row or not (row.get("photo_b64") or ""):
+                raise HTTPException(status_code=404, detail="Foto tidak ditemukan")
+            data = base64.b64decode((row["photo_b64"] or "").encode("ascii"))
+            mime = (row.get("photo_mime") or "application/octet-stream").strip()
+            name = (row.get("photo_name") or "photo").strip()
+            headers = {"Content-Disposition": f'inline; filename="{name}"'}
+            return Response(content=data, media_type=mime, headers=headers)
+
+
+def _create_mutasi(
+    conn,
+    sess,
+    kind: str | None,
+    occurred_at: str | None,
+    description: str | None,
+    photo_b64: str | None,
+    photo_mime: str | None,
+    photo_name: str | None,
+    photo_uploaded_at: str | None,
+) -> int:
+    kind = (kind or "").strip() or "Lainnya"
+    occurred = (occurred_at or "").strip() or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    desc = (description or "").strip()
+    if not desc:
+        raise HTTPException(status_code=400, detail="Deskripsi wajib diisi")
+    now = utc_now_iso()
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO mutasi_entries(occurred_at, kind, description, created_by, shift, post, photo_b64, photo_mime, photo_name, photo_uploaded_at, created_at, updated_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+            """,
+            (occurred, kind, desc, sess["user_id"], sess["shift"], sess["post"], photo_b64, photo_mime, photo_name, photo_uploaded_at, now, now),
+        )
+        mid = int(cur.fetchone()[0])
+        _audit(
+            conn,
+            sess,
+            "mutasi_entries",
+            str(mid),
+            "create",
+            None,
+            {"occurred_at": occurred, "kind": kind, "description": desc, "has_photo": bool(photo_b64), "photo_name": photo_name if photo_b64 else None},
+        )
+    return mid
+
 
 
 @app.post("/api/mutasi")
 def create_mutasi(body: CreateMutasiBody, request: Request):
     with db_connect() as conn:
         sess = _require_session(conn, request)
-        kind = (body.kind or "").strip() or "Lainnya"
-        occurred = (body.occurred_at or "").strip() or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-        desc = (body.description or "").strip()
-        if not desc:
-            raise HTTPException(status_code=400, detail="Deskripsi wajib diisi")
-        now = utc_now_iso()
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO mutasi_entries(occurred_at, kind, description, created_by, shift, post, created_at, updated_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-                RETURNING id
-                """,
-                (occurred, kind, desc, sess["user_id"], sess["shift"], sess["post"], now, now),
-            )
-            mid = int(cur.fetchone()[0])
-            _audit(conn, sess, "mutasi_entries", str(mid), "create", None, {"occurred_at": occurred, "kind": kind, "description": desc})
+        mid = _create_mutasi(conn, sess, body.kind, body.occurred_at, body.description, None, None, None, None)
+        conn.commit()
+        return {"ok": True, "id": mid}
+
+@app.post("/api/mutasi_with_photo")
+def create_mutasi_with_photo(
+    request: Request,
+    kind: str = Form(...),
+    occurred_at: str | None = Form(None),
+    description: str = Form(...),
+    photo: UploadFile | None = File(None),
+):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        (photo_b64, photo_mime, photo_name, photo_uploaded_at) = _read_photo_upload(photo)
+        mid = _create_mutasi(conn, sess, kind, occurred_at, description, photo_b64, photo_mime, photo_name, photo_uploaded_at)
         conn.commit()
         return {"ok": True, "id": mid}
 
@@ -997,6 +1213,7 @@ def list_guests(request: Request, status: str = "in", q: str = "", date: str = "
             order = "g.checkin_at ASC"
         sql = """
           SELECT g.id, g.name, g.instansi, g.purpose, g.meet_person, g.checkin_at, g.checkout_at, g.notes, g.status,
+                 CASE WHEN g.photo_b64 IS NULL OR g.photo_b64='' THEN 0 ELSE 1 END AS has_photo,
                  u.display_name AS created_by_name, g.shift, g.post
           FROM guest_entries g
           JOIN users u ON u.id = g.created_by
@@ -1008,39 +1225,109 @@ def list_guests(request: Request, status: str = "in", q: str = "", date: str = "
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
+        for r in rows:
+            r["has_photo"] = bool(int(r.get("has_photo") or 0))
+            if r["has_photo"]:
+                r["photo_url"] = f"/api/guests/{int(r['id'])}/photo"
         return {"items": rows}
+
+
+@app.get("/api/guests/{guest_id}/photo")
+def get_guest_photo(guest_id: str, request: Request):
+    with db_connect() as conn:
+        _require_session(conn, request)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT photo_b64, photo_mime, photo_name FROM guest_entries WHERE id=%s", (guest_id,))
+            row = cur.fetchone()
+            if not row or not (row.get("photo_b64") or ""):
+                raise HTTPException(status_code=404, detail="Foto tidak ditemukan")
+            data = base64.b64decode((row["photo_b64"] or "").encode("ascii"))
+            mime = (row.get("photo_mime") or "application/octet-stream").strip()
+            name = (row.get("photo_name") or "photo").strip()
+            headers = {"Content-Disposition": f'inline; filename="{name}"'}
+            return Response(content=data, media_type=mime, headers=headers)
+
+
+def _create_guest(
+    conn,
+    sess,
+    name: str | None,
+    instansi: str | None,
+    purpose: str | None,
+    meet_person: str | None,
+    checkin_at: str | None,
+    notes: str | None,
+    photo_b64: str | None,
+    photo_mime: str | None,
+    photo_name: str | None,
+    photo_uploaded_at: str | None,
+) -> int:
+    name = (name or "").strip() or "Tidak diketahui"
+    instansi = (instansi or "").strip() or "-"
+    purpose = (purpose or "").strip() or "-"
+    meet = (meet_person or "").strip() or "-"
+    checkin_at = (checkin_at or "").strip() or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    notes = (notes or "").strip()
+    now = utc_now_iso()
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO guest_entries(
+              name, instansi, purpose, meet_person, checkin_at, checkout_at, notes, status, created_by, shift, post,
+              photo_b64, photo_mime, photo_name, photo_uploaded_at, created_at, updated_at
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+            """,
+            (name, instansi, purpose, meet, checkin_at, None, notes, "in", sess["user_id"], sess["shift"], sess["post"], photo_b64, photo_mime, photo_name, photo_uploaded_at, now, now),
+        )
+        gid = int(cur.fetchone()[0])
+        _audit(
+            conn,
+            sess,
+            "guest_entries",
+            str(gid),
+            "create",
+            None,
+            {
+                "name": name,
+                "instansi": instansi,
+                "purpose": purpose,
+                "meet_person": meet,
+                "checkin_at": checkin_at,
+                "notes": notes,
+                "status": "in",
+                "has_photo": bool(photo_b64),
+                "photo_name": photo_name if photo_b64 else None,
+            },
+        )
+    return gid
+
 
 
 @app.post("/api/guests")
 def create_guest(body: CreateGuestBody, request: Request):
     with db_connect() as conn:
         sess = _require_session(conn, request)
-        name = (body.name or "").strip() or "Tidak diketahui"
-        instansi = (body.instansi or "").strip() or "-"
-        purpose = (body.purpose or "").strip() or "-"
-        meet = (body.meet_person or "").strip() or "-"
-        checkin_at = (body.checkin_at or "").strip() or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-        notes = (body.notes or "").strip()
-        now = utc_now_iso()
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO guest_entries(name, instansi, purpose, meet_person, checkin_at, checkout_at, notes, status, created_by, shift, post, created_at, updated_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                RETURNING id
-                """,
-                (name, instansi, purpose, meet, checkin_at, None, notes, "in", sess["user_id"], sess["shift"], sess["post"], now, now),
-            )
-            gid = int(cur.fetchone()[0])
-            _audit(
-                conn,
-                sess,
-                "guest_entries",
-                str(gid),
-                "create",
-                None,
-                {"name": name, "instansi": instansi, "purpose": purpose, "meet_person": meet, "checkin_at": checkin_at, "notes": notes, "status": "in"},
-            )
+        gid = _create_guest(conn, sess, body.name, body.instansi, body.purpose, body.meet_person, body.checkin_at, body.notes, None, None, None, None)
+        conn.commit()
+        return {"ok": True, "id": gid}
+
+@app.post("/api/guests_with_photo")
+def create_guest_with_photo(
+    request: Request,
+    name: str = Form(...),
+    instansi: str | None = Form(None),
+    purpose: str | None = Form(None),
+    meet_person: str | None = Form(None),
+    checkin_at: str | None = Form(None),
+    notes: str | None = Form(None),
+    photo: UploadFile | None = File(None),
+):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        (photo_b64, photo_mime, photo_name, photo_uploaded_at) = _read_photo_upload(photo)
+        gid = _create_guest(conn, sess, name, instansi, purpose, meet_person, checkin_at, notes, photo_b64, photo_mime, photo_name, photo_uploaded_at)
         conn.commit()
         return {"ok": True, "id": gid}
 
@@ -1090,7 +1377,9 @@ def list_tasks(request: Request, q: str = "", date: str = "", sort: str = "occur
         if sort == "occurred_asc":
             order = "t.occurred_at ASC"
         sql = """
-          SELECT t.id, t.kind, t.occurred_at, t.destination, t.notes, u.display_name AS created_by_name, t.shift, t.post
+          SELECT t.id, t.kind, t.occurred_at, t.destination, t.notes,
+                 CASE WHEN t.photo_b64 IS NULL OR t.photo_b64='' THEN 0 ELSE 1 END AS has_photo,
+                 u.display_name AS created_by_name, t.shift, t.post
           FROM task_entries t
           JOIN users u ON u.id = t.created_by
         """
@@ -1101,31 +1390,93 @@ def list_tasks(request: Request, q: str = "", date: str = "", sort: str = "occur
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
+        for r in rows:
+            r["has_photo"] = bool(int(r.get("has_photo") or 0))
+            if r["has_photo"]:
+                r["photo_url"] = f"/api/tasks/{int(r['id'])}/photo"
         return {"items": rows}
+
+
+@app.get("/api/tasks/{task_id}/photo")
+def get_task_photo(task_id: str, request: Request):
+    with db_connect() as conn:
+        _require_session(conn, request)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT photo_b64, photo_mime, photo_name FROM task_entries WHERE id=%s", (task_id,))
+            row = cur.fetchone()
+            if not row or not (row.get("photo_b64") or ""):
+                raise HTTPException(status_code=404, detail="Foto tidak ditemukan")
+            data = base64.b64decode((row["photo_b64"] or "").encode("ascii"))
+            mime = (row.get("photo_mime") or "application/octet-stream").strip()
+            name = (row.get("photo_name") or "photo").strip()
+            headers = {"Content-Disposition": f'inline; filename="{name}"'}
+            return Response(content=data, media_type=mime, headers=headers)
+
+
+def _create_task(
+    conn,
+    sess,
+    kind: str | None,
+    occurred_at: str | None,
+    destination: str | None,
+    notes: str | None,
+    photo_b64: str | None,
+    photo_mime: str | None,
+    photo_name: str | None,
+    photo_uploaded_at: str | None,
+) -> int:
+    kind = (kind or "").strip() or "Lainnya"
+    occurred = (occurred_at or "").strip() or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    dest = (destination or "").strip()
+    notes = (notes or "").strip()
+    if not dest:
+        raise HTTPException(status_code=400, detail="Tujuan wajib diisi")
+    now = utc_now_iso()
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO task_entries(kind, occurred_at, destination, notes, created_by, shift, post, photo_b64, photo_mime, photo_name, photo_uploaded_at, created_at, updated_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+            """,
+            (kind, occurred, dest, notes, sess["user_id"], sess["shift"], sess["post"], photo_b64, photo_mime, photo_name, photo_uploaded_at, now, now),
+        )
+        tid = int(cur.fetchone()[0])
+        _audit(
+            conn,
+            sess,
+            "task_entries",
+            str(tid),
+            "create",
+            None,
+            {"kind": kind, "occurred_at": occurred, "destination": dest, "notes": notes, "has_photo": bool(photo_b64), "photo_name": photo_name if photo_b64 else None},
+        )
+    return tid
+
 
 
 @app.post("/api/tasks")
 def create_task(body: CreateTaskBody, request: Request):
     with db_connect() as conn:
         sess = _require_session(conn, request)
-        kind = (body.kind or "").strip() or "Lainnya"
-        occurred = (body.occurred_at or "").strip() or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-        dest = (body.destination or "").strip()
-        notes = (body.notes or "").strip()
-        if not dest:
-            raise HTTPException(status_code=400, detail="Tujuan wajib diisi")
-        now = utc_now_iso()
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO task_entries(kind, occurred_at, destination, notes, created_by, shift, post, created_at, updated_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                RETURNING id
-                """,
-                (kind, occurred, dest, notes, sess["user_id"], sess["shift"], sess["post"], now, now),
-            )
-            tid = int(cur.fetchone()[0])
-            _audit(conn, sess, "task_entries", str(tid), "create", None, {"kind": kind, "occurred_at": occurred, "destination": dest, "notes": notes})
+        tid = _create_task(conn, sess, body.kind, body.occurred_at, body.destination, body.notes, None, None, None, None)
+        conn.commit()
+        return {"ok": True, "id": tid}
+
+
+@app.post("/api/tasks_with_photo")
+def create_task_with_photo(
+    request: Request,
+    kind: str = Form(...),
+    occurred_at: str | None = Form(None),
+    destination: str = Form(...),
+    notes: str | None = Form(None),
+    photo: UploadFile | None = File(None),
+):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        (photo_b64, photo_mime, photo_name, photo_uploaded_at) = _read_photo_upload(photo)
+        tid = _create_task(conn, sess, kind, occurred_at, destination, notes, photo_b64, photo_mime, photo_name, photo_uploaded_at)
         conn.commit()
         return {"ok": True, "id": tid}
 

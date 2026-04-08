@@ -29,6 +29,8 @@ export type KeyTx = {
   notes?: string
   status: 'open' | 'closed' | 'void'
   created_by_name?: string
+  has_photo?: boolean
+  photo_url?: string
 }
 
 export type GuestEntry = {
@@ -44,6 +46,8 @@ export type GuestEntry = {
   created_by_name?: string
   shift?: string
   post?: string
+  has_photo?: boolean
+  photo_url?: string
 }
 
 export type TaskEntry = {
@@ -55,6 +59,8 @@ export type TaskEntry = {
   created_by_name?: string
   shift?: string
   post?: string
+  has_photo?: boolean
+  photo_url?: string
 }
 
 export type MutasiEntry = {
@@ -65,6 +71,8 @@ export type MutasiEntry = {
   created_by_name?: string
   shift?: string
   post?: string
+  has_photo?: boolean
+  photo_url?: string
 }
 
 export type AdminUser = {

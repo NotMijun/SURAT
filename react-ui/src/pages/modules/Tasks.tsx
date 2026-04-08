@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react'
-import { apiGet, apiPost } from '../../lib/api'
+import { apiGet, apiPost, apiPostForm } from '../../lib/api'
 import type { Me, TaskEntry } from '../../types'
 import { fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useToast } from '../../components/ToastHost'
@@ -19,6 +19,8 @@ export default function TasksPage({ me }: { me: Me }) {
   const [time, setTime] = useState(nowHm())
   const [destination, setDestination] = useState('')
   const [notes, setNotes] = useState('')
+  const [photo, setPhoto] = useState<File | null>(null)
+  const [photoKey, setPhotoKey] = useState(0)
 
   const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number }) => {
     const { q, date, sort, limit } = opts
@@ -61,14 +63,21 @@ export default function TasksPage({ me }: { me: Me }) {
     if (busy) return
     setBusy(true)
     try {
-      await apiPost('/api/tasks', {
-        kind,
-        occurred_at: toIsoLocal(today, time),
-        destination,
-        notes,
-      })
+      if (photo) {
+        const form = new FormData()
+        form.set('kind', kind)
+        form.set('occurred_at', toIsoLocal(today, time))
+        form.set('destination', destination)
+        form.set('notes', notes)
+        form.set('photo', photo)
+        await apiPostForm('/api/tasks_with_photo', form)
+      } else {
+        await apiPost('/api/tasks', { kind, occurred_at: toIsoLocal(today, time), destination, notes })
+      }
       setDestination('')
       setNotes('')
+      setPhoto(null)
+      setPhotoKey((x) => x + 1)
       toast.push('Tugas dicatat', 'success')
       await refresh({ q, date, sort, limit })
     } catch (err: any) {
@@ -109,8 +118,17 @@ export default function TasksPage({ me }: { me: Me }) {
             onClick={() =>
               downloadCsv(
                 `tugas-${date || 'semua'}.csv`,
-                [['Jam', 'Jenis', 'Tujuan', 'Catatan', 'Petugas', 'Shift', 'Pos']].concat(
-                  items.map((r) => [fmtTime(r.occurred_at), r.kind, r.destination, r.notes || '', r.created_by_name || '-', r.shift || '-', r.post || '-']),
+                [['Jam', 'Jenis', 'Tujuan', 'Catatan', 'Foto', 'Petugas', 'Shift', 'Pos']].concat(
+                  items.map((r) => [
+                    fmtTime(r.occurred_at),
+                    r.kind,
+                    r.destination,
+                    r.notes || '',
+                    r.has_photo ? 'Ya' : 'Tidak',
+                    r.created_by_name || '-',
+                    r.shift || '-',
+                    r.post || '-',
+                  ]),
                 ),
               )
             }
@@ -172,6 +190,20 @@ export default function TasksPage({ me }: { me: Me }) {
               </label>
               <input className="input" id="taskNotes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="opsional" />
             </div>
+            <div className="field grid-span-4">
+              <label className="label" htmlFor="taskPhoto">
+                Foto (opsional)
+              </label>
+              <input
+                key={photoKey}
+                className="input"
+                id="taskPhoto"
+                type="file"
+                accept="image/*"
+                onChange={(e) => setPhoto(e.target.files?.[0] || null)}
+              />
+              <div className="muted">{photo ? `Dipilih: ${photo.name}` : 'Tidak ada foto'}</div>
+            </div>
             <div className="row row-right grid-span-4">
               <button className="button button-primary" type="submit" disabled={busy}>
                 {busy ? 'Menyimpan...' : 'Simpan'}
@@ -195,6 +227,7 @@ export default function TasksPage({ me }: { me: Me }) {
                   <th>Jenis</th>
                   <th>Tujuan</th>
                   <th>Catatan</th>
+                  <th>Foto</th>
                   <th>Petugas</th>
                 </tr>
               </thead>
@@ -205,12 +238,21 @@ export default function TasksPage({ me }: { me: Me }) {
                     <td data-label="Jenis">{r.kind}</td>
                     <td data-label="Tujuan">{r.destination}</td>
                     <td data-label="Catatan">{r.notes}</td>
+                    <td data-label="Foto">
+                      {r.has_photo && r.photo_url ? (
+                        <a className="button button-sm button-secondary" href={r.photo_url} target="_blank" rel="noreferrer">
+                          Foto
+                        </a>
+                      ) : (
+                        <span className="muted">-</span>
+                      )}
+                    </td>
                     <td data-label="Petugas">{r.created_by_name || '-'}</td>
                   </tr>
                 ))}
                 {items.length === 0 && (
                   <tr>
-                    <td className="muted" colSpan={5}>
+                    <td className="muted" colSpan={6}>
                       Tidak ada data.
                     </td>
                   </tr>

@@ -19,7 +19,7 @@ export const apiRequest = async <T>(path: string, options: RequestInit = {}): Pr
 export const apiGet = <T>(path: string) => apiRequest<T>(path)
 export const apiPost = <T>(path: string, payload: unknown) =>
   apiRequest<T>(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+export const apiPostForm = <T>(path: string, form: FormData) => apiRequest<T>(path, { method: 'POST', body: form })
 export const apiPatch = <T>(path: string, payload: unknown) =>
   apiRequest<T>(path, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
 export const apiDelete = <T>(path: string) => apiRequest<T>(path, { method: 'DELETE' })
-

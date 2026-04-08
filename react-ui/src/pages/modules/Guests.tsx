@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { apiGet, apiPost } from '../../lib/api'
+import { apiGet, apiPost, apiPostForm } from '../../lib/api'
 import type { GuestEntry, Me } from '../../types'
 import { fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useToast } from '../../components/ToastHost'
@@ -21,6 +21,8 @@ export default function GuestsPage({ me }: { me: Me }) {
   const [meet, setMeet] = useState('')
   const [time, setTime] = useState(nowHm())
   const [notes, setNotes] = useState('')
+  const [photo, setPhoto] = useState<File | null>(null)
+  const [photoKey, setPhotoKey] = useState(0)
   const [busy, setBusy] = useState(false)
 
   const refresh = useCallback(async (opts: { q: string; status: string; date: string; sort: string; limit: number }) => {
@@ -64,12 +66,26 @@ export default function GuestsPage({ me }: { me: Me }) {
     if (busy) return
     setBusy(true)
     try {
-      await apiPost('/api/guests', { name, instansi, purpose, meet_person: meet, checkin_at: toIsoLocal(today, time), notes })
+      if (photo) {
+        const form = new FormData()
+        form.set('name', name)
+        form.set('instansi', instansi)
+        form.set('purpose', purpose)
+        form.set('meet_person', meet)
+        form.set('checkin_at', toIsoLocal(today, time))
+        form.set('notes', notes)
+        form.set('photo', photo)
+        await apiPostForm('/api/guests_with_photo', form)
+      } else {
+        await apiPost('/api/guests', { name, instansi, purpose, meet_person: meet, checkin_at: toIsoLocal(today, time), notes })
+      }
       setName('')
       setInstansi('')
       setPurpose('')
       setMeet('')
       setNotes('')
+      setPhoto(null)
+      setPhotoKey((x) => x + 1)
       toast.push('Tamu masuk dicatat', 'success')
       await refresh({ q, status, date, sort, limit })
     } catch (err: any) {
@@ -124,8 +140,19 @@ export default function GuestsPage({ me }: { me: Me }) {
             onClick={() =>
               downloadCsv(
                 `tamu-${status}-${date || 'semua'}.csv`,
-                [['Nama', 'Instansi', 'Tujuan', 'Ditemui', 'Masuk', 'Keluar', 'Catatan', 'Petugas', 'Status']].concat(
-                  items.map((r) => [r.name, r.instansi, r.purpose, r.meet_person, fmtTime(r.checkin_at), fmtTime(r.checkout_at), r.notes || '', r.created_by_name || '-', r.status]),
+                [['Nama', 'Instansi', 'Tujuan', 'Ditemui', 'Masuk', 'Keluar', 'Catatan', 'Foto', 'Petugas', 'Status']].concat(
+                  items.map((r) => [
+                    r.name,
+                    r.instansi,
+                    r.purpose,
+                    r.meet_person,
+                    fmtTime(r.checkin_at),
+                    fmtTime(r.checkout_at),
+                    r.notes || '',
+                    r.has_photo ? 'Ya' : 'Tidak',
+                    r.created_by_name || '-',
+                    r.status,
+                  ]),
                 ),
               )
             }
@@ -192,6 +219,20 @@ export default function GuestsPage({ me }: { me: Me }) {
               </label>
               <input className="input" id="guestNotes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="opsional" />
             </div>
+            <div className="field grid-span-4">
+              <label className="label" htmlFor="guestPhoto">
+                Foto (opsional)
+              </label>
+              <input
+                key={photoKey}
+                className="input"
+                id="guestPhoto"
+                type="file"
+                accept="image/*"
+                onChange={(e) => setPhoto(e.target.files?.[0] || null)}
+              />
+              <div className="muted">{photo ? `Dipilih: ${photo.name}` : 'Tidak ada foto'}</div>
+            </div>
             <div className="row row-right grid-span-4">
               <button className="button button-primary" type="submit" disabled={busy}>
                 {busy ? 'Menyimpan...' : 'Simpan'}
@@ -216,6 +257,7 @@ export default function GuestsPage({ me }: { me: Me }) {
                   <th>Tujuan</th>
                   <th>Ditemui</th>
                   <th>Masuk</th>
+                  <th>Foto</th>
                   <th>{status === 'in' ? 'Aksi' : 'Keluar'}</th>
                 </tr>
               </thead>
@@ -227,6 +269,15 @@ export default function GuestsPage({ me }: { me: Me }) {
                     <td data-label="Tujuan">{r.purpose}</td>
                     <td data-label="Ditemui">{r.meet_person}</td>
                     <td data-label="Masuk">{fmtTime(r.checkin_at)}</td>
+                    <td data-label="Foto">
+                      {r.has_photo && r.photo_url ? (
+                        <a className="button button-sm button-secondary" href={r.photo_url} target="_blank" rel="noreferrer">
+                          Foto
+                        </a>
+                      ) : (
+                        <span className="muted">-</span>
+                      )}
+                    </td>
                     <td data-label={status === 'in' ? 'Aksi' : 'Keluar'}>
                       {status === 'in' ? (
                         <button className="button button-sm" type="button" onClick={() => checkout(r.id)}>
@@ -240,7 +291,7 @@ export default function GuestsPage({ me }: { me: Me }) {
                 ))}
                 {items.length === 0 && (
                   <tr>
-                    <td className="muted" colSpan={6}>
+                    <td className="muted" colSpan={7}>
                       Tidak ada data.
                     </td>
                   </tr>
