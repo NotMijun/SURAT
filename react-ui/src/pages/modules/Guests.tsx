@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { apiGet, apiPost, apiPostForm } from '../../lib/api'
+import { apiGet, apiGetBlob, apiPost, apiPostForm } from '../../lib/api'
 import type { GuestEntry, Me } from '../../types'
 import { fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useToast } from '../../components/ToastHost'
@@ -23,6 +23,7 @@ export default function GuestsPage({ me }: { me: Me }) {
   const [notes, setNotes] = useState('')
   const [photo, setPhoto] = useState<File | null>(null)
   const [photoKey, setPhotoKey] = useState(0)
+  const [photoView, setPhotoView] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const refresh = useCallback(async (opts: { q: string; status: string; date: string; sort: string; limit: number }) => {
@@ -102,6 +103,21 @@ export default function GuestsPage({ me }: { me: Me }) {
       await refresh({ q, status, date, sort, limit })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal memproses'), 'error')
+    }
+  }
+
+  const closePhoto = () => {
+    if (photoView) URL.revokeObjectURL(photoView)
+    setPhotoView(null)
+  }
+
+  const openPhoto = async (url: string) => {
+    try {
+      const blob = await apiGetBlob(url)
+      if (photoView) URL.revokeObjectURL(photoView)
+      setPhotoView(URL.createObjectURL(blob))
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal memuat foto'), 'error')
     }
   }
 
@@ -229,7 +245,23 @@ export default function GuestsPage({ me }: { me: Me }) {
                 id="guestPhoto"
                 type="file"
                 accept="image/*"
-                onChange={(e) => setPhoto(e.target.files?.[0] || null)}
+                capture="environment"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] || null
+                  if (f && !String(f.type || '').toLowerCase().startsWith('image/')) {
+                    toast.push('File foto harus gambar', 'error')
+                    setPhoto(null)
+                    setPhotoKey((x) => x + 1)
+                    return
+                  }
+                  if (f && f.size > 3 * 1024 * 1024) {
+                    toast.push('Ukuran foto maksimal 3MB', 'error')
+                    setPhoto(null)
+                    setPhotoKey((x) => x + 1)
+                    return
+                  }
+                  setPhoto(f)
+                }}
               />
               <div className="muted">{photo ? `Dipilih: ${photo.name}` : 'Tidak ada foto'}</div>
             </div>
@@ -271,9 +303,9 @@ export default function GuestsPage({ me }: { me: Me }) {
                     <td data-label="Masuk">{fmtTime(r.checkin_at)}</td>
                     <td data-label="Foto">
                       {r.has_photo && r.photo_url ? (
-                        <a className="button button-sm button-secondary" href={r.photo_url} target="_blank" rel="noreferrer">
+                        <button className="button button-sm button-secondary" type="button" onClick={() => openPhoto(r.photo_url!)}>
                           Foto
-                        </a>
+                        </button>
                       ) : (
                         <span className="muted">-</span>
                       )}
@@ -301,6 +333,22 @@ export default function GuestsPage({ me }: { me: Me }) {
           </div>
         </div>
       </section>
+
+      {photoView && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Foto" onClick={(e) => e.currentTarget === e.target && closePhoto()}>
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-title">Foto</div>
+              <button className="button button-secondary button-sm" type="button" onClick={closePhoto}>
+                Tutup
+              </button>
+            </div>
+            <div className="modal-body">
+              <img className="modal-photo" src={photoView} alt="Foto" />
+            </div>
+          </div>
+        </div>
+      )}
 
       <button className="fab" type="button" onClick={() => document.getElementById('guestsForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
         + Tamu

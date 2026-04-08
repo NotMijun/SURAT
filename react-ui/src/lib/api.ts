@@ -16,6 +16,20 @@ export const apiRequest = async <T>(path: string, options: RequestInit = {}): Pr
   return data as T
 }
 
+export const apiGetBlob = async (path: string): Promise<Blob> => {
+  const token = getToken()
+  const headers = new Headers()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  const res = await fetch(path, { headers })
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as any
+    const msg = String(data?.error || `Request gagal (${res.status})`)
+    const err: ApiError = { message: msg, status: res.status }
+    throw err
+  }
+  return await res.blob()
+}
+
 export const apiGet = <T>(path: string) => apiRequest<T>(path)
 export const apiPost = <T>(path: string, payload: unknown) =>
   apiRequest<T>(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })

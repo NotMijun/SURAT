@@ -17,6 +17,17 @@
         </div>
       </div>
     </div>
+    <div id="photoOverlay" aria-hidden="true">
+      <div id="photoBox" role="dialog" aria-modal="true" aria-label="Foto">
+        <div id="photoHeader">
+          <div id="photoTitle">Foto</div>
+          <button class="button button-secondary button-sm" type="button" data-photo-close>Tutup</button>
+        </div>
+        <div id="photoBody">
+          <img id="photoImg" alt="Foto" />
+        </div>
+      </div>
+    </div>
     <a class="skip-link" href="#main">Lewati ke konten</a>
 
     <div class="shell">
@@ -187,7 +198,7 @@
                 </div>
                 <div class="field grid-span-3">
                   <label class="label" for="mutasiPhoto">Foto (opsional)</label>
-                  <input class="input" id="mutasiPhoto" name="photo" type="file" accept="image/*" />
+                  <input class="input" id="mutasiPhoto" name="photo" type="file" accept="image/*" capture="environment" />
                 </div>
                 <div class="row row-right grid-span-3">
                   <button class="button button-primary" type="submit">Simpan</button>
@@ -274,7 +285,7 @@
                 </div>
                 <div class="field grid-span-4">
                   <label class="label" for="kunciPhoto">Foto (opsional)</label>
-                  <input class="input" id="kunciPhoto" name="photo" type="file" accept="image/*" />
+                  <input class="input" id="kunciPhoto" name="photo" type="file" accept="image/*" capture="environment" />
                 </div>
                 <div class="field">
                   <label class="label" for="kunciPetugas">Petugas</label>
@@ -405,7 +416,7 @@
                 </div>
                 <div class="field grid-span-4">
                   <label class="label" for="tamuPhoto">Foto (opsional)</label>
-                  <input class="input" id="tamuPhoto" name="photo" type="file" accept="image/*" />
+                  <input class="input" id="tamuPhoto" name="photo" type="file" accept="image/*" capture="environment" />
                 </div>
                 <div class="row row-right grid-span-4">
                   <button class="button button-primary" type="submit">Simpan</button>
@@ -495,7 +506,7 @@
                 </div>
                 <div class="field grid-span-4">
                   <label class="label" for="tugasPhoto">Foto (opsional)</label>
-                  <input class="input" id="tugasPhoto" name="photo" type="file" accept="image/*" />
+                  <input class="input" id="tugasPhoto" name="photo" type="file" accept="image/*" capture="environment" />
                 </div>
                 <div class="row row-right grid-span-4">
                   <button class="button button-primary" type="submit">Simpan</button>
@@ -912,6 +923,37 @@
           });
         };
 
+        const photoOverlay = byId("photoOverlay");
+        const photoImg = byId("photoImg");
+        let photoObjectUrl = "";
+
+        const closePhotoViewer = () => {
+          if (photoOverlay) photoOverlay.style.display = "none";
+          if (photoImg) photoImg.removeAttribute("src");
+          if (photoObjectUrl) {
+            URL.revokeObjectURL(photoObjectUrl);
+            photoObjectUrl = "";
+          }
+        };
+
+        const openPhotoViewer = async (url) => {
+          if (!photoOverlay || !photoImg) return;
+          try {
+            const blob = await apiBlob(url);
+            photoObjectUrl = URL.createObjectURL(blob);
+            photoImg.src = photoObjectUrl;
+            photoOverlay.style.display = "flex";
+          } catch (err) {
+            showToast(err?.message || "Gagal memuat foto", "error");
+          }
+        };
+
+        document.addEventListener("click", (e) => {
+          const closeBtn = e.target.closest("[data-photo-close]");
+          if (closeBtn) closePhotoViewer();
+          if (e.target === photoOverlay) closePhotoViewer();
+        });
+
         const esc = (v) => {
           const s = String(v ?? "");
           return s.replace(/[&<>"']/g, (ch) => {
@@ -1009,6 +1051,18 @@
             method: "POST",
             body: formData,
           });
+        const apiBlob = async (path) => {
+          const token = localStorage.getItem(tokenKey) || "";
+          const headers = {};
+          if (token) headers.Authorization = `Bearer ${token}`;
+          const res = await fetch(apiBase + path, { method: "GET", headers });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            const err = data?.error || `Request gagal (${res.status})`;
+            throw new Error(err);
+          }
+          return await res.blob();
+        };
         const apiPatch = (path, payload) =>
           apiRequest(path, {
             method: "PATCH",
@@ -1093,7 +1147,7 @@
                 <td>${fmtTime(r.checkout_at)}</td>
                 <td>${esc(r.created_by_name || "-")}</td>
                 <td>${badgeForKeyStatus(r)}</td>
-                <td>${r.has_photo && r.photo_url ? `<a class="button button-sm button-secondary" href="${esc(r.photo_url)}" target="_blank" rel="noreferrer">Foto</a>` : '<span class="muted">—</span>'}</td>
+                <td>${r.has_photo && r.photo_url ? `<button class="button button-sm button-secondary" type="button" data-action="open-photo" data-url="${esc(r.photo_url)}">Foto</button>` : '<span class="muted">—</span>'}</td>
                 <td><button class="button button-sm" type="button" data-action="key-return" data-id="${r.id}">Ambil</button></td>
               </tr>
             `
@@ -1118,7 +1172,7 @@
                 <td>${fmtTime(r.checkout_at)}</td>
                 <td>${fmtTime(r.checkin_at)}</td>
                 <td>${badgeForKeyStatus(r)}</td>
-                <td>${r.has_photo && r.photo_url ? `<a class="button button-sm button-secondary" href="${esc(r.photo_url)}" target="_blank" rel="noreferrer">Foto</a>` : '<span class="muted">—</span>'}</td>
+                <td>${r.has_photo && r.photo_url ? `<button class="button button-sm button-secondary" type="button" data-action="open-photo" data-url="${esc(r.photo_url)}">Foto</button>` : '<span class="muted">—</span>'}</td>
               </tr>
             `
             )
@@ -1140,7 +1194,7 @@
                 <td>${fmtTime(r.occurred_at)}</td>
                 <td>${esc(r.kind)}</td>
                 <td>${esc(r.description)}</td>
-                <td>${r.has_photo && r.photo_url ? `<a class="button button-sm button-secondary" href="${esc(r.photo_url)}" target="_blank" rel="noreferrer">Foto</a>` : '<span class="muted">—</span>'}</td>
+                <td>${r.has_photo && r.photo_url ? `<button class="button button-sm button-secondary" type="button" data-action="open-photo" data-url="${esc(r.photo_url)}">Foto</button>` : '<span class="muted">—</span>'}</td>
                 <td>${esc(r.created_by_name || "-")}</td>
               </tr>
             `
@@ -1162,7 +1216,7 @@
                 r.status === "in"
                   ? `<button class="button button-sm" type="button" data-action="guest-checkout" data-id="${r.id}">Keluar</button>`
                   : `<button class="button button-sm" type="button" data-action="guest-detail" data-id="${r.id}">Detail</button>`;
-              const photoCell = r.has_photo && r.photo_url ? `<a class="button button-sm button-secondary" href="${esc(r.photo_url)}" target="_blank" rel="noreferrer">Foto</a>` : '<span class="muted">—</span>';
+              const photoCell = r.has_photo && r.photo_url ? `<button class="button button-sm button-secondary" type="button" data-action="open-photo" data-url="${esc(r.photo_url)}">Foto</button>` : '<span class="muted">—</span>';
               return `
                 <tr>
                   <td>${esc(r.name)}</td>
@@ -1195,7 +1249,7 @@
                 <td>${esc(r.kind)}</td>
                 <td>${esc(r.destination)}</td>
                 <td>${esc(r.notes || "")}</td>
-                <td>${r.has_photo && r.photo_url ? `<a class="button button-sm button-secondary" href="${esc(r.photo_url)}" target="_blank" rel="noreferrer">Foto</a>` : '<span class="muted">—</span>'}</td>
+                <td>${r.has_photo && r.photo_url ? `<button class="button button-sm button-secondary" type="button" data-action="open-photo" data-url="${esc(r.photo_url)}">Foto</button>` : '<span class="muted">—</span>'}</td>
                 <td>${esc(r.created_by_name || "-")}</td>
               </tr>
             `
@@ -1619,6 +1673,13 @@
               localStorage.removeItem(tokenKey);
               window.location.href = "/";
             }
+          }
+
+          if (btn.dataset.action === "open-photo") {
+            const url = btn.getAttribute("data-url") || "";
+            if (!url) return;
+            await openPhotoViewer(url);
+            return;
           }
 
           if (btn.dataset.action === "key-return") {
