@@ -185,6 +185,10 @@
                   <label class="label" for="mutasiDesk">Deskripsi</label>
                   <textarea class="textarea" id="mutasiDesk" name="description" rows="3" placeholder="Tulis kejadian singkat..."></textarea>
                 </div>
+                <div class="field grid-span-3">
+                  <label class="label" for="mutasiPhoto">Foto (opsional)</label>
+                  <input class="input" id="mutasiPhoto" name="photo" type="file" accept="image/*" />
+                </div>
                 <div class="row row-right grid-span-3">
                   <button class="button button-primary" type="submit">Simpan</button>
                 </div>
@@ -208,6 +212,7 @@
                       <th>Jam</th>
                       <th>Jenis</th>
                       <th>Deskripsi</th>
+                        <th>Foto</th>
                       <th>Petugas</th>
                     </tr>
                   </thead>
@@ -267,6 +272,10 @@
                   <label class="label" for="kunciCatatan">Catatan</label>
                   <input class="input" id="kunciCatatan" name="notes" type="text" placeholder="mis. estimasi kembali 30 menit" />
                 </div>
+                <div class="field grid-span-4">
+                  <label class="label" for="kunciPhoto">Foto (opsional)</label>
+                  <input class="input" id="kunciPhoto" name="photo" type="file" accept="image/*" />
+                </div>
                 <div class="field">
                   <label class="label" for="kunciPetugas">Petugas</label>
                   <input class="input" id="kunciPetugas" type="text" value="-" disabled />
@@ -302,6 +311,7 @@
                         <th>Titip</th>
                         <th>Petugas</th>
                         <th>Status</th>
+                        <th>Foto</th>
                         <th>Aksi</th>
                       </tr>
                     </thead>
@@ -330,6 +340,7 @@
                         <th>Titip</th>
                         <th>Ambil</th>
                         <th>Status</th>
+                        <th>Foto</th>
                       </tr>
                     </thead>
                     <tbody id="keysClosedBody"></tbody>
@@ -392,6 +403,10 @@
                   <label class="label" for="tamuCatatan">Catatan</label>
                   <input class="input" id="tamuCatatan" name="notes" type="text" placeholder="opsional" />
                 </div>
+                <div class="field grid-span-4">
+                  <label class="label" for="tamuPhoto">Foto (opsional)</label>
+                  <input class="input" id="tamuPhoto" name="photo" type="file" accept="image/*" />
+                </div>
                 <div class="row row-right grid-span-4">
                   <button class="button button-primary" type="submit">Simpan</button>
                 </div>
@@ -418,6 +433,7 @@
                       <th>Ditemui</th>
                       <th>Masuk</th>
                       <th>Keluar</th>
+                      <th>Foto</th>
                       <th>Aksi</th>
                     </tr>
                   </thead>
@@ -477,6 +493,10 @@
                   <label class="label" for="tugasCatatan">Catatan</label>
                   <input class="input" id="tugasCatatan" name="notes" type="text" placeholder="mis. jumlah/berkas/porsi/galon" />
                 </div>
+                <div class="field grid-span-4">
+                  <label class="label" for="tugasPhoto">Foto (opsional)</label>
+                  <input class="input" id="tugasPhoto" name="photo" type="file" accept="image/*" />
+                </div>
                 <div class="row row-right grid-span-4">
                   <button class="button button-primary" type="submit">Simpan</button>
                 </div>
@@ -501,6 +521,7 @@
                       <th>Jenis</th>
                       <th>Tujuan</th>
                       <th>Catatan</th>
+                      <th>Foto</th>
                       <th>Petugas</th>
                     </tr>
                   </thead>
@@ -938,11 +959,11 @@
           setStatLoading("statMutasiTotal", flag);
           if (flag) {
             skeletonRows("dashKeysOpenBody", 4, 6);
-            skeletonRows("keysOpenBody", 6, 6);
-            skeletonRows("keysClosedBody", 5, 6);
-            skeletonRows("mutasiBody", 4, 6);
-            skeletonRows("guestsBody", 7, 6);
-            skeletonRows("tasksBody", 5, 6);
+            skeletonRows("keysOpenBody", 7, 6);
+            skeletonRows("keysClosedBody", 6, 6);
+            skeletonRows("mutasiBody", 5, 6);
+            skeletonRows("guestsBody", 8, 6);
+            skeletonRows("tasksBody", 6, 6);
             skeletonRows("reportKeysOpenBody", 5, 6);
             skeletonRows("adminUsersBody", 6, 6);
             skeletonRows("adminAuditBody", 5, 6);
@@ -983,6 +1004,11 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload || {}),
           });
+        const apiPostForm = (path, formData) =>
+          apiRequest(path, {
+            method: "POST",
+            body: formData,
+          });
         const apiPatch = (path, payload) =>
           apiRequest(path, {
             method: "PATCH",
@@ -1021,7 +1047,8 @@
           const body = byId(tbodyId);
           if (!body) return;
           if (!items.length) {
-            renderTableEmpty(tbodyId, mode === "dash" ? 4 : 6, "Tidak ada data.");
+            const cols = mode === "dash" ? 4 : mode === "report" ? 5 : 7;
+            renderTableEmpty(tbodyId, cols, "Tidak ada data.");
             return;
           }
           if (mode === "dash") {
@@ -1066,6 +1093,7 @@
                 <td>${fmtTime(r.checkout_at)}</td>
                 <td>${esc(r.created_by_name || "-")}</td>
                 <td>${badgeForKeyStatus(r)}</td>
+                <td>${r.has_photo && r.photo_url ? `<a class="button button-sm button-secondary" href="${esc(r.photo_url)}" target="_blank" rel="noreferrer">Foto</a>` : '<span class="muted">—</span>'}</td>
                 <td><button class="button button-sm" type="button" data-action="key-return" data-id="${r.id}">Ambil</button></td>
               </tr>
             `
@@ -1077,7 +1105,7 @@
           const body = byId("keysClosedBody");
           if (!body) return;
           if (!items.length) {
-            renderTableEmpty("keysClosedBody", 5, "Tidak ada data.");
+            renderTableEmpty("keysClosedBody", 6, "Tidak ada data.");
             return;
           }
           body.innerHTML = items
@@ -1090,6 +1118,7 @@
                 <td>${fmtTime(r.checkout_at)}</td>
                 <td>${fmtTime(r.checkin_at)}</td>
                 <td>${badgeForKeyStatus(r)}</td>
+                <td>${r.has_photo && r.photo_url ? `<a class="button button-sm button-secondary" href="${esc(r.photo_url)}" target="_blank" rel="noreferrer">Foto</a>` : '<span class="muted">—</span>'}</td>
               </tr>
             `
             )
@@ -1100,7 +1129,7 @@
           const body = byId("mutasiBody");
           if (!body) return;
           if (!items.length) {
-            renderTableEmpty("mutasiBody", 4, "Tidak ada data.");
+            renderTableEmpty("mutasiBody", 5, "Tidak ada data.");
             return;
           }
           body.innerHTML = items
@@ -1111,6 +1140,7 @@
                 <td>${fmtTime(r.occurred_at)}</td>
                 <td>${esc(r.kind)}</td>
                 <td>${esc(r.description)}</td>
+                <td>${r.has_photo && r.photo_url ? `<a class="button button-sm button-secondary" href="${esc(r.photo_url)}" target="_blank" rel="noreferrer">Foto</a>` : '<span class="muted">—</span>'}</td>
                 <td>${esc(r.created_by_name || "-")}</td>
               </tr>
             `
@@ -1122,7 +1152,7 @@
           const body = byId("guestsBody");
           if (!body) return;
           if (!items.length) {
-            renderTableEmpty("guestsBody", 7, "Tidak ada data.");
+            renderTableEmpty("guestsBody", 8, "Tidak ada data.");
             return;
           }
           body.innerHTML = items
@@ -1132,6 +1162,7 @@
                 r.status === "in"
                   ? `<button class="button button-sm" type="button" data-action="guest-checkout" data-id="${r.id}">Keluar</button>`
                   : `<button class="button button-sm" type="button" data-action="guest-detail" data-id="${r.id}">Detail</button>`;
+              const photoCell = r.has_photo && r.photo_url ? `<a class="button button-sm button-secondary" href="${esc(r.photo_url)}" target="_blank" rel="noreferrer">Foto</a>` : '<span class="muted">—</span>';
               return `
                 <tr>
                   <td>${esc(r.name)}</td>
@@ -1140,6 +1171,7 @@
                   <td>${esc(r.meet_person)}</td>
                   <td>${fmtTime(r.checkin_at)}</td>
                   <td>${r.checkout_at ? fmtTime(r.checkout_at) : '<span class="muted">—</span>'}</td>
+                  <td>${photoCell}</td>
                   <td>${action}</td>
                 </tr>
               `;
@@ -1151,7 +1183,7 @@
           const body = byId("tasksBody");
           if (!body) return;
           if (!items.length) {
-            renderTableEmpty("tasksBody", 5, "Tidak ada data.");
+            renderTableEmpty("tasksBody", 6, "Tidak ada data.");
             return;
           }
           body.innerHTML = items
@@ -1163,6 +1195,7 @@
                 <td>${esc(r.kind)}</td>
                 <td>${esc(r.destination)}</td>
                 <td>${esc(r.notes || "")}</td>
+                <td>${r.has_photo && r.photo_url ? `<a class="button button-sm button-secondary" href="${esc(r.photo_url)}" target="_blank" rel="noreferrer">Foto</a>` : '<span class="muted">—</span>'}</td>
                 <td>${esc(r.created_by_name || "-")}</td>
               </tr>
             `
@@ -1746,35 +1779,35 @@
           if (btn.dataset.action === "export-keys-open") {
             const rows = window.__lastKeysOpen || [];
             if (!rows.length) { showToast("Tidak ada data untuk diexport", "warn"); return; }
-            const csv = [["Nama","Kunci","Titip","Petugas","Status"]].concat(rows.map(r=>[r.borrower_name||"",r.key_name||"",r.checkout_at||"",r.created_by_name||"",r.status||""]));
+            const csv = [["Nama","Kunci","Titip","Petugas","Status","Foto"]].concat(rows.map(r=>[r.borrower_name||"",r.key_name||"",r.checkout_at||"",r.created_by_name||"",r.status||"",r.has_photo?"Ya":"Tidak"]));
             const blob = new Blob([csvText(csv)],{type:"text/csv;charset=utf-8"});
             const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "keys_open.csv"; a.click();
           }
           if (btn.dataset.action === "export-keys-closed") {
             const rows = window.__lastKeysClosed || [];
             if (!rows.length) { showToast("Tidak ada data untuk diexport", "warn"); return; }
-            const csv = [["Nama","Kunci","Titip","Ambil","Status"]].concat(rows.map(r=>[r.borrower_name||"",r.key_name||"",r.checkout_at||"",r.checkin_at||"",r.status||""]));
+            const csv = [["Nama","Kunci","Titip","Ambil","Status","Foto"]].concat(rows.map(r=>[r.borrower_name||"",r.key_name||"",r.checkout_at||"",r.checkin_at||"",r.status||"",r.has_photo?"Ya":"Tidak"]));
             const blob = new Blob([csvText(csv)],{type:"text/csv;charset=utf-8"});
             const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "keys_closed.csv"; a.click();
           }
           if (btn.dataset.action === "export-guests") {
             const rows = window.__lastGuests || [];
             if (!rows.length) { showToast("Tidak ada data untuk diexport", "warn"); return; }
-            const csv = [["Nama","Instansi","Tujuan","Ditemui","Masuk","Keluar","Status"]].concat(rows.map(r=>[r.name||"",r.instansi||"",r.purpose||"",r.meet_person||"",r.checkin_at||"",r.checkout_at||"",r.status||""]));
+            const csv = [["Nama","Instansi","Tujuan","Ditemui","Masuk","Keluar","Status","Foto"]].concat(rows.map(r=>[r.name||"",r.instansi||"",r.purpose||"",r.meet_person||"",r.checkin_at||"",r.checkout_at||"",r.status||"",r.has_photo?"Ya":"Tidak"]));
             const blob = new Blob([csvText(csv)],{type:"text/csv;charset=utf-8"});
             const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "guests.csv"; a.click();
           }
           if (btn.dataset.action === "export-tasks") {
             const rows = window.__lastTasks || [];
             if (!rows.length) { showToast("Tidak ada data untuk diexport", "warn"); return; }
-            const csv = [["Jam","Jenis","Tujuan","Catatan","Petugas"]].concat(rows.map(r=>[r.occurred_at||"",r.kind||"",r.destination||"",r.notes||"",r.created_by_name||""]));
+            const csv = [["Jam","Jenis","Tujuan","Catatan","Petugas","Foto"]].concat(rows.map(r=>[r.occurred_at||"",r.kind||"",r.destination||"",r.notes||"",r.created_by_name||"",r.has_photo?"Ya":"Tidak"]));
             const blob = new Blob([csvText(csv)],{type:"text/csv;charset=utf-8"});
             const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "tasks.csv"; a.click();
           }
           if (btn.dataset.action === "export-mutasi") {
             const rows = window.__lastMutasi || [];
             if (!rows.length) { showToast("Tidak ada data untuk diexport", "warn"); return; }
-            const csv = [["Jam","Jenis","Deskripsi","Petugas"]].concat(rows.map(r=>[r.occurred_at||"",r.kind||"",r.description||"",r.created_by_name||""]));
+            const csv = [["Jam","Jenis","Deskripsi","Petugas","Foto"]].concat(rows.map(r=>[r.occurred_at||"",r.kind||"",r.description||"",r.created_by_name||"",r.has_photo?"Ya":"Tidak"]));
             const blob = new Blob([csvText(csv)],{type:"text/csv;charset=utf-8"});
             const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "mutasi.csv"; a.click();
           }
@@ -1842,19 +1875,43 @@
             checkout_at: toIsoLocal(ymd, time),
             notes: form.querySelector('[name="notes"]')?.value || "",
           };
+          const photo = form.querySelector('[name="photo"]')?.files?.[0] || null;
+          const postKeyWithPhoto = async (force) => {
+            const fd = new FormData();
+            fd.set("borrower_name", payload.borrower_name);
+            fd.set("unit", payload.unit);
+            fd.set("key_name", payload.key_name);
+            fd.set("checkout_at", payload.checkout_at);
+            fd.set("notes", payload.notes);
+            if (force) fd.set("force", "true");
+            if (photo) fd.set("photo", photo);
+            return apiPostForm("/api/keys_with_photo", fd);
+          };
           try {
-            await apiPost("/api/keys", payload);
+            if (photo) {
+              await postKeyWithPhoto(false);
+            } else {
+              await apiPost("/api/keys", payload);
+            }
           } catch (err) {
             if (err.message && err.message.toLowerCase().includes("kunci")) {
               const ok = await confirmDialog(`${err.message}\nTetap simpan sebagai duplikasi?`);
               if (ok) {
-                await apiPost("/api/keys", { ...payload, force: true });
+                if (photo) {
+                  await postKeyWithPhoto(true);
+                } else {
+                  await apiPost("/api/keys", { ...payload, force: true });
+                }
                 return;
               }
             }
             const ok2 = await confirmDialog(`${err.message}\nTetap simpan?`);
             if (ok2) {
-              await apiPost("/api/keys", { ...payload, force: true });
+              if (photo) {
+                await postKeyWithPhoto(true);
+              } else {
+                await apiPost("/api/keys", { ...payload, force: true });
+              }
               return;
             }
             throw err;
@@ -1870,7 +1927,17 @@
             kind: form.querySelector('[name="kind"]')?.value || "Lainnya",
             description: form.querySelector('[name="description"]')?.value || "",
           };
-          await apiPost("/api/mutasi", payload);
+          const photo = form.querySelector('[name="photo"]')?.files?.[0] || null;
+          if (photo) {
+            const fd = new FormData();
+            fd.set("occurred_at", payload.occurred_at);
+            fd.set("kind", payload.kind);
+            fd.set("description", payload.description);
+            fd.set("photo", photo);
+            await apiPostForm("/api/mutasi_with_photo", fd);
+          } else {
+            await apiPost("/api/mutasi", payload);
+          }
         });
 
         handleForm("guestForm", async (form) => {
@@ -1885,7 +1952,20 @@
             checkin_at: toIsoLocal(ymd, time),
             notes: form.querySelector('[name="notes"]')?.value || "",
           };
-          await apiPost("/api/guests", payload);
+          const photo = form.querySelector('[name="photo"]')?.files?.[0] || null;
+          if (photo) {
+            const fd = new FormData();
+            fd.set("name", payload.name);
+            fd.set("instansi", payload.instansi);
+            fd.set("purpose", payload.purpose);
+            fd.set("meet_person", payload.meet_person);
+            fd.set("checkin_at", payload.checkin_at);
+            fd.set("notes", payload.notes);
+            fd.set("photo", photo);
+            await apiPostForm("/api/guests_with_photo", fd);
+          } else {
+            await apiPost("/api/guests", payload);
+          }
         });
 
         handleForm("taskForm", async (form) => {
@@ -1898,7 +1978,18 @@
             destination: form.querySelector('[name="destination"]')?.value || "",
             notes: form.querySelector('[name="notes"]')?.value || "",
           };
-          await apiPost("/api/tasks", payload);
+          const photo = form.querySelector('[name="photo"]')?.files?.[0] || null;
+          if (photo) {
+            const fd = new FormData();
+            fd.set("kind", payload.kind);
+            fd.set("occurred_at", payload.occurred_at);
+            fd.set("destination", payload.destination);
+            fd.set("notes", payload.notes);
+            fd.set("photo", photo);
+            await apiPostForm("/api/tasks_with_photo", fd);
+          } else {
+            await apiPost("/api/tasks", payload);
+          }
         });
 
         handleForm("adminCreateUserForm", async (form) => {
