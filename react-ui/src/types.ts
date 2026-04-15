@@ -4,6 +4,9 @@ export type Me = {
   user: { id: number; username: string; display_name: string; role: Role }
   shift: string
   post: string
+  session_ttl_seconds?: number
+  session_expires_at?: number
+  session_expires_at_iso?: string
 }
 
 export type ShiftReport = {
@@ -56,6 +59,7 @@ export type TaskEntry = {
   occurred_at: string
   destination: string
   notes: string
+  extra?: any
   created_by_name?: string
   shift?: string
   post?: string

@@ -32,3 +32,17 @@ export const fmtTime = (iso: string | null | undefined) => {
   const t = iso.includes('T') ? iso.split('T')[1] : iso
   return (t || '').slice(0, 5) || '—'
 }
+
+export const fmtDateTime = (iso: string | null | undefined) => {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return iso
+  return new Intl.DateTimeFormat('id-ID', {
+    weekday: 'short',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(d)
+}
