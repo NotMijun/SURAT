@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiGet, apiGetBlob, apiPost, apiPostForm } from '../../lib/api'
 import type { KeyTx, Me } from '../../types'
-import { fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
+import { fmtDateTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useToast } from '../../components/ToastHost'
 
 const badge = (s: KeyTx['status']) => {
@@ -15,32 +15,44 @@ export default function KeysPage({ me }: { me: Me }) {
   const today = useMemo(() => toYmd(new Date()), [])
   const [q, setQ] = useState('')
   const [date, setDate] = useState(today)
-  const [sort, setSort] = useState<'checkout_desc' | 'checkout_asc'>('checkout_desc')
+  const [sort, setSort] = useState<'checkout_desc' | 'checkout_asc' | 'checkin_desc' | 'checkin_asc'>('checkout_desc')
   const [limit, setLimit] = useState(200)
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState<KeyTx[]>([])
   const [closed, setClosed] = useState<KeyTx[]>([])
+  const [filterBy, setFilterBy] = useState<'titip' | 'ambil'>('titip')
+  const [fromHm, setFromHm] = useState('')
+  const [toHm, setToHm] = useState('')
 
   const [borrower, setBorrower] = useState('')
   const [unit, setUnit] = useState('')
   const [keyName, setKeyName] = useState('')
   const [time, setTime] = useState(nowHm())
   const [notes, setNotes] = useState('')
+  const [petugasId, setPetugasId] = useState<string>(String(me.user.id))
+  const [guards, setGuards] = useState<{id: number, display_name: string}[]>([])
   const [photo, setPhoto] = useState<File | null>(null)
   const [photoKey, setPhotoKey] = useState(0)
   const [photoView, setPhotoView] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number }) => {
+  useEffect(() => {
+    if (me.user.role === 'admin') {
+      apiGet<{items: any[]}>('/api/guards').then(res => setGuards(res.items || [])).catch(() => {})
+    }
+  }, [me.user.role])
+
+  const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number; closedDateField?: 'checkout' | 'checkin' }) => {
     const { q, date, sort, limit } = opts
+    const closedDateField = opts.closedDateField || 'checkout'
     setLoading(true)
     try {
       const [a, b] = await Promise.all([
         apiGet<{ items: KeyTx[] }>(
-          `/api/keys?status=open&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}`,
+          `/api/keys?status=open&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&date_field=checkout&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}`,
         ),
         apiGet<{ items: KeyTx[] }>(
-          `/api/keys?status=closed&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}`,
+          `/api/keys?status=closed&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&date_field=${encodeURIComponent(closedDateField)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}`,
         ),
       ])
       setOpen(a.items || [])
@@ -53,13 +65,46 @@ export default function KeysPage({ me }: { me: Me }) {
   }, [toast])
 
   useEffect(() => {
-    const t = window.setTimeout(() => refresh({ q, date, sort, limit }).catch(() => {}), 250)
+    const t = window.setTimeout(() => {
+      const closedDateField = date === today && filterBy === 'ambil' ? 'checkin' : 'checkout'
+      refresh({ q, date, sort, limit, closedDateField }).catch(() => {})
+    }, 250)
     return () => window.clearTimeout(t)
-  }, [date, limit, q, refresh, sort])
+  }, [date, limit, q, refresh, sort, filterBy, today])
 
   useEffect(() => {
-    refresh({ q: '', date: today, sort: 'checkout_desc', limit: 200 }).catch(() => {})
+    refresh({ q: '', date: today, sort: 'checkout_desc', limit: 200, closedDateField: 'checkout' }).catch(() => {})
   }, [refresh, today])
+
+  const hmToMinutes = (hm: string) => {
+    const [h, m] = String(hm || '').split(':', 2)
+    const hh = Number(h)
+    const mm = Number(m)
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null
+    return hh * 60 + mm
+  }
+
+  const inTimeWindow = useCallback((iso: string | null | undefined) => {
+    if (!iso) return false
+    if (date !== today) return true
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return true
+    const mins = d.getHours() * 60 + d.getMinutes()
+    const f = hmToMinutes(fromHm)
+    const t = hmToMinutes(toHm)
+    if (f == null && t == null) return true
+    if (f != null && mins < f) return false
+    if (t != null && mins > t) return false
+    return true
+  }, [date, fromHm, toHm, today])
+
+  const openView = useMemo(() => open.filter((r) => inTimeWindow(r.checkout_at)), [inTimeWindow, open])
+  const closedView = useMemo(() => {
+    const field = filterBy === 'ambil' ? 'checkin_at' : 'checkout_at'
+    return closed.filter((r) => inTimeWindow((r as any)[field]))
+  }, [closed, filterBy, inTimeWindow])
+
+  const petugasName = useCallback((r: KeyTx) => String(r.created_by_name || '').trim() || me.user.display_name, [me.user.display_name])
 
   const downloadCsv = (filename: string, rows: Array<Array<string | number>>) => {
     const lines = rows.map((r) => r.map((x) => `"${String(x ?? '').replace(/"/g, '""')}"`).join(','))
@@ -84,6 +129,7 @@ export default function KeysPage({ me }: { me: Me }) {
         key_name: keyName,
         checkout_at: toIsoLocal(today, time),
         notes,
+        petugas_id: parseInt(petugasId, 10),
       }
       try {
         if (photo) {
@@ -93,6 +139,7 @@ export default function KeysPage({ me }: { me: Me }) {
           form.set('key_name', payload.key_name)
           form.set('checkout_at', payload.checkout_at)
           form.set('notes', payload.notes)
+          form.set('petugas_id', String(payload.petugas_id))
           form.set('photo', photo)
           await apiPostForm('/api/keys_with_photo', form)
         } else {
@@ -109,6 +156,7 @@ export default function KeysPage({ me }: { me: Me }) {
           form.set('key_name', payload.key_name)
           form.set('checkout_at', payload.checkout_at)
           form.set('notes', payload.notes)
+          form.set('petugas_id', String(payload.petugas_id))
           form.set('force', 'true')
           form.set('photo', photo)
           await apiPostForm('/api/keys_with_photo', form)
@@ -123,7 +171,8 @@ export default function KeysPage({ me }: { me: Me }) {
       setPhoto(null)
       setPhotoKey((x) => x + 1)
       toast.push('Disimpan', 'success')
-      await refresh({ q, date, sort, limit })
+      const closedDateField = date === today && filterBy === 'ambil' ? 'checkin' : 'checkout'
+      await refresh({ q, date, sort, limit, closedDateField })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal menyimpan'), 'error')
     } finally {
@@ -135,9 +184,23 @@ export default function KeysPage({ me }: { me: Me }) {
     try {
       await apiPost(`/api/keys/${id}/return`, {})
       toast.push('Kunci ditandai diambil', 'success')
-      await refresh({ q, date, sort, limit })
+      const closedDateField = date === today && filterBy === 'ambil' ? 'checkin' : 'checkout'
+      await refresh({ q, date, sort, limit, closedDateField })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal memproses'), 'error')
+    }
+  }
+
+  const doUndo = async (id: number) => {
+    const ok = window.confirm('Batalkan penitipan kunci ini?')
+    if (!ok) return
+    try {
+      await apiPost(`/api/keys/${id}/undo`, {})
+      toast.push('Penitipan kunci dibatalkan', 'success')
+      const closedDateField = date === today && filterBy === 'ambil' ? 'checkin' : 'checkout'
+      await refresh({ q, date, sort, limit, closedDateField })
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal membatalkan'), 'error')
     }
   }
 
@@ -161,48 +224,69 @@ export default function KeysPage({ me }: { me: Me }) {
       <div className="section-header">
         <h2 className="h2">Penitipan Kunci</h2>
         <div className="section-actions">
-          <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nama / kunci..." />
+          <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nama, kunci, jam..." />
           <input className="input input-sm" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           <select className="select select-sm" value={sort} onChange={(e) => setSort(e.target.value as any)}>
             <option value="checkout_desc">Titip terbaru</option>
             <option value="checkout_asc">Titip terlama</option>
+            <option value="checkin_desc">Ambil terbaru</option>
+            <option value="checkin_asc">Ambil terlama</option>
           </select>
           <select className="select select-sm" value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))}>
             <option value={50}>50</option>
             <option value={200}>200</option>
             <option value={500}>500</option>
           </select>
+          {date === today && (
+            <>
+              <select className="select select-sm" value={filterBy} onChange={(e) => setFilterBy(e.target.value as any)}>
+                <option value="titip">Filter: Jam titip</option>
+                <option value="ambil">Filter: Jam ambil</option>
+              </select>
+              <input className="input input-sm" type="time" value={fromHm} onChange={(e) => setFromHm(e.target.value)} title="Dari jam" />
+              <input className="input input-sm" type="time" value={toHm} onChange={(e) => setToHm(e.target.value)} title="Sampai jam" />
+            </>
+          )}
           <button className="button button-secondary button-sm" type="button" onClick={() => setDate(today)}>
             Hari ini
           </button>
           <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
             Semua
           </button>
-          <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ q, date, sort, limit })}>
+          <button
+            className="button button-secondary button-sm"
+            type="button"
+            onClick={() => {
+              const closedDateField = date === today && filterBy === 'ambil' ? 'checkin' : 'checkout'
+              refresh({ q, date, sort, limit, closedDateField })
+            }}
+          >
             Refresh
           </button>
           <button
             className="button button-secondary button-sm"
             type="button"
-            onClick={() =>
+            onClick={() => {
+              const allRows = [...openView, ...closedView].sort((a, b) => Date.parse(b.checkout_at || '') - Date.parse(a.checkout_at || ''))
               downloadCsv(
-                `kunci-open-${date || 'semua'}.csv`,
-                [['Nama', 'Unit', 'Ruangan/Kunci', 'Jam titip', 'Catatan', 'Foto', 'Petugas', 'Status']].concat(
-                  open.map((r) => [
+                `kunci-${date || 'semua'}.csv`,
+                [['Nama', 'Unit', 'Ruangan/Kunci', 'Jam titip', 'Jam ambil', 'Catatan', 'Foto', 'Petugas', 'Status']].concat(
+                  allRows.map((r) => [
                     String(r.borrower_name || ''),
                     String(r.unit || ''),
                     String(r.key_name || ''),
-                    String(fmtTime(r.checkout_at)),
+                    String(fmtDateTime(r.checkout_at)),
+                    String(fmtDateTime(r.checkin_at || '')),
                     String(r.notes || ''),
                     r.has_photo ? 'Ya' : 'Tidak',
-                    String(r.created_by_name || '-'),
+                    petugasName(r),
                     String(r.status || ''),
                   ]),
                 ),
               )
-            }
+            }}
           >
-            Export Open
+            Export CSV
           </button>
           <button className="button button-secondary button-sm" type="button" onClick={() => window.print()}>
             Cetak
@@ -213,7 +297,19 @@ export default function KeysPage({ me }: { me: Me }) {
       <section className="card" id="keysForm">
         <header className="card-header">
           <div className="card-title">Titip kunci</div>
-          <div className="muted">Petugas: {me.user.display_name}</div>
+          <div className="muted">
+            Petugas:{' '}
+            {me.user.role === 'admin' ? (
+              <select className="select select-sm" style={{ display: 'inline-block', width: 'auto', marginLeft: 8 }} value={petugasId} onChange={(e) => setPetugasId(e.target.value)}>
+                {guards.map(g => (
+                  <option key={g.id} value={g.id}>{g.display_name}</option>
+                ))}
+                {!guards.some(g => String(g.id) === petugasId) && <option value={petugasId}>{me.user.display_name}</option>}
+              </select>
+            ) : (
+              me.user.display_name
+            )}
+          </div>
         </header>
         <div className="card-body">
           <form className="form grid grid-4" onSubmit={onSubmit}>
@@ -240,6 +336,7 @@ export default function KeysPage({ me }: { me: Me }) {
                 Jam titip
               </label>
               <input className="input" id="keyTime" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+              <div className="muted">Akan tersimpan: {fmtDateTime(toIsoLocal(today, time))}</div>
               <div className="chips">
                 <button className="chip" type="button" onClick={() => setTime(shiftHm(time, -5))}>
                   -5m
@@ -301,7 +398,7 @@ export default function KeysPage({ me }: { me: Me }) {
         <section className="card">
           <header className="card-header">
             <div className="card-title">Penitipan aktif</div>
-            <div className="muted">{loading ? 'Memuat...' : `${open.length} entri`}</div>
+            <div className="muted">{loading ? 'Memuat...' : `${openView.length} entri`}</div>
           </header>
           <div className="card-body">
             <div className="table-wrap">
@@ -318,12 +415,12 @@ export default function KeysPage({ me }: { me: Me }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {open.map((r) => (
+                  {openView.map((r) => (
                     <tr key={r.id}>
                       <td data-label="Nama">{r.borrower_name}</td>
                       <td data-label="Ruangan">{r.key_name}</td>
-                      <td data-label="Titip">{fmtTime(r.checkout_at)}</td>
-                      <td data-label="Petugas">{r.created_by_name || '-'}</td>
+                      <td data-label="Titip">{fmtDateTime(r.checkout_at)}</td>
+                      <td data-label="Petugas">{petugasName(r)}</td>
                       <td data-label="Status">{badge(r.status)}</td>
                       <td data-label="Foto">
                         {r.has_photo && r.photo_url ? (
@@ -335,13 +432,16 @@ export default function KeysPage({ me }: { me: Me }) {
                         )}
                       </td>
                       <td data-label="Aksi">
-                        <button className="button button-sm" type="button" onClick={() => doReturn(r.id)}>
+                        <button className="button button-sm" type="button" onClick={() => doReturn(r.id)} style={{ marginRight: 8 }}>
                           Ambil
+                        </button>
+                        <button className="button button-sm button-danger" type="button" onClick={() => doUndo(r.id)}>
+                          Undo
                         </button>
                       </td>
                     </tr>
                   ))}
-                  {open.length === 0 && (
+                  {openView.length === 0 && (
                     <tr>
                       <td className="muted" colSpan={7}>
                         Tidak ada data.
@@ -357,7 +457,7 @@ export default function KeysPage({ me }: { me: Me }) {
         <section className="card">
           <header className="card-header">
             <div className="card-title">Riwayat (closed)</div>
-            <div className="muted">{loading ? 'Memuat...' : `${closed.length} entri`}</div>
+            <div className="muted">{loading ? 'Memuat...' : `${closedView.length} entri`}</div>
           </header>
           <div className="card-body">
             <div className="table-wrap">
@@ -373,12 +473,12 @@ export default function KeysPage({ me }: { me: Me }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {closed.slice(0, 120).map((r) => (
+                  {closedView.slice(0, 120).map((r) => (
                     <tr key={r.id}>
                       <td data-label="Nama">{r.borrower_name}</td>
                       <td data-label="Ruangan">{r.key_name}</td>
-                      <td data-label="Titip">{fmtTime(r.checkout_at)}</td>
-                      <td data-label="Ambil">{fmtTime(r.checkin_at || '')}</td>
+                      <td data-label="Titip">{fmtDateTime(r.checkout_at)}</td>
+                      <td data-label="Ambil">{fmtDateTime(r.checkin_at || '')}</td>
                       <td data-label="Status">{badge(r.status)}</td>
                       <td data-label="Foto">
                         {r.has_photo && r.photo_url ? (
@@ -391,7 +491,7 @@ export default function KeysPage({ me }: { me: Me }) {
                       </td>
                     </tr>
                   ))}
-                  {closed.length === 0 && (
+                  {closedView.length === 0 && (
                     <tr>
                       <td className="muted" colSpan={6}>
                         Tidak ada data.

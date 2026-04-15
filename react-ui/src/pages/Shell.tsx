@@ -41,6 +41,16 @@ export default function Shell() {
   }, [accent])
 
   useEffect(() => {
+    const handleAuthError = () => {
+      toast.push('Sesi telah berakhir, silakan login kembali', 'error')
+      clearToken()
+      nav('/login', { replace: true })
+    }
+    window.addEventListener('auth:unauthorized', handleAuthError)
+    return () => window.removeEventListener('auth:unauthorized', handleAuthError)
+  }, [nav, toast])
+
+  useEffect(() => {
     if (!token) return
     let cancelled = false
     setLoading(true)
@@ -68,8 +78,6 @@ export default function Shell() {
     }
   }, [nav, toast, token])
 
-  if (!token) return <Navigate to="/login" replace />
-
   const logout = async () => {
     try {
       await apiPost('/api/logout', {})
@@ -90,6 +98,26 @@ export default function Shell() {
     }
   }
 
+  const sessionLabel = useMemo(() => {
+    const ttl = me?.session_ttl_seconds
+    if (!ttl || !Number.isFinite(ttl)) return ''
+    const mins = Math.round(ttl / 60)
+    if (mins < 60) return `${mins} menit`
+    const h = Math.floor(mins / 60)
+    const m = mins % 60
+    return m ? `${h}j ${m}m` : `${h} jam`
+  }, [me?.session_ttl_seconds])
+
+  const sessionExpiresLabel = useMemo(() => {
+    const iso = me?.session_expires_at_iso
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return iso
+    return new Intl.DateTimeFormat('id-ID', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(d)
+  }, [me?.session_expires_at_iso])
+
+  if (!token) return <Navigate to="/login" replace />
+
   return (
     <div className="shell">
       <div className="topbar">
@@ -104,6 +132,11 @@ export default function Shell() {
         <div className="topbar-right">
           <div className="pill">{me ? `Shift: ${me.shift} · Pos: ${me.post}` : 'Shift: -'}</div>
           <div className="pill pill-muted">{me ? `Petugas: ${me.user.display_name}` : 'Petugas: -'}</div>
+          {me && sessionLabel && (
+            <div className="pill pill-muted" title={sessionExpiresLabel ? `Perkiraan berakhir: ${sessionExpiresLabel}` : undefined}>
+              Sesi: {sessionLabel}
+            </div>
+          )}
           <button className="button button-secondary button-sm topbar-action" type="button" onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}>
             {theme === 'light' ? 'Mode: Terang' : 'Mode: Gelap'}
           </button>

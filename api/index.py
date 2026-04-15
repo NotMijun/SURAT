@@ -26,7 +26,7 @@ except Exception as e:
     psycopg2 = None  # type: ignore
     _psycopg2_import_error = repr(e)
 
-SESSION_TTL_SECONDS = 60 * 60 * 2
+SESSION_TTL_SECONDS = max(60, min(60 * 60 * 24, int(os.getenv("SESSION_TTL_SECONDS", 60 * 60 * 2))))
 LOGIN_RATE_WINDOW_SECONDS = 10 * 60
 LOGIN_RATE_MAX_ATTEMPTS = 8
 MAX_PHOTO_BYTES = 3 * 1024 * 1024
@@ -121,6 +121,28 @@ def _parse_truthy(v: Any) -> bool:
         return v
     s = str(v).strip().lower()
     return s in ("1", "true", "yes", "y", "on")
+
+
+def _text_field(value: Any, *, field: str, max_len: int, default: str = "") -> str:
+    s = ("" if value is None else str(value)).strip()
+    if not s:
+        return default
+    if len(s) > max_len:
+        raise HTTPException(status_code=400, detail=f"{field} terlalu panjang")
+    return s
+
+
+def _iso_field(value: Any, *, field: str) -> str:
+    s = ("" if value is None else str(value)).strip()
+    if not s:
+        return ""
+    if len(s) > 32:
+        raise HTTPException(status_code=400, detail=f"{field} tidak valid")
+    try:
+        datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except Exception:
+        raise HTTPException(status_code=400, detail=f"{field} tidak valid")
+    return s
 
 
 def _read_photo_upload(photo: UploadFile | None) -> tuple[str | None, str | None, str | None, str | None]:
@@ -386,6 +408,7 @@ def _ensure_schema(conn) -> None:
             cur.execute("ALTER TABLE task_entries ADD COLUMN IF NOT EXISTS photo_mime TEXT")
             cur.execute("ALTER TABLE task_entries ADD COLUMN IF NOT EXISTS photo_name TEXT")
             cur.execute("ALTER TABLE task_entries ADD COLUMN IF NOT EXISTS photo_uploaded_at TEXT")
+            cur.execute("ALTER TABLE task_entries ADD COLUMN IF NOT EXISTS extra_json TEXT")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_task_occurred ON task_entries(occurred_at)")
             cur.execute(
                 """
@@ -625,6 +648,7 @@ class CreateKeyBody(BaseModel):
     checkout_at: str | None = None
     notes: str | None = None
     force: bool | None = None
+    petugas_id: int | None = None
 
 
 class PatchKeyBody(BaseModel):
@@ -647,6 +671,7 @@ class CreateGuestBody(BaseModel):
     meet_person: str
     checkin_at: str
     notes: str | None = None
+    post: str | None = None
 
 
 class CreateTaskBody(BaseModel):
@@ -654,6 +679,7 @@ class CreateTaskBody(BaseModel):
     occurred_at: str
     destination: str
     notes: str
+    extra: Any | None = None
 
 
 @app.get("/api/health")
@@ -738,11 +764,42 @@ def login(body: LoginBody, request: Request):
 def me(request: Request):
     with db_connect() as conn:
         sess = _require_session(conn, request)
+        exp_ts = int(sess.get("expires_at") or 0)
+        exp_iso = datetime.fromtimestamp(exp_ts, tz=timezone.utc).isoformat(timespec="seconds") if exp_ts else None
         return {
             "user": {"id": int(sess["user_id"]), "username": sess["username"], "display_name": sess["display_name"], "role": sess["role"]},
             "shift": sess["shift"],
             "post": sess["post"],
+            "session_ttl_seconds": SESSION_TTL_SECONDS,
+            "session_expires_at": exp_ts,
+            "session_expires_at_iso": exp_iso,
         }
+
+
+@app.get("/api/guards")
+def list_guards(request: Request):
+    with db_connect() as conn:
+        _require_session(conn, request)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT id, display_name FROM users WHERE is_active = 1 ORDER BY display_name ASC")
+            rows = cur.fetchall()
+        return {"items": rows}
+
+
+@app.get("/api/vendors/catering")
+def vendors_catering(request: Request):
+    with db_connect() as conn:
+        _require_session(conn, request)
+    raw = (os.getenv("CATERING_VENDORS") or "").strip()
+    items = []
+    for part in raw.split(","):
+        name = part.strip()
+        if not name:
+            continue
+        if len(name) > 80:
+            continue
+        items.append({"name": name})
+    return {"items": items}
 
 
 @app.post("/api/logout")
@@ -795,12 +852,25 @@ def handover(request: Request):
 
 
 @app.get("/api/keys")
-def list_keys(request: Request, status: str = "open", q: str = "", date: str = "", sort: str = "checkout_desc", limit: int = 200):
+def list_keys(
+    request: Request,
+    status: str = "open",
+    q: str = "",
+    date: str = "",
+    date_field: str = "checkout",
+    sort: str = "checkout_desc",
+    limit: int = 200,
+):
     with db_connect() as conn:
         _require_session(conn, request)
         status = (status or "open").strip()
         qn = normalize_text(q)
         bounds = _day_bounds(date)
+        date_field = (date_field or "checkout").strip().lower()
+        if status == "open":
+            date_field = "checkout"
+        if date_field not in ("checkout", "checkin"):
+            date_field = "checkout"
         sort = (sort or "checkout_desc").strip()
         limit = max(1, min(500, int(limit or 200)))
         where = []
@@ -809,14 +879,19 @@ def list_keys(request: Request, status: str = "open", q: str = "", date: str = "
             where.append("kt.status = %s")
             params.append(status)
         if qn:
-            where.append("(kt.borrower_name_norm LIKE %s OR kt.key_name_norm LIKE %s)")
-            params.extend([f"%{qn}%", f"%{qn}%"])
+            where.append("(kt.borrower_name_norm LIKE %s OR kt.key_name_norm LIKE %s OR kt.checkout_at LIKE %s OR kt.checkin_at LIKE %s)")
+            params.extend([f"%{qn}%", f"%{qn}%", f"%{qn}%", f"%{qn}%"])
         if bounds:
-            where.append("kt.checkout_at BETWEEN %s AND %s")
+            date_col = "kt.checkout_at" if date_field == "checkout" else "kt.checkin_at"
+            where.append(f"{date_col} BETWEEN %s AND %s")
             params.extend([bounds[0], bounds[1]])
         order = "kt.checkout_at DESC"
         if sort == "checkout_asc":
             order = "kt.checkout_at ASC"
+        elif sort == "checkin_desc":
+            order = "kt.checkin_at DESC NULLS LAST"
+        elif sort == "checkin_asc":
+            order = "kt.checkin_at ASC NULLS LAST"
         sql = """
           SELECT kt.id, kt.borrower_name, kt.unit, kt.key_name, kt.checkout_at, kt.checkin_at, kt.notes, kt.status,
                  CASE WHEN kt.photo_b64 IS NULL OR kt.photo_b64='' THEN 0 ELSE 1 END AS has_photo,
@@ -866,20 +941,25 @@ def _create_key_tx(
     checkout_at: str | None,
     notes: str | None,
     force: bool,
+    petugas_id: int | None,
     photo_b64: str | None,
     photo_mime: str | None,
     photo_name: str | None,
     photo_uploaded_at: str | None,
 ) -> int:
-    borrower_name = (borrower_name or "").strip() or "Tidak diketahui"
-    unit = (unit or "").strip() or "-"
-    key_name = (key_name or "").strip()
-    checkout_at = (checkout_at or "").strip() or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-    notes = (notes or "").strip()
+    borrower_name = _text_field(borrower_name, field="Nama penitip", max_len=80, default="Tidak diketahui")
+    unit = _text_field(unit, field="Unit/Divisi", max_len=80, default="-")
+    key_name = _text_field(key_name, field="Kunci/ruangan", max_len=80, default="")
+    notes = _text_field(notes, field="Catatan", max_len=240, default="")
+    checkout_at = _iso_field(checkout_at, field="Waktu titip") or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     if not key_name:
         raise HTTPException(status_code=400, detail="Kunci/ruangan wajib diisi")
     key_norm = normalize_text(key_name)
     borrower_norm = normalize_text(borrower_name)
+    
+    created_by_id = sess["user_id"]
+    if petugas_id is not None:
+        created_by_id = petugas_id
 
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
@@ -921,7 +1001,7 @@ def _create_key_tx(
                 None,
                 notes,
                 "open",
-                sess["user_id"],
+                created_by_id,
                 sess["shift"],
                 sess["post"],
                 photo_b64,
@@ -968,6 +1048,7 @@ def create_key(body: CreateKeyBody, request: Request):
             body.checkout_at,
             body.notes,
             bool(body.force),
+            body.petugas_id,
             None,
             None,
             None,
@@ -985,11 +1066,20 @@ def create_key_with_photo(
     checkout_at: str | None = Form(None),
     notes: str | None = Form(None),
     force: str | None = Form(None),
+    petugas_id: str | None = Form(None),
     photo: UploadFile | None = File(None),
 ):
     with db_connect() as conn:
         sess = _require_session(conn, request)
         (photo_b64, photo_mime, photo_name, photo_uploaded_at) = _read_photo_upload(photo)
+        
+        petugas_id_int = None
+        if petugas_id and petugas_id.strip():
+            try:
+                petugas_id_int = int(petugas_id)
+            except ValueError:
+                pass
+                
         record_id = _create_key_tx(
             conn,
             sess,
@@ -999,6 +1089,7 @@ def create_key_with_photo(
             checkout_at,
             notes,
             _parse_truthy(force),
+            petugas_id_int,
             photo_b64,
             photo_mime,
             photo_name,
@@ -1035,6 +1126,29 @@ def return_key(key_id: str, request: Request):
         conn.commit()
         return {"ok": True}
 
+
+@app.post("/api/keys/{key_id}/undo")
+def undo_key(key_id: str, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM key_transactions WHERE id=%s", (key_id,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Data tidak ditemukan")
+            if row["status"] != "open":
+                raise HTTPException(status_code=400, detail="Hanya transaksi open yang bisa di-undo")
+            if sess.get("role") not in ("admin", "supervisor") and int(row.get("created_by") or 0) != int(sess["user_id"]):
+                raise HTTPException(status_code=403, detail="Tidak punya akses undo")
+            before = dict(row)
+            now = utc_now_iso()
+            reason = f"undo oleh {int(sess['user_id'])}"
+            cur.execute("UPDATE key_transactions SET status='void', void_reason=%s, updated_at=%s WHERE id=%s", (reason, now, key_id))
+            cur.execute("SELECT * FROM key_transactions WHERE id=%s", (key_id,))
+            after = dict(cur.fetchone())
+            _audit(conn, sess, "key_transactions", str(key_id), "undo", before, after)
+        conn.commit()
+        return {"ok": True}
 
 @app.patch("/api/keys/{key_id}")
 def patch_key(key_id: str, body: PatchKeyBody, request: Request):
@@ -1080,10 +1194,12 @@ def patch_key(key_id: str, body: PatchKeyBody, request: Request):
 
 
 @app.get("/api/mutasi")
-def list_mutasi(request: Request, q: str = "", date: str = "", sort: str = "occurred_desc", limit: int = 200):
+def list_mutasi(request: Request, q: str = "", kategori: str = "", sub: str = "", date: str = "", sort: str = "occurred_desc", limit: int = 200):
     with db_connect() as conn:
         _require_session(conn, request)
         qn = normalize_text(q)
+        kat = _text_field(kategori, field="Kategori", max_len=60, default="")
+        subk = _text_field(sub, field="Sub-kategori", max_len=60, default="")
         bounds = _day_bounds(date)
         sort = (sort or "occurred_desc").strip()
         limit = max(1, min(500, int(limit or 200)))
@@ -1092,6 +1208,22 @@ def list_mutasi(request: Request, q: str = "", date: str = "", sort: str = "occu
         if qn:
             where.append("(lower(kind) LIKE %s OR lower(description) LIKE %s)")
             params.extend([f"%{qn}%", f"%{qn}%"])
+        if kat and subk:
+            if subk == "Lainnya":
+                where.append("m.kind = %s")
+                params.append(kat)
+            else:
+                where.append("m.kind = %s")
+                params.append(f"{kat} - {subk}")
+        elif kat:
+            where.append("m.kind LIKE %s")
+            params.append(f"{kat}%")
+            if subk:
+                where.append("m.kind LIKE %s")
+                params.append(f"%{subk}%")
+        elif subk:
+            where.append("m.kind LIKE %s")
+            params.append(f"%{subk}%")
         if bounds:
             where.append("m.occurred_at BETWEEN %s AND %s")
             params.extend([bounds[0], bounds[1]])
@@ -1200,11 +1332,12 @@ def create_mutasi_with_photo(
 
 
 @app.get("/api/guests")
-def list_guests(request: Request, status: str = "in", q: str = "", date: str = "", sort: str = "checkin_desc", limit: int = 200):
+def list_guests(request: Request, status: str = "in", q: str = "", date: str = "", sort: str = "checkin_desc", limit: int = 200, post: str = ""):
     with db_connect() as conn:
         _require_session(conn, request)
         status = (status or "in").strip()
         qn = normalize_text(q)
+        post_val = (post or "").strip()
         bounds = _day_bounds(date)
         sort = (sort or "checkin_desc").strip()
         limit = max(1, min(500, int(limit or 200)))
@@ -1213,6 +1346,16 @@ def list_guests(request: Request, status: str = "in", q: str = "", date: str = "
         if status in ("in", "out"):
             where.append("g.status = %s")
             params.append(status)
+        if post_val:
+            if post_val == "Pintu Utama":
+                where.append("(g.post = %s OR g.post = %s)")
+                params.extend(["Pintu Utama", "Lobby"])
+            elif post_val == "Lobby":
+                where.append("(g.post = %s OR g.post = %s)")
+                params.extend(["Lobby", "Pintu Utama"])
+            else:
+                where.append("g.post = %s")
+                params.append(post_val)
         if qn:
             where.append("(lower(g.name) LIKE %s OR lower(g.instansi) LIKE %s OR lower(g.purpose) LIKE %s)")
             params.extend([f"%{qn}%", f"%{qn}%", f"%{qn}%"])
@@ -1268,17 +1411,24 @@ def _create_guest(
     meet_person: str | None,
     checkin_at: str | None,
     notes: str | None,
+    post_override: str | None,
     photo_b64: str | None,
     photo_mime: str | None,
     photo_name: str | None,
     photo_uploaded_at: str | None,
 ) -> int:
-    name = (name or "").strip() or "Tidak diketahui"
-    instansi = (instansi or "").strip() or "-"
-    purpose = (purpose or "").strip() or "-"
-    meet = (meet_person or "").strip() or "-"
-    checkin_at = (checkin_at or "").strip() or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-    notes = (notes or "").strip()
+    name = _text_field(name, field="Nama", max_len=80, default="Tidak diketahui")
+    instansi = _text_field(instansi, field="Instansi", max_len=80, default="-")
+    purpose = _text_field(purpose, field="Divisi tujuan", max_len=80, default="-")
+    meet = _text_field(meet_person, field="Orang yang ditemui", max_len=80, default="-")
+    notes = _text_field(notes, field="Keperluan", max_len=240, default="")
+    post_val = (sess.get("post") or "").strip()
+    if post_override:
+        pv = str(post_override).strip()
+        if pv not in ("IGD", "Pintu Utama", "Lobby"):
+            raise HTTPException(status_code=400, detail="Pos tidak valid")
+        post_val = pv
+    checkin_at = _iso_field(checkin_at, field="Waktu masuk") or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     now = utc_now_iso()
     with conn.cursor() as cur:
         cur.execute(
@@ -1290,7 +1440,7 @@ def _create_guest(
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING id
             """,
-            (name, instansi, purpose, meet, checkin_at, None, notes, "in", sess["user_id"], sess["shift"], sess["post"], photo_b64, photo_mime, photo_name, photo_uploaded_at, now, now),
+            (name, instansi, purpose, meet, checkin_at, None, notes, "in", sess["user_id"], sess["shift"], post_val, photo_b64, photo_mime, photo_name, photo_uploaded_at, now, now),
         )
         gid = int(cur.fetchone()[0])
         _audit(
@@ -1320,7 +1470,7 @@ def _create_guest(
 def create_guest(body: CreateGuestBody, request: Request):
     with db_connect() as conn:
         sess = _require_session(conn, request)
-        gid = _create_guest(conn, sess, body.name, body.instansi, body.purpose, body.meet_person, body.checkin_at, body.notes, None, None, None, None)
+        gid = _create_guest(conn, sess, body.name, body.instansi, body.purpose, body.meet_person, body.checkin_at, body.notes, body.post, None, None, None, None)
         conn.commit()
         return {"ok": True, "id": gid}
 
@@ -1333,12 +1483,13 @@ def create_guest_with_photo(
     meet_person: str | None = Form(None),
     checkin_at: str | None = Form(None),
     notes: str | None = Form(None),
+    post: str | None = Form(None),
     photo: UploadFile | None = File(None),
 ):
     with db_connect() as conn:
         sess = _require_session(conn, request)
         (photo_b64, photo_mime, photo_name, photo_uploaded_at) = _read_photo_upload(photo)
-        gid = _create_guest(conn, sess, name, instansi, purpose, meet_person, checkin_at, notes, photo_b64, photo_mime, photo_name, photo_uploaded_at)
+        gid = _create_guest(conn, sess, name, instansi, purpose, meet_person, checkin_at, notes, post, photo_b64, photo_mime, photo_name, photo_uploaded_at)
         conn.commit()
         return {"ok": True, "id": gid}
 
@@ -1379,8 +1530,8 @@ def list_tasks(request: Request, q: str = "", date: str = "", sort: str = "occur
         where = []
         params: list[Any] = []
         if qn:
-            where.append("(lower(t.kind) LIKE %s OR lower(t.destination) LIKE %s OR lower(t.notes) LIKE %s)")
-            params.extend([f"%{qn}%", f"%{qn}%", f"%{qn}%"])
+            where.append("(lower(t.kind) LIKE %s OR lower(t.destination) LIKE %s OR lower(t.notes) LIKE %s OR lower(COALESCE(t.extra_json,'')) LIKE %s)")
+            params.extend([f"%{qn}%", f"%{qn}%", f"%{qn}%", f"%{qn}%"])
         if bounds:
             where.append("t.occurred_at BETWEEN %s AND %s")
             params.extend([bounds[0], bounds[1]])
@@ -1388,7 +1539,7 @@ def list_tasks(request: Request, q: str = "", date: str = "", sort: str = "occur
         if sort == "occurred_asc":
             order = "t.occurred_at ASC"
         sql = """
-          SELECT t.id, t.kind, t.occurred_at, t.destination, t.notes,
+          SELECT t.id, t.kind, t.occurred_at, t.destination, t.notes, t.extra_json,
                  CASE WHEN t.photo_b64 IS NULL OR t.photo_b64='' THEN 0 ELSE 1 END AS has_photo,
                  u.display_name AS created_by_name, t.shift, t.post
           FROM task_entries t
@@ -1405,6 +1556,13 @@ def list_tasks(request: Request, q: str = "", date: str = "", sort: str = "occur
             r["has_photo"] = bool(int(r.get("has_photo") or 0))
             if r["has_photo"]:
                 r["photo_url"] = f"/api/tasks/{int(r['id'])}/photo"
+            extra_raw = (r.get("extra_json") or "").strip()
+            if extra_raw:
+                try:
+                    r["extra"] = json.loads(extra_raw)
+                except Exception:
+                    pass
+            r.pop("extra_json", None)
         return {"items": rows}
 
 
@@ -1431,26 +1589,33 @@ def _create_task(
     occurred_at: str | None,
     destination: str | None,
     notes: str | None,
+    extra: Any | None,
     photo_b64: str | None,
     photo_mime: str | None,
     photo_name: str | None,
     photo_uploaded_at: str | None,
 ) -> int:
-    kind = (kind or "").strip() or "Lainnya"
-    occurred = (occurred_at or "").strip() or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-    dest = (destination or "").strip()
-    notes = (notes or "").strip()
-    if not dest:
-        raise HTTPException(status_code=400, detail="Tujuan wajib diisi")
+    kind = _text_field(kind, field="Jenis tugas", max_len=80, default="Lainnya")
+    occurred = _iso_field(occurred_at, field="Waktu") or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    dest = _text_field(destination, field="Tujuan", max_len=80, default="-")
+    notes = _text_field(notes, field="Catatan", max_len=240, default="")
+    extra_json = None
+    if extra is not None:
+        try:
+            extra_json = json.dumps(extra, ensure_ascii=False, separators=(",", ":"))
+        except Exception:
+            raise HTTPException(status_code=400, detail="Data tambahan tidak valid")
+        if len(extra_json) > 6000:
+            raise HTTPException(status_code=400, detail="Data tambahan terlalu besar")
     now = utc_now_iso()
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO task_entries(kind, occurred_at, destination, notes, created_by, shift, post, photo_b64, photo_mime, photo_name, photo_uploaded_at, created_at, updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            INSERT INTO task_entries(kind, occurred_at, destination, notes, extra_json, created_by, shift, post, photo_b64, photo_mime, photo_name, photo_uploaded_at, created_at, updated_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING id
             """,
-            (kind, occurred, dest, notes, sess["user_id"], sess["shift"], sess["post"], photo_b64, photo_mime, photo_name, photo_uploaded_at, now, now),
+            (kind, occurred, dest, notes, extra_json, sess["user_id"], sess["shift"], sess["post"], photo_b64, photo_mime, photo_name, photo_uploaded_at, now, now),
         )
         tid = int(cur.fetchone()[0])
         _audit(
@@ -1460,7 +1625,7 @@ def _create_task(
             str(tid),
             "create",
             None,
-            {"kind": kind, "occurred_at": occurred, "destination": dest, "notes": notes, "has_photo": bool(photo_b64), "photo_name": photo_name if photo_b64 else None},
+            {"kind": kind, "occurred_at": occurred, "destination": dest, "notes": notes, "extra": extra if extra is not None else None, "has_photo": bool(photo_b64), "photo_name": photo_name if photo_b64 else None},
         )
     return tid
 
@@ -1470,7 +1635,7 @@ def _create_task(
 def create_task(body: CreateTaskBody, request: Request):
     with db_connect() as conn:
         sess = _require_session(conn, request)
-        tid = _create_task(conn, sess, body.kind, body.occurred_at, body.destination, body.notes, None, None, None, None)
+        tid = _create_task(conn, sess, body.kind, body.occurred_at, body.destination, body.notes, body.extra, None, None, None, None)
         conn.commit()
         return {"ok": True, "id": tid}
 
@@ -1482,12 +1647,21 @@ def create_task_with_photo(
     occurred_at: str | None = Form(None),
     destination: str = Form(...),
     notes: str | None = Form(None),
+    extra_json: str | None = Form(None),
     photo: UploadFile | None = File(None),
 ):
     with db_connect() as conn:
         sess = _require_session(conn, request)
         (photo_b64, photo_mime, photo_name, photo_uploaded_at) = _read_photo_upload(photo)
-        tid = _create_task(conn, sess, kind, occurred_at, destination, notes, photo_b64, photo_mime, photo_name, photo_uploaded_at)
+        extra = None
+        if extra_json and extra_json.strip():
+            if len(extra_json) > 6000:
+                raise HTTPException(status_code=400, detail="Data tambahan terlalu besar")
+            try:
+                extra = json.loads(extra_json)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Data tambahan tidak valid")
+        tid = _create_task(conn, sess, kind, occurred_at, destination, notes, extra, photo_b64, photo_mime, photo_name, photo_uploaded_at)
         conn.commit()
         return {"ok": True, "id": tid}
 

@@ -1,14 +1,14 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiGet, apiGetBlob, apiPost, apiPostForm } from '../../lib/api'
 import type { GuestEntry, Me } from '../../types'
-import { fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
+import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useToast } from '../../components/ToastHost'
 
 export default function GuestsPage({ me }: { me: Me }) {
   const toast = useToast()
   const today = useMemo(() => toYmd(new Date()), [])
   const [q, setQ] = useState('')
-  const [status, setStatus] = useState<'in' | 'out'>('in')
+  const [postFilter, setPostFilter] = useState<'IGD' | 'Pintu Utama'>(() => (/^igd$/i.test((me.post || '').trim()) ? 'IGD' : 'Pintu Utama'))
   const [date, setDate] = useState(today)
   const [sort, setSort] = useState<'checkin_desc' | 'checkin_asc'>('checkin_desc')
   const [limit, setLimit] = useState(200)
@@ -26,12 +26,12 @@ export default function GuestsPage({ me }: { me: Me }) {
   const [photoView, setPhotoView] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const refresh = useCallback(async (opts: { q: string; status: string; date: string; sort: string; limit: number }) => {
-    const { q, status, date, sort, limit } = opts
+  const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number; post: string }) => {
+    const { q, date, sort, limit, post } = opts
     setLoading(true)
     try {
       const res = await apiGet<{ items: GuestEntry[] }>(
-        `/api/guests?status=${encodeURIComponent(status)}&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}`,
+        `/api/guests?status=all&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&post=${encodeURIComponent(post)}`,
       )
       setItems(res.items || [])
     } catch (err: any) {
@@ -42,13 +42,13 @@ export default function GuestsPage({ me }: { me: Me }) {
   }, [toast])
 
   useEffect(() => {
-    const t = window.setTimeout(() => refresh({ q, status, date, sort, limit }).catch(() => {}), 250)
+    const t = window.setTimeout(() => refresh({ q, date, sort, limit, post: postFilter }).catch(() => {}), 250)
     return () => window.clearTimeout(t)
-  }, [date, limit, q, refresh, sort, status])
+  }, [date, limit, q, refresh, sort, postFilter])
 
   useEffect(() => {
-    refresh({ q: '', status: 'in', date: today, sort: 'checkin_desc', limit: 200 }).catch(() => {})
-  }, [refresh, today])
+    refresh({ q: '', date: today, sort: 'checkin_desc', limit: 200, post: postFilter }).catch(() => {})
+  }, [postFilter, refresh, today])
 
   const downloadCsv = (filename: string, rows: Array<Array<string | number>>) => {
     const lines = rows.map((r) => r.map((x) => `"${String(x ?? '').replace(/"/g, '""')}"`).join(','))
@@ -75,10 +75,11 @@ export default function GuestsPage({ me }: { me: Me }) {
         form.set('meet_person', meet)
         form.set('checkin_at', toIsoLocal(today, time))
         form.set('notes', notes)
+        form.set('post', postFilter)
         form.set('photo', photo)
         await apiPostForm('/api/guests_with_photo', form)
       } else {
-        await apiPost('/api/guests', { name, instansi, purpose, meet_person: meet, checkin_at: toIsoLocal(today, time), notes })
+        await apiPost('/api/guests', { name, instansi, purpose, meet_person: meet, checkin_at: toIsoLocal(today, time), notes, post: postFilter })
       }
       setName('')
       setInstansi('')
@@ -88,7 +89,7 @@ export default function GuestsPage({ me }: { me: Me }) {
       setPhoto(null)
       setPhotoKey((x) => x + 1)
       toast.push('Tamu masuk dicatat', 'success')
-      await refresh({ q, status, date, sort, limit })
+      await refresh({ q, date, sort, limit, post: postFilter })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal menyimpan'), 'error')
     } finally {
@@ -99,8 +100,10 @@ export default function GuestsPage({ me }: { me: Me }) {
   const checkout = async (id: number) => {
     try {
       await apiPost(`/api/guests/${id}/checkout`, {})
+      const nowIso = new Date().toISOString()
+      setItems((prev) => prev.map((x) => (x.id === id ? { ...x, status: 'out', checkout_at: nowIso } : x)))
       toast.push('Tamu checkout', 'success')
-      await refresh({ q, status, date, sort, limit })
+      await refresh({ q, date, sort, limit, post: postFilter })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal memproses'), 'error')
     }
@@ -123,14 +126,16 @@ export default function GuestsPage({ me }: { me: Me }) {
 
   return (
     <section className="section">
+      <div className="tabsbar" style={{ marginBottom: 16 }}>
+        <div className="tabs">
+          <button className={`tab${postFilter === 'IGD' ? ' tab-active' : ''}`} onClick={() => setPostFilter('IGD')}>Pos IGD</button>
+          <button className={`tab${postFilter === 'Pintu Utama' ? ' tab-active' : ''}`} onClick={() => setPostFilter('Pintu Utama')}>Pos Pintu Utama</button>
+        </div>
+      </div>
       <div className="section-header">
-        <h2 className="h2">Buku Tamu</h2>
+        <h2 className="h2">Buku Tamu ({postFilter})</h2>
         <div className="section-actions">
           <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari tamu / instansi..." />
-          <select className="select select-sm" value={status} onChange={(e) => setStatus(e.target.value as any)}>
-            <option value="in">Masih di dalam</option>
-            <option value="out">Sudah keluar</option>
-          </select>
           <input className="input input-sm" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           <select className="select select-sm" value={sort} onChange={(e) => setSort(e.target.value as any)}>
             <option value="checkin_desc">Masuk terbaru</option>
@@ -147,7 +152,7 @@ export default function GuestsPage({ me }: { me: Me }) {
           <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
             Semua
           </button>
-          <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ q, status, date, sort, limit })}>
+          <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ q, date, sort, limit, post: postFilter })}>
             Refresh
           </button>
           <button
@@ -155,8 +160,8 @@ export default function GuestsPage({ me }: { me: Me }) {
             type="button"
             onClick={() =>
               downloadCsv(
-                `tamu-${status}-${date || 'semua'}.csv`,
-                [['Nama', 'Instansi', 'Tujuan', 'Ditemui', 'Masuk', 'Keluar', 'Catatan', 'Foto', 'Petugas', 'Status']].concat(
+                `tamu-${postFilter}-${date || 'semua'}.csv`,
+                [['Nama', 'Instansi', 'Divisi Tujuan', 'Ditemui', 'Masuk', 'Keluar', 'Keperluan', 'Foto', 'Petugas', 'Status']].concat(
                   items.map((r) => [
                     r.name,
                     r.instansi,
@@ -202,7 +207,7 @@ export default function GuestsPage({ me }: { me: Me }) {
             </div>
             <div className="field">
               <label className="label" htmlFor="guestPurpose">
-                Tujuan
+                Divisi Tujuan
               </label>
               <input className="input" id="guestPurpose" value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="mis. IT / HRD" />
             </div>
@@ -211,6 +216,7 @@ export default function GuestsPage({ me }: { me: Me }) {
                 Jam masuk
               </label>
               <input className="input" id="guestTime" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+              <div className="muted">Akan tersimpan: {fmtDateTime(toIsoLocal(today, time))}</div>
               <div className="chips">
                 <button className="chip" type="button" onClick={() => setTime(shiftHm(time, -5))}>
                   -5m
@@ -231,7 +237,7 @@ export default function GuestsPage({ me }: { me: Me }) {
             </div>
             <div className="field grid-span-4">
               <label className="label" htmlFor="guestNotes">
-                Catatan
+                Keperluan
               </label>
               <input className="input" id="guestNotes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="opsional" />
             </div>
@@ -276,7 +282,7 @@ export default function GuestsPage({ me }: { me: Me }) {
 
       <section className="card">
         <header className="card-header">
-          <div className="card-title">{status === 'in' ? 'Daftar tamu (masih di dalam)' : 'Daftar tamu (sudah keluar)'}</div>
+          <div className="card-title">Daftar tamu</div>
           <div className="muted">{loading ? 'Memuat...' : `${items.length} entri`}</div>
         </header>
         <div className="card-body">
@@ -286,11 +292,12 @@ export default function GuestsPage({ me }: { me: Me }) {
                 <tr>
                   <th>Nama</th>
                   <th>Instansi</th>
-                  <th>Tujuan</th>
+                  <th>Divisi Tujuan</th>
                   <th>Ditemui</th>
                   <th>Masuk</th>
+                  <th>Keluar</th>
                   <th>Foto</th>
-                  <th>{status === 'in' ? 'Aksi' : 'Keluar'}</th>
+                  <th>Aksi</th>
                 </tr>
               </thead>
               <tbody>
@@ -298,9 +305,10 @@ export default function GuestsPage({ me }: { me: Me }) {
                   <tr key={r.id}>
                     <td data-label="Nama">{r.name}</td>
                     <td data-label="Instansi">{r.instansi}</td>
-                    <td data-label="Tujuan">{r.purpose}</td>
+                    <td data-label="Divisi Tujuan">{r.purpose}</td>
                     <td data-label="Ditemui">{r.meet_person}</td>
                     <td data-label="Masuk">{fmtTime(r.checkin_at)}</td>
+                    <td data-label="Keluar">{fmtTime(r.checkout_at)}</td>
                     <td data-label="Foto">
                       {r.has_photo && r.photo_url ? (
                         <button className="button button-sm button-secondary" type="button" onClick={() => openPhoto(r.photo_url!)}>
@@ -310,20 +318,20 @@ export default function GuestsPage({ me }: { me: Me }) {
                         <span className="muted">-</span>
                       )}
                     </td>
-                    <td data-label={status === 'in' ? 'Aksi' : 'Keluar'}>
-                      {status === 'in' ? (
+                    <td data-label="Aksi">
+                      {r.status === 'in' ? (
                         <button className="button button-sm" type="button" onClick={() => checkout(r.id)}>
                           Keluar
                         </button>
                       ) : (
-                        <span className="muted">{fmtTime(r.checkout_at)}</span>
+                        <span className="muted">—</span>
                       )}
                     </td>
                   </tr>
                 ))}
                 {items.length === 0 && (
                   <tr>
-                    <td className="muted" colSpan={7}>
+                    <td className="muted" colSpan={8}>
                       Tidak ada data.
                     </td>
                   </tr>

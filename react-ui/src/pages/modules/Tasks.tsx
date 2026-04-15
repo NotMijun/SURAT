@@ -1,7 +1,7 @@
-import { FormEvent, useCallback, useEffect, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiGet, apiGetBlob, apiPost, apiPostForm } from '../../lib/api'
 import type { Me, TaskEntry } from '../../types'
-import { fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
+import { fmtDateTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useToast } from '../../components/ToastHost'
 
 export default function TasksPage({ me }: { me: Me }) {
@@ -14,6 +14,16 @@ export default function TasksPage({ me }: { me: Me }) {
   const [items, setItems] = useState<TaskEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+
+  type TaskTab = 'umum' | 'pom' | 'galon'
+  const [tab, setTab] = useState<TaskTab>('umum')
+  const [vendors, setVendors] = useState<string[]>([])
+  const [vendor, setVendor] = useState('')
+  const [boxCount, setBoxCount] = useState('')
+  const [galonUsed, setGalonUsed] = useState('')
+  const [galonUnused, setGalonUnused] = useState('')
+  const [galonReturned, setGalonReturned] = useState('')
+  const [galonTo, setGalonTo] = useState('')
 
   const [kind, setKind] = useState('Antar sampel')
   const [time, setTime] = useState(nowHm())
@@ -47,6 +57,39 @@ export default function TasksPage({ me }: { me: Me }) {
     refresh({ q: '', date: today, sort: 'occurred_desc', limit: 200 }).catch(() => {})
   }, [refresh, today])
 
+  useEffect(() => {
+    apiGet<{ items: { name: string }[] }>('/api/vendors/catering')
+      .then((res) => setVendors((res.items || []).map((x) => String(x.name || '')).filter(Boolean)))
+      .catch(() => {})
+  }, [])
+
+  const isPom = (k: string) => /pom/i.test(k || '') && /cater/i.test(k || '')
+  const isGalon = (k: string) => /galon/i.test(k || '')
+  const viewItems = useMemo(() => {
+    if (tab === 'pom') return items.filter((r) => isPom(r.kind))
+    if (tab === 'galon') return items.filter((r) => isGalon(r.kind))
+    return items.filter((r) => !isPom(r.kind) && !isGalon(r.kind))
+  }, [items, tab])
+
+  const renderDetails = (r: TaskEntry) => {
+    const e = r.extra || {}
+    if (isPom(r.kind)) {
+      const parts = []
+      if (e.vendor) parts.push(`Vendor: ${String(e.vendor)}`)
+      if (typeof e.box_count === 'number' && Number.isFinite(e.box_count)) parts.push(`Box: ${String(e.box_count)}`)
+      return parts.join(' · ')
+    }
+    if (isGalon(r.kind)) {
+      const parts = []
+      if (typeof e.galon_used === 'number' && Number.isFinite(e.galon_used)) parts.push(`Dipakai: ${String(e.galon_used)}`)
+      if (typeof e.galon_unused === 'number' && Number.isFinite(e.galon_unused)) parts.push(`Tidak dipakai: ${String(e.galon_unused)}`)
+      if (typeof e.galon_returned === 'number' && Number.isFinite(e.galon_returned)) parts.push(`Dikembalikan: ${String(e.galon_returned)}`)
+      if (e.galon_to) parts.push(`Ke: ${String(e.galon_to)}`)
+      return parts.join(' · ')
+    }
+    return ''
+  }
+
   const downloadCsv = (filename: string, rows: Array<Array<string | number>>) => {
     const lines = rows.map((r) => r.map((x) => `"${String(x ?? '').replace(/"/g, '""')}"`).join(','))
     const csv = `\ufeff${lines.join('\n')}`
@@ -64,19 +107,59 @@ export default function TasksPage({ me }: { me: Me }) {
     if (busy) return
     setBusy(true)
     try {
+      const occurredAt = toIsoLocal(today, time)
+      let finalKind = kind
+      let finalDestination = destination
+      let extra: any | undefined
+      if (tab === 'pom') {
+        finalKind = 'Pom Catering'
+        finalDestination = '-'
+        const vendorVal = (vendor || '').trim()
+        const bc = Number.parseInt(boxCount || '', 10)
+        if (!vendorVal) throw new Error('Vendor pom wajib diisi')
+        if (!Number.isFinite(bc) || bc < 0) throw new Error('Jumlah box wajib diisi')
+        extra = {
+          vendor: vendorVal,
+          box_count: bc,
+        }
+      } else if (tab === 'galon') {
+        finalKind = 'Galon'
+        finalDestination = '-'
+        const u = galonUsed ? Number.parseInt(galonUsed, 10) : null
+        const nu = galonUnused ? Number.parseInt(galonUnused, 10) : null
+        const r = galonReturned ? Number.parseInt(galonReturned, 10) : null
+        if (u != null && (!Number.isFinite(u) || u < 0)) throw new Error('Galon dipakai tidak valid')
+        if (nu != null && (!Number.isFinite(nu) || nu < 0)) throw new Error('Galon tidak dipakai tidak valid')
+        if (r != null && (!Number.isFinite(r) || r < 0)) throw new Error('Galon dikembalikan tidak valid')
+        extra = {
+          galon_used: u,
+          galon_unused: nu,
+          galon_returned: r,
+          galon_to: (galonTo || '').trim() || null,
+        }
+      }
+      const payload: any = { kind: finalKind, occurred_at: occurredAt, destination: finalDestination, notes }
+      if (extra !== undefined) payload.extra = extra
       if (photo) {
         const form = new FormData()
-        form.set('kind', kind)
-        form.set('occurred_at', toIsoLocal(today, time))
-        form.set('destination', destination)
-        form.set('notes', notes)
+        form.set('kind', payload.kind)
+        form.set('occurred_at', payload.occurred_at)
+        form.set('destination', payload.destination)
+        form.set('notes', payload.notes)
+        if (payload.extra) form.set('extra_json', JSON.stringify(payload.extra))
         form.set('photo', photo)
         await apiPostForm('/api/tasks_with_photo', form)
       } else {
-        await apiPost('/api/tasks', { kind, occurred_at: toIsoLocal(today, time), destination, notes })
+        await apiPost('/api/tasks', payload)
       }
       setDestination('')
       setNotes('')
+      setVendor('')
+      setBoxCount('')
+      setGalonUsed('')
+      setGalonUnused('')
+      setGalonReturned('')
+      setGalonTo('')
       setPhoto(null)
       setPhotoKey((x) => x + 1)
       toast.push('Tugas dicatat', 'success')
@@ -105,6 +188,13 @@ export default function TasksPage({ me }: { me: Me }) {
 
   return (
     <section className="section">
+      <div className="tabsbar" style={{ marginBottom: 16 }}>
+        <div className="tabs">
+          <button type="button" className={`tab${tab === 'umum' ? ' tab-active' : ''}`} onClick={() => setTab('umum')}>Umum</button>
+          <button type="button" className={`tab${tab === 'pom' ? ' tab-active' : ''}`} onClick={() => setTab('pom')}>Pom Catering</button>
+          <button type="button" className={`tab${tab === 'galon' ? ' tab-active' : ''}`} onClick={() => setTab('galon')}>Galon</button>
+        </div>
+      </div>
       <div className="section-header">
         <h2 className="h2">Tugas Operasional Security</h2>
         <div className="section-actions">
@@ -133,12 +223,13 @@ export default function TasksPage({ me }: { me: Me }) {
             type="button"
             onClick={() =>
               downloadCsv(
-                `tugas-${date || 'semua'}.csv`,
-                [['Jam', 'Jenis', 'Tujuan', 'Catatan', 'Foto', 'Petugas', 'Shift', 'Pos']].concat(
-                  items.map((r) => [
-                    fmtTime(r.occurred_at),
+                `tugas-${tab}-${date || 'semua'}.csv`,
+                [['Waktu', 'Jenis', 'Tujuan', 'Detail', 'Catatan', 'Foto', 'Petugas', 'Shift', 'Pos']].concat(
+                  viewItems.map((r) => [
+                    fmtDateTime(r.occurred_at),
                     r.kind,
                     r.destination,
+                    renderDetails(r),
                     r.notes || '',
                     r.has_photo ? 'Ya' : 'Tidak',
                     r.created_by_name || '-',
@@ -159,29 +250,85 @@ export default function TasksPage({ me }: { me: Me }) {
 
       <section className="card" id="tasksForm">
         <header className="card-header">
-          <div className="card-title">Catat tugas</div>
+          <div className="card-title">{tab === 'pom' ? 'Pom Catering' : tab === 'galon' ? 'Galon' : 'Catat tugas'}</div>
           <div className="muted">Petugas: {me.user.display_name}</div>
         </header>
         <div className="card-body">
           <form className="form grid grid-4" onSubmit={onSubmit}>
-            <div className="field">
-              <label className="label" htmlFor="taskKind">
-                Jenis tugas
-              </label>
-              <select className="select" id="taskKind" value={kind} onChange={(e) => setKind(e.target.value)}>
-                <option>Antar sampel</option>
-                <option>Antar surat</option>
-                <option>Pom catering</option>
-                <option>Galon</option>
-                <option>Antar berkas</option>
-                <option>Lainnya</option>
-              </select>
-            </div>
+            {tab === 'umum' && (
+              <div className="field">
+                <label className="label" htmlFor="taskKind">
+                  Jenis tugas
+                </label>
+                <select className="select" id="taskKind" value={kind} onChange={(e) => setKind(e.target.value)}>
+                  <option>Antar sampel</option>
+                  <option>Antar surat</option>
+                  <option>Antar berkas</option>
+                  <option>Lainnya</option>
+                </select>
+              </div>
+            )}
+            {tab === 'pom' && (
+              <>
+                <div className="field">
+                  <label className="label" htmlFor="taskPomVendor">
+                    Vendor pom
+                  </label>
+                  {vendors.length > 0 ? (
+                    <select className="select" id="taskPomVendor" value={vendor} onChange={(e) => setVendor(e.target.value)}>
+                      <option value="">Pilih vendor</option>
+                      {vendors.map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input className="input" id="taskPomVendor" value={vendor} onChange={(e) => setVendor(e.target.value)} placeholder="Isi vendor (CATERING_VENDORS belum diset)" />
+                  )}
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="taskPomBox">
+                    Jumlah box
+                  </label>
+                  <input className="input" id="taskPomBox" type="number" min={0} step={1} value={boxCount} onChange={(e) => setBoxCount(e.target.value)} placeholder="0" />
+                </div>
+              </>
+            )}
+            {tab === 'galon' && (
+              <>
+                <div className="field">
+                  <label className="label" htmlFor="taskGalonUsed">
+                    Galon dipakai
+                  </label>
+                  <input className="input" id="taskGalonUsed" type="number" min={0} step={1} value={galonUsed} onChange={(e) => setGalonUsed(e.target.value)} placeholder="0" />
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="taskGalonUnused">
+                    Galon tidak dipakai
+                  </label>
+                  <input className="input" id="taskGalonUnused" type="number" min={0} step={1} value={galonUnused} onChange={(e) => setGalonUnused(e.target.value)} placeholder="0" />
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="taskGalonReturned">
+                    Galon dikembalikan
+                  </label>
+                  <input className="input" id="taskGalonReturned" type="number" min={0} step={1} value={galonReturned} onChange={(e) => setGalonReturned(e.target.value)} placeholder="0" />
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="taskGalonTo">
+                    Dipindahkan/ke mana
+                  </label>
+                  <input className="input" id="taskGalonTo" value={galonTo} onChange={(e) => setGalonTo(e.target.value)} placeholder="mis. Gudang / Logistik" />
+                </div>
+              </>
+            )}
             <div className="field">
               <label className="label" htmlFor="taskTime">
                 Jam
               </label>
               <input className="input" id="taskTime" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+              <div className="muted">Akan tersimpan: {fmtDateTime(toIsoLocal(today, time))}</div>
               <div className="chips">
                 <button className="chip" type="button" onClick={() => setTime(shiftHm(time, -5))}>
                   -5m
@@ -194,12 +341,14 @@ export default function TasksPage({ me }: { me: Me }) {
                 </button>
               </div>
             </div>
-            <div className="field">
-              <label className="label" htmlFor="taskDestination">
-                Tujuan
-              </label>
-              <input className="input" id="taskDestination" value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="mis. Lab / Poli" required />
-            </div>
+            {tab === 'umum' && (
+              <div className="field">
+                <label className="label" htmlFor="taskDestination">
+                  Tujuan
+                </label>
+                <input className="input" id="taskDestination" value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="mis. Lab / Poli" required />
+              </div>
+            )}
             <div className="field">
               <label className="label" htmlFor="taskNotes">
                 Catatan
@@ -248,27 +397,29 @@ export default function TasksPage({ me }: { me: Me }) {
       <section className="card">
         <header className="card-header">
           <div className="card-title">Daftar tugas</div>
-          <div className="muted">{loading ? 'Memuat...' : `${items.length} entri`}</div>
+          <div className="muted">{loading ? 'Memuat...' : `${viewItems.length} entri`}</div>
         </header>
         <div className="card-body">
           <div className="table-wrap">
             <table className="table table-mobile-cards">
               <thead>
                 <tr>
-                  <th>Jam</th>
+                  <th>Waktu</th>
                   <th>Jenis</th>
                   <th>Tujuan</th>
+                  <th>Detail</th>
                   <th>Catatan</th>
                   <th>Foto</th>
                   <th>Petugas</th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((r) => (
+                {viewItems.map((r) => (
                   <tr key={r.id}>
-                    <td data-label="Jam">{fmtTime(r.occurred_at)}</td>
+                    <td data-label="Waktu">{fmtDateTime(r.occurred_at)}</td>
                     <td data-label="Jenis">{r.kind}</td>
                     <td data-label="Tujuan">{r.destination}</td>
+                    <td data-label="Detail">{renderDetails(r) || <span className="muted">-</span>}</td>
                     <td data-label="Catatan">{r.notes}</td>
                     <td data-label="Foto">
                       {r.has_photo && r.photo_url ? (
@@ -282,9 +433,9 @@ export default function TasksPage({ me }: { me: Me }) {
                     <td data-label="Petugas">{r.created_by_name || '-'}</td>
                   </tr>
                 ))}
-                {items.length === 0 && (
+                {viewItems.length === 0 && (
                   <tr>
-                    <td className="muted" colSpan={6}>
+                    <td className="muted" colSpan={7}>
                       Tidak ada data.
                     </td>
                   </tr>

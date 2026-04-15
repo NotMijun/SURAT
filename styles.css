@@ -102,6 +102,12 @@ a,button,input,select,textarea{
 .button,.tab,.chip{
   touch-action:manipulation;
 }
+.button:focus,.tab:focus,.chip:focus{outline:none}
+.button:focus-visible,.tab:focus-visible,.chip:focus-visible{
+  outline:none;
+  border-color:rgba(212,175,55,.6);
+  box-shadow:0 0 0 4px rgba(212,175,55,.18);
+}
 
 a{color:inherit}
 .link{color:var(--text);text-decoration:none;border-bottom:1px solid rgba(233,238,252,.25)}
@@ -172,8 +178,8 @@ a{color:inherit}
 }
 .textarea{resize:vertical;min-height:92px}
 .input::placeholder,.textarea::placeholder{color:rgba(168,179,214,.7)}
-.input:focus,.select:focus,.textarea:focus{border-color:rgba(91,140,255,.55);box-shadow:0 0 0 4px rgba(91,140,255,.15)}
-.input:focus,.select:focus,.textarea:focus{border-color:rgba(212,175,55,.6);box-shadow:0 0 0 4px rgba(212,175,55,.18)}
+.input:focus,.select:focus,.textarea:focus{border-color:rgba(212,175,55,.35)}
+.input:focus-visible,.select:focus-visible,.textarea:focus-visible{border-color:rgba(212,175,55,.6);box-shadow:0 0 0 4px rgba(212,175,55,.18)}
 .input-sm,.select-sm{padding:8px 10px;border-radius:10px;font-size:14px}
 
 .checkbox{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:14px}

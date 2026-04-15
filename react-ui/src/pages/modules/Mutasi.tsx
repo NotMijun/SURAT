@@ -1,13 +1,15 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { apiGet, apiGetBlob, apiPost, apiPostForm } from '../../lib/api'
 import type { Me, MutasiEntry } from '../../types'
-import { fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
+import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useToast } from '../../components/ToastHost'
 
 export default function MutasiPage({ me }: { me: Me }) {
   const toast = useToast()
   const today = toYmd(new Date())
   const [q, setQ] = useState('')
+  const [filterKategori, setFilterKategori] = useState('')
+  const [filterSub, setFilterSub] = useState('')
   const [date, setDate] = useState(today)
   const [sort, setSort] = useState<'occurred_desc' | 'occurred_asc'>('occurred_desc')
   const [limit, setLimit] = useState(200)
@@ -15,19 +17,26 @@ export default function MutasiPage({ me }: { me: Me }) {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
 
-  const [kind, setKind] = useState('Kejadian khusus')
+  const KATEGORI_OPTS: Record<string, string[]> = {
+    'Kejadian Operasional': ['Catering', 'Galon', 'Patroli/Ronda', 'Pemeliharaan', 'Lainnya'],
+    'Kejadian Khusus': ['Komplain', 'Kehilangan', 'Kecelakaan', 'Keributan', 'Lainnya'],
+    'Lainnya': ['Lainnya']
+  }
+
+  const [kategori, setKategori] = useState('Kejadian Operasional')
+  const [subKategori, setSubKategori] = useState('Catering')
   const [time, setTime] = useState(nowHm())
   const [desc, setDesc] = useState('')
   const [photo, setPhoto] = useState<File | null>(null)
   const [photoKey, setPhotoKey] = useState(0)
   const [photoView, setPhotoView] = useState<string | null>(null)
 
-  const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number }) => {
-    const { q, date, sort, limit } = opts
+  const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number; fk: string; fs: string }) => {
+    const { q, date, sort, limit, fk, fs } = opts
     setLoading(true)
     try {
       const res = await apiGet<{ items: MutasiEntry[] }>(
-        `/api/mutasi?q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}`,
+        `/api/mutasi?q=${encodeURIComponent(q.trim())}&kategori=${encodeURIComponent(fk)}&sub=${encodeURIComponent(fs)}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}`,
       )
       setItems(res.items || [])
     } catch (err: any) {
@@ -37,13 +46,15 @@ export default function MutasiPage({ me }: { me: Me }) {
     }
   }, [toast])
 
-  useEffect(() => {
-    const t = window.setTimeout(() => refresh({ q, date, sort, limit }).catch(() => {}), 250)
-    return () => window.clearTimeout(t)
-  }, [date, limit, q, refresh, sort])
+  const fmtWhen = (iso: string | null | undefined) => (date ? fmtTime(iso) : fmtDateTime(iso))
 
   useEffect(() => {
-    refresh({ q: '', date: today, sort: 'occurred_desc', limit: 200 }).catch(() => {})
+    const t = window.setTimeout(() => refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub }).catch(() => {}), 250)
+    return () => window.clearTimeout(t)
+  }, [date, limit, q, refresh, sort, filterKategori, filterSub])
+
+  useEffect(() => {
+    refresh({ q: '', date: today, sort: 'occurred_desc', limit: 200, fk: '', fs: '' }).catch(() => {})
   }, [refresh, today])
 
   const downloadCsv = (filename: string, rows: Array<Array<string | number>>) => {
@@ -62,22 +73,23 @@ export default function MutasiPage({ me }: { me: Me }) {
     e.preventDefault()
     if (busy) return
     setBusy(true)
+    const combinedKind = subKategori && subKategori !== 'Lainnya' ? `${kategori} - ${subKategori}` : kategori;
     try {
       if (photo) {
         const form = new FormData()
-        form.set('kind', kind)
+        form.set('kind', combinedKind)
         form.set('occurred_at', toIsoLocal(today, time))
         form.set('description', desc)
         form.set('photo', photo)
         await apiPostForm('/api/mutasi_with_photo', form)
       } else {
-        await apiPost('/api/mutasi', { kind, occurred_at: toIsoLocal(today, time), description: desc })
+        await apiPost('/api/mutasi', { kind: combinedKind, occurred_at: toIsoLocal(today, time), description: desc })
       }
       setDesc('')
       setPhoto(null)
       setPhotoKey((x) => x + 1)
       toast.push('Mutasi dicatat', 'success')
-      await refresh({ q, date, sort, limit })
+      await refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal menyimpan'), 'error')
     } finally {
@@ -106,6 +118,16 @@ export default function MutasiPage({ me }: { me: Me }) {
         <h2 className="h2">Buku Mutasi</h2>
         <div className="section-actions">
           <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari kejadian..." />
+          <select className="select select-sm" value={filterKategori} onChange={(e) => { setFilterKategori(e.target.value); setFilterSub('') }}>
+            <option value="">Semua Kategori</option>
+            {Object.keys(KATEGORI_OPTS).map(k => <option key={k} value={k}>{k}</option>)}
+          </select>
+          {filterKategori && filterKategori !== 'Lainnya' && (
+            <select className="select select-sm" value={filterSub} onChange={(e) => setFilterSub(e.target.value)}>
+              <option value="">Semua Sub</option>
+              {KATEGORI_OPTS[filterKategori].map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
           <input className="input input-sm" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           <select className="select select-sm" value={sort} onChange={(e) => setSort(e.target.value as any)}>
             <option value="occurred_desc">Terbaru</option>
@@ -122,7 +144,7 @@ export default function MutasiPage({ me }: { me: Me }) {
           <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
             Semua
           </button>
-          <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ q, date, sort, limit })}>
+          <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub })}>
             Refresh
           </button>
           <button
@@ -132,7 +154,7 @@ export default function MutasiPage({ me }: { me: Me }) {
               downloadCsv(
                 `mutasi-${date || 'semua'}.csv`,
                 [['Jam', 'Jenis', 'Deskripsi', 'Foto', 'Petugas', 'Shift', 'Pos']].concat(
-                  items.map((r) => [fmtTime(r.occurred_at), r.kind, r.description, r.has_photo ? 'Ya' : 'Tidak', r.created_by_name || '-', r.shift || '-', r.post || '-']),
+                  items.map((r) => [fmtWhen(r.occurred_at), r.kind, r.description, r.has_photo ? 'Ya' : 'Tidak', r.created_by_name || '-', r.shift || '-', r.post || '-']),
                 ),
               )
             }
@@ -151,24 +173,31 @@ export default function MutasiPage({ me }: { me: Me }) {
           <div className="muted">Petugas: {me.user.display_name}</div>
         </header>
         <div className="card-body">
-          <form className="form grid grid-3" onSubmit={onSubmit}>
+          <form className="form grid grid-4" onSubmit={onSubmit}>
             <div className="field">
-              <label className="label" htmlFor="mutasiKind">
-                Jenis
+              <label className="label" htmlFor="mutasiKategori">
+                Kategori
               </label>
-              <select className="select" id="mutasiKind" value={kind} onChange={(e) => setKind(e.target.value)}>
-                <option>Kejadian khusus</option>
-                <option>Ronda</option>
-                <option>Katering</option>
-                <option>Komplain</option>
-                <option>Lainnya</option>
+              <select className="select" id="mutasiKategori" value={kategori} onChange={(e) => { setKategori(e.target.value); setSubKategori(KATEGORI_OPTS[e.target.value][0] || '') }}>
+                {Object.keys(KATEGORI_OPTS).map(k => <option key={k} value={k}>{k}</option>)}
               </select>
             </div>
+            {kategori !== 'Lainnya' && (
+              <div className="field">
+                <label className="label" htmlFor="mutasiSub">
+                  Sub-kategori
+                </label>
+                <select className="select" id="mutasiSub" value={subKategori} onChange={(e) => setSubKategori(e.target.value)}>
+                  {KATEGORI_OPTS[kategori].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            )}
             <div className="field">
               <label className="label" htmlFor="mutasiTime">
                 Jam
               </label>
               <input className="input" id="mutasiTime" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+              <div className="muted">Akan tersimpan: {fmtDateTime(toIsoLocal(today, time))}</div>
               <div className="chips">
                 <button className="chip" type="button" onClick={() => setTime(shiftHm(time, -5))}>
                   -5m
@@ -181,13 +210,13 @@ export default function MutasiPage({ me }: { me: Me }) {
                 </button>
               </div>
             </div>
-            <div className="field grid-span-3">
+            <div className="field grid-span-4">
               <label className="label" htmlFor="mutasiDesc">
                 Deskripsi
               </label>
-              <input className="input" id="mutasiDesc" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Ringkasan kejadian" required />
+              <input className="input" id="mutasiDesc" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Ringkasan kejadian (misal: jumlah box catering kurang)" required />
             </div>
-            <div className="field grid-span-3">
+            <div className="field grid-span-4">
               <label className="label" htmlFor="mutasiPhoto">
                 Foto (opsional)
               </label>
@@ -217,7 +246,7 @@ export default function MutasiPage({ me }: { me: Me }) {
               />
               <div className="muted">{photo ? `Dipilih: ${photo.name}` : 'Tidak ada foto'}</div>
             </div>
-            <div className="row row-right grid-span-3">
+            <div className="row row-right grid-span-4">
               <button className="button button-primary" type="submit" disabled={busy}>
                 {busy ? 'Menyimpan...' : 'Simpan'}
               </button>
@@ -246,7 +275,7 @@ export default function MutasiPage({ me }: { me: Me }) {
               <tbody>
                 {items.map((r) => (
                   <tr key={r.id}>
-                    <td data-label="Jam">{fmtTime(r.occurred_at)}</td>
+                    <td data-label="Jam">{fmtWhen(r.occurred_at)}</td>
                     <td data-label="Jenis">{r.kind}</td>
                     <td data-label="Deskripsi">{r.description}</td>
                     <td data-label="Foto">
