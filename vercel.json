@@ -2,11 +2,6 @@
   "version": 2,
   "buildCommand": "cd react-ui && npm ci && npm run build",
   "outputDirectory": "react-ui/dist",
-  "functions": {
-    "api/index.py": {
-      "runtime": "python3.11"
-    }
-  },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index.py" },
     { "source": "/(.*)", "destination": "/index.html" }
