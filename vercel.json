@@ -2,15 +2,11 @@
   "version": 2,
   "builds": [
     { "src": "api/index.py", "use": "@vercel/python" },
-    { "src": "react-ui/package.json", "use": "@vercel/static-build", "config": { "distDir": "dist/react" } },
-    { "src": "index.html", "use": "@vercel/static" },
-    { "src": "app.html", "use": "@vercel/static" },
-    { "src": "styles.css", "use": "@vercel/static" }
+    { "src": "react-ui/package.json", "use": "@vercel/static-build", "config": { "distDir": "dist" } }
   ],
   "routes": [
     { "src": "/api/(.*)", "dest": "api/index.py" },
-    { "src": "/react/assets/(.*)", "dest": "/react-ui/dist/react/assets/$1" },
-    { "src": "/react(/.*)?", "dest": "/react-ui/dist/react/index.html" },
-    { "handle": "filesystem" }
+    { "src": "/assets/(.*)", "dest": "/react-ui/dist/assets/$1" },
+    { "src": "/(.*)", "dest": "/react-ui/dist/index.html" }
   ]
 }
