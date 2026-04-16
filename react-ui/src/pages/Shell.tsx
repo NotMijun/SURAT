@@ -78,6 +78,20 @@ export default function Shell() {
     }
   }, [nav, toast, token])
 
+  useEffect(() => {
+    if (loading) return
+    const t = window.setTimeout(() => {
+      const el = document.activeElement
+      if (!el || el === document.body) return
+      if (!(el instanceof HTMLElement)) return
+      const tag = el.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      if (el.isContentEditable) return
+      el.blur()
+    }, 0)
+    return () => window.clearTimeout(t)
+  }, [loading])
+
   const logout = async () => {
     try {
       await apiPost('/api/logout', {})
