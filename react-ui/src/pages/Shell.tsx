@@ -22,8 +22,26 @@ export default function Shell() {
   const [me, setMe] = useState<Me | null>(null)
   const [loading, setLoading] = useState(true)
   const [theme, setTheme] = useState<'light' | 'dark'>(localStorage.getItem(themeKey) === 'light' ? 'light' : 'dark')
-  const [compact, setCompact] = useState(localStorage.getItem(compactKey) === 'true')
+  const [compact] = useState(localStorage.getItem(compactKey) === 'true')
   const [accent, setAccent] = useState<Accent>((localStorage.getItem(accentKey) as Accent) || 'gold')
+
+  useEffect(() => {
+    const root = document.documentElement
+    root.dataset.focus = 'pointer'
+    const onKeyDown = (e: KeyboardEvent) => {
+      const k = e.key || ''
+      if (k === 'Tab' || k.startsWith('Arrow')) root.dataset.focus = 'keyboard'
+    }
+    const onPointerDown = () => {
+      root.dataset.focus = 'pointer'
+    }
+    window.addEventListener('keydown', onKeyDown, { capture: true })
+    window.addEventListener('pointerdown', onPointerDown, { capture: true })
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, { capture: true } as any)
+      window.removeEventListener('pointerdown', onPointerDown, { capture: true } as any)
+    }
+  }, [])
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -165,9 +183,6 @@ export default function Shell() {
             }
           >
             Tema: {accent}
-          </button>
-          <button className="button button-secondary button-sm topbar-action topbar-compact-toggle" type="button" onClick={() => setCompact((x) => !x)}>
-            {compact ? 'Ringkas: On' : 'Ringkas: Off'}
           </button>
           <button className="button button-ghost" type="button" onClick={logoutAll}>
             Keluar Semua

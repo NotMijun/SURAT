@@ -99,11 +99,13 @@ a,button,input,select,textarea{
   -webkit-tap-highlight-color:transparent;
 }
 
+:focus{outline:none}
+
 .button,.tab,.chip{
   touch-action:manipulation;
 }
 .button:focus,.tab:focus,.chip:focus{outline:none}
-.button:focus-visible,.tab:focus-visible,.chip:focus-visible{
+html[data-focus="keyboard"] .button:focus-visible,html[data-focus="keyboard"] .tab:focus-visible,html[data-focus="keyboard"] .chip:focus-visible{
   outline:none;
   border-color:rgba(212,175,55,.6);
   box-shadow:0 0 0 4px rgba(212,175,55,.18);
@@ -179,7 +181,7 @@ a{color:inherit}
 .textarea{resize:vertical;min-height:92px}
 .input::placeholder,.textarea::placeholder{color:rgba(168,179,214,.7)}
 .input:focus,.select:focus,.textarea:focus{border-color:rgba(212,175,55,.35)}
-.input:focus-visible,.select:focus-visible,.textarea:focus-visible{border-color:rgba(212,175,55,.6);box-shadow:0 0 0 4px rgba(212,175,55,.18)}
+html[data-focus="keyboard"] .input:focus-visible,html[data-focus="keyboard"] .select:focus-visible,html[data-focus="keyboard"] .textarea:focus-visible{border-color:rgba(212,175,55,.6);box-shadow:0 0 0 4px rgba(212,175,55,.18)}
 .input-sm,.select-sm{padding:8px 10px;border-radius:10px;font-size:14px}
 
 .checkbox{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:14px}
