@@ -1,12 +1,17 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "api/index.py", "use": "@vercel/python" },
-    { "src": "react-ui/package.json", "use": "@vercel/static-build", "config": { "distDir": "dist" } }
+  "buildCommand": "cd react-ui && npm ci && npm run build",
+  "outputDirectory": "react-ui/dist",
+  "functions": {
+    "api/index.py": {
+      "runtime": "python3.11"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index.py" },
+    { "source": "/(.*)", "destination": "/index.html" }
   ],
-  "routes": [
-    { "src": "/api/(.*)", "dest": "api/index.py" },
-    { "src": "/assets/(.*)", "dest": "react-ui/dist/assets/$1" },
-    { "src": "/(.*)", "dest": "react-ui/dist/index.html" }
+  "headers": [
+    { "source": "/assets/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] }
   ]
 }
