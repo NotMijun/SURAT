@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     { "src": "api/index.py", "use": "@vercel/python" },
-    { "src": "react-ui/package.json", "use": "@vercel/static-build", "config": { "distDir": "dist" } }
+    { "src": "react-ui/package.json", "use": "@vercel/static-build", "config": { "distDir": "../dist" } }
   ],
   "routes": [
     { "src": "/api/(.*)", "dest": "api/index.py" },
