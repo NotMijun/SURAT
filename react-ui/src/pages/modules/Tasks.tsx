@@ -19,6 +19,8 @@ export default function TasksPage({ me }: { me: Me }) {
   const [tab, setTab] = useState<TaskTab>('umum')
   const [vendors, setVendors] = useState<string[]>([])
   const [vendor, setVendor] = useState('')
+  const [pomStatus, setPomStatus] = useState<'Dijadwalkan' | 'Datang' | 'Selesai' | 'Bermasalah'>('Datang')
+  const [pomArrivedTime, setPomArrivedTime] = useState('')
   const [boxCount, setBoxCount] = useState('')
   const [galonUsed, setGalonUsed] = useState('')
   const [galonUnused, setGalonUnused] = useState('')
@@ -48,6 +50,12 @@ export default function TasksPage({ me }: { me: Me }) {
     }
   }, [toast])
 
+  const loadVendors = useCallback(() => {
+    apiGet<{ items: { name: string }[] }>('/api/vendors/catering')
+      .then((res) => setVendors((res.items || []).map((x) => String(x.name || '')).filter(Boolean)))
+      .catch(() => {})
+  }, [])
+
   useEffect(() => {
     const t = window.setTimeout(() => refresh({ q, date, sort, limit }).catch(() => {}), 250)
     return () => window.clearTimeout(t)
@@ -58,10 +66,19 @@ export default function TasksPage({ me }: { me: Me }) {
   }, [refresh, today])
 
   useEffect(() => {
-    apiGet<{ items: { name: string }[] }>('/api/vendors/catering')
-      .then((res) => setVendors((res.items || []).map((x) => String(x.name || '')).filter(Boolean)))
-      .catch(() => {})
-  }, [])
+    loadVendors()
+  }, [loadVendors])
+
+  useEffect(() => {
+    if (tab !== 'pom') return
+    loadVendors()
+  }, [loadVendors, tab])
+
+  useEffect(() => {
+    const onFocus = () => loadVendors()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [loadVendors])
 
   const isPom = (k: string) => /pom/i.test(k || '') && /cater/i.test(k || '')
   const isGalon = (k: string) => /galon/i.test(k || '')
@@ -76,6 +93,8 @@ export default function TasksPage({ me }: { me: Me }) {
     if (isPom(r.kind)) {
       const parts = []
       if (e.vendor) parts.push(`Vendor: ${String(e.vendor)}`)
+      if (e.pom_status) parts.push(`Status: ${String(e.pom_status)}`)
+      if (e.arrived_at) parts.push(`Datang: ${fmtDateTime(String(e.arrived_at))}`)
       if (typeof e.box_count === 'number' && Number.isFinite(e.box_count)) parts.push(`Box: ${String(e.box_count)}`)
       return parts.join(' · ')
     }
@@ -118,8 +137,11 @@ export default function TasksPage({ me }: { me: Me }) {
         const bc = Number.parseInt(boxCount || '', 10)
         if (!vendorVal) throw new Error('Vendor pom wajib diisi')
         if (!Number.isFinite(bc) || bc < 0) throw new Error('Jumlah box wajib diisi')
+        const arrivedAt = pomArrivedTime ? toIsoLocal(today, pomArrivedTime) : null
         extra = {
           vendor: vendorVal,
+          pom_status: pomStatus,
+          arrived_at: arrivedAt,
           box_count: bc,
         }
       } else if (tab === 'galon') {
@@ -131,6 +153,11 @@ export default function TasksPage({ me }: { me: Me }) {
         if (u != null && (!Number.isFinite(u) || u < 0)) throw new Error('Galon dipakai tidak valid')
         if (nu != null && (!Number.isFinite(nu) || nu < 0)) throw new Error('Galon tidak dipakai tidak valid')
         if (r != null && (!Number.isFinite(r) || r < 0)) throw new Error('Galon dikembalikan tidak valid')
+        if (r != null) {
+          const total = (u ?? 0) + (nu ?? 0)
+          if (r > total) throw new Error('Galon dikembalikan tidak boleh lebih dari (dipakai + tidak dipakai)')
+        }
+        if (u == null && nu == null && r == null && !(galonTo || '').trim()) throw new Error('Minimal isi salah satu data galon')
         extra = {
           galon_used: u,
           galon_unused: nu,
@@ -155,6 +182,8 @@ export default function TasksPage({ me }: { me: Me }) {
       setDestination('')
       setNotes('')
       setVendor('')
+      setPomStatus('Datang')
+      setPomArrivedTime('')
       setBoxCount('')
       setGalonUsed('')
       setGalonUnused('')
@@ -292,6 +321,23 @@ export default function TasksPage({ me }: { me: Me }) {
                     Jumlah box
                   </label>
                   <input className="input" id="taskPomBox" type="number" min={0} step={1} value={boxCount} onChange={(e) => setBoxCount(e.target.value)} placeholder="0" />
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="taskPomStatus">
+                    Status
+                  </label>
+                  <select className="select" id="taskPomStatus" value={pomStatus} onChange={(e) => setPomStatus(e.target.value as any)}>
+                    <option value="Dijadwalkan">Dijadwalkan</option>
+                    <option value="Datang">Datang</option>
+                    <option value="Selesai">Selesai</option>
+                    <option value="Bermasalah">Bermasalah</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="taskPomArrived">
+                    Jam datang (opsional)
+                  </label>
+                  <input className="input" id="taskPomArrived" type="time" value={pomArrivedTime} onChange={(e) => setPomArrivedTime(e.target.value)} />
                 </div>
               </>
             )}

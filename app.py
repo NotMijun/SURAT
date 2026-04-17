@@ -193,6 +193,7 @@ def db_init() -> None:
           occurred_at TEXT NOT NULL,
           destination TEXT NOT NULL,
           notes TEXT NOT NULL,
+          extra_json TEXT,
           created_by INTEGER NOT NULL REFERENCES users(id),
           shift TEXT NOT NULL,
           post TEXT NOT NULL,
@@ -201,6 +202,11 @@ def db_init() -> None:
         )
         """
     )
+
+    cur.execute("PRAGMA table_info(task_entries)")
+    task_cols = {row["name"] for row in cur.fetchall()}
+    if "extra_json" not in task_cols:
+        cur.execute("ALTER TABLE task_entries ADD COLUMN extra_json TEXT")
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_task_occurred ON task_entries(occurred_at)")
     cur.execute(
@@ -1073,10 +1079,10 @@ class AppHandler(BaseHTTPRequestHandler):
             params = []
             where = []
             if q:
-                where.append("(lower(kind) LIKE ? OR lower(destination) LIKE ? OR lower(notes) LIKE ?)")
-                params.extend([f"%{q}%", f"%{q}%", f"%{q}%"])
+                where.append("(lower(kind) LIKE ? OR lower(destination) LIKE ? OR lower(notes) LIKE ? OR lower(COALESCE(extra_json,'')) LIKE ?)")
+                params.extend([f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%"])
             sql = """
-              SELECT t.id, t.kind, t.occurred_at, t.destination, t.notes, u.display_name AS created_by_name, t.shift, t.post
+              SELECT t.id, t.kind, t.occurred_at, t.destination, t.notes, t.extra_json, u.display_name AS created_by_name, t.shift, t.post
               FROM task_entries t
               JOIN users u ON u.id = t.created_by
             """
@@ -1084,7 +1090,18 @@ class AppHandler(BaseHTTPRequestHandler):
                 sql += " WHERE " + " AND ".join(where)
             sql += " ORDER BY datetime(t.occurred_at) DESC LIMIT 200"
             rows = conn.execute(sql, tuple(params)).fetchall()
-            self._send_json(HTTPStatus.OK, {"items": [dict(r) for r in rows]})
+            items = []
+            for r in rows:
+                d = dict(r)
+                extra_raw = (d.get("extra_json") or "").strip()
+                if extra_raw:
+                    try:
+                        d["extra"] = json.loads(extra_raw)
+                    except Exception:
+                        d["extra"] = None
+                d.pop("extra_json", None)
+                items.append(d)
+            self._send_json(HTTPStatus.OK, {"items": items})
             return
 
         if path == "/api/report/shift":
@@ -1644,16 +1661,25 @@ class AppHandler(BaseHTTPRequestHandler):
             occurred_at = (data.get("occurred_at") or "").strip() or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
             destination = (data.get("destination") or "").strip() or "-"
             notes = (data.get("notes") or "").strip()
+            extra = data.get("extra")
+            extra_json = None
+            if extra is not None:
+                try:
+                    extra_json = json.dumps(extra, ensure_ascii=False, separators=(",", ":"))
+                except Exception:
+                    raise HttpError(HTTPStatus.BAD_REQUEST, "Data tambahan tidak valid")
+                if len(extra_json) > 6000:
+                    raise HttpError(HTTPStatus.BAD_REQUEST, "Data tambahan terlalu besar")
             now = utc_now_iso()
             cur = conn.execute(
                 """
-                INSERT INTO task_entries(kind, occurred_at, destination, notes, created_by, shift, post, created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?)
+                INSERT INTO task_entries(kind, occurred_at, destination, notes, extra_json, created_by, shift, post, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
                 """,
-                (kind, occurred_at, destination, notes, sess["user_id"], sess["shift"], sess["post"], now, now),
+                (kind, occurred_at, destination, notes, extra_json, sess["user_id"], sess["shift"], sess["post"], now, now),
             )
             record_id = cur.lastrowid
-            self._audit(conn, sess, "task_entries", str(record_id), "create", None, {"kind": kind, "occurred_at": occurred_at, "destination": destination, "notes": notes})
+            self._audit(conn, sess, "task_entries", str(record_id), "create", None, {"kind": kind, "occurred_at": occurred_at, "destination": destination, "notes": notes, "extra": extra if extra is not None else None})
             conn.commit()
             self._send_json(HTTPStatus.OK, {"ok": True, "id": record_id})
             return
