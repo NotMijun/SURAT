@@ -412,6 +412,18 @@ def _ensure_schema(conn) -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_task_occurred ON task_entries(occurred_at)")
             cur.execute(
                 """
+                CREATE TABLE IF NOT EXISTS catering_vendors (
+                  id BIGSERIAL PRIMARY KEY,
+                  name TEXT NOT NULL UNIQUE,
+                  name_norm TEXT NOT NULL UNIQUE,
+                  created_by BIGINT REFERENCES users(id),
+                  created_at TEXT NOT NULL
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_catering_vendors_norm ON catering_vendors(name_norm)")
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS audit_log (
                   id BIGSERIAL PRIMARY KEY,
                   actor_user_id BIGINT NOT NULL REFERENCES users(id),
@@ -681,6 +693,12 @@ class CreateTaskBody(BaseModel):
     notes: str
     extra: Any | None = None
 
+class CreateCateringVendorBody(BaseModel):
+    name: str
+
+class PatchCateringVendorBody(BaseModel):
+    name: str
+
 
 @app.get("/api/health")
 def health():
@@ -790,16 +808,24 @@ def list_guards(request: Request):
 def vendors_catering(request: Request):
     with db_connect() as conn:
         _require_session(conn, request)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT id, name FROM catering_vendors ORDER BY name ASC")
+            rows = cur.fetchall()
+        if rows:
+            return {"items": rows}
     raw = (os.getenv("CATERING_VENDORS") or "").strip()
-    items = []
+    fallback = []
+    seen: set[str] = set()
     for part in raw.split(","):
         name = part.strip()
-        if not name:
+        if not name or len(name) > 80:
             continue
-        if len(name) > 80:
+        norm = normalize_text(name)
+        if not norm or norm in seen:
             continue
-        items.append({"name": name})
-    return {"items": items}
+        seen.add(norm)
+        fallback.append({"id": None, "name": name})
+    return {"items": fallback}
 
 
 @app.post("/api/logout")
@@ -1760,6 +1786,77 @@ def admin_users(request: Request, q: str = ""):
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         return {"items": rows}
+
+
+@app.get("/api/admin/vendors/catering")
+def list_admin_catering_vendors(request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        _require_role(sess, ("admin",))
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT id, name, created_at FROM catering_vendors ORDER BY name ASC")
+            rows = cur.fetchall()
+        return {"items": rows}
+
+
+@app.post("/api/admin/vendors/catering")
+def create_admin_catering_vendor(body: CreateCateringVendorBody, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        _require_role(sess, ("admin",))
+        name = _text_field(body.name, field="Nama vendor", max_len=80)
+        if not name:
+            raise HTTPException(status_code=400, detail="Nama vendor wajib diisi")
+        norm = normalize_text(name)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT id FROM catering_vendors WHERE name_norm=%s", (norm,))
+            dup = cur.fetchone()
+            if dup:
+                raise HTTPException(status_code=409, detail="Vendor sudah ada")
+            cur.execute(
+                "INSERT INTO catering_vendors(name, name_norm, created_by, created_at) VALUES (%s,%s,%s,%s) RETURNING id",
+                (name, norm, int(sess["user_id"]), utc_now_iso()),
+            )
+            vid = int(cur.fetchone()["id"])
+        conn.commit()
+        return {"ok": True, "id": vid}
+
+
+@app.patch("/api/admin/vendors/catering/{vendor_id}")
+def patch_admin_catering_vendor(vendor_id: int, body: PatchCateringVendorBody, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        _require_role(sess, ("admin",))
+        name = _text_field(body.name, field="Nama vendor", max_len=80)
+        if not name:
+            raise HTTPException(status_code=400, detail="Nama vendor wajib diisi")
+        norm = normalize_text(name)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT id, name, name_norm FROM catering_vendors WHERE id=%s", (int(vendor_id),))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Vendor tidak ditemukan")
+            cur.execute("SELECT id FROM catering_vendors WHERE name_norm=%s AND id<>%s", (norm, int(vendor_id)))
+            dup = cur.fetchone()
+            if dup:
+                raise HTTPException(status_code=409, detail="Nama vendor sudah dipakai")
+            cur.execute("UPDATE catering_vendors SET name=%s, name_norm=%s WHERE id=%s", (name, norm, int(vendor_id)))
+        conn.commit()
+        return {"ok": True}
+
+
+@app.delete("/api/admin/vendors/catering/{vendor_id}")
+def delete_admin_catering_vendor(vendor_id: int, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        _require_role(sess, ("admin",))
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM catering_vendors WHERE id=%s", (int(vendor_id),))
+            deleted = int(cur.rowcount or 0)
+        conn.commit()
+        if deleted == 0:
+            raise HTTPException(status_code=404, detail="Vendor tidak ditemukan")
+        return {"ok": True, "deleted": deleted}
 
 
 @app.post("/api/admin/users")

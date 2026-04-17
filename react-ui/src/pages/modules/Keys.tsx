@@ -331,23 +331,25 @@ export default function KeysPage({ me }: { me: Me }) {
               </label>
               <input className="input" id="keyName" value={keyName} onChange={(e) => setKeyName(e.target.value)} placeholder="mis. Radiologi" required />
             </div>
-            <div className="field">
+            <div className="field field-time">
               <label className="label" htmlFor="keyTime">
                 Jam titip
               </label>
-              <input className="input" id="keyTime" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-              <div className="muted">Akan tersimpan: {fmtDateTime(toIsoLocal(today, time))}</div>
-              <div className="chips">
-                <button className="chip" type="button" onClick={() => setTime(shiftHm(time, -5))}>
-                  -5m
-                </button>
-                <button className="chip" type="button" onClick={() => setTime(nowHm())}>
-                  Sekarang
-                </button>
-                <button className="chip" type="button" onClick={() => setTime(shiftHm(time, 5))}>
-                  +5m
-                </button>
+              <div className="time-row">
+                <input className="input" id="keyTime" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+                <div className="chips">
+                  <button className="chip" type="button" onClick={() => setTime(shiftHm(time, -5))}>
+                    -5m
+                  </button>
+                  <button className="chip" type="button" onClick={() => setTime(nowHm())}>
+                    Sekarang
+                  </button>
+                  <button className="chip" type="button" onClick={() => setTime(shiftHm(time, 5))}>
+                    +5m
+                  </button>
+                </div>
               </div>
+              <div className="muted">Akan tersimpan: {fmtDateTime(toIsoLocal(today, time))}</div>
             </div>
             <div className="field grid-span-4">
               <label className="label" htmlFor="keyNotes">

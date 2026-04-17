@@ -27,6 +27,8 @@ export default function AdminPage({ me }: { me: Me }) {
   const [userQ, setUserQ] = useState('')
   const [auditQ, setAuditQ] = useState('')
   const [users, setUsers] = useState<AdminUser[]>([])
+  const [vendors, setVendors] = useState<Array<{ id: number; name: string; created_at?: string }>>([])
+  const [newVendor, setNewVendor] = useState('')
   const [audit, setAudit] = useState<AuditRow[]>([])
   const [history, setHistory] = useState<SecurityHistoryRow[]>([])
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
@@ -47,6 +49,12 @@ export default function AdminPage({ me }: { me: Me }) {
         const userItems = u.items || []
         setUsers(userItems)
         setAudit(a.items || [])
+        try {
+          const v = await apiGet<{ items: Array<{ id: number; name: string; created_at?: string }> }>('/api/admin/vendors/catering')
+          setVendors(v.items || [])
+        } catch {
+          setVendors([])
+        }
         const fallbackId = selectedUserId ?? userItems.find((x) => x.role === 'guard')?.id ?? userItems[0]?.id ?? null
         setSelectedUserId(fallbackId)
         if (fallbackId) {
@@ -130,6 +138,42 @@ export default function AdminPage({ me }: { me: Me }) {
       await refresh({ userQ, auditQ, historyLimit, selectedUserId })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal hapus riwayat'), 'error')
+    }
+  }
+
+  const addVendor = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const name = newVendor.trim()
+    if (!name) return
+    try {
+      await apiPost('/api/admin/vendors/catering', { name })
+      setNewVendor('')
+      toast.push('Vendor ditambahkan', 'success')
+      await refresh({ userQ, auditQ, historyLimit, selectedUserId })
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal menambah vendor'), 'error')
+    }
+  }
+
+  const updateVendor = async (id: number, name: string) => {
+    try {
+      await apiPatch(`/api/admin/vendors/catering/${id}`, { name })
+      toast.push('Vendor disimpan', 'success')
+      await refresh({ userQ, auditQ, historyLimit, selectedUserId })
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal mengubah vendor'), 'error')
+    }
+  }
+
+  const deleteVendor = async (id: number) => {
+    const ok = window.confirm('Hapus vendor ini?')
+    if (!ok) return
+    try {
+      await apiDelete(`/api/admin/vendors/catering/${id}`)
+      toast.push('Vendor dihapus', 'success')
+      await refresh({ userQ, auditQ, historyLimit, selectedUserId })
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal menghapus vendor'), 'error')
     }
   }
 
@@ -299,6 +343,49 @@ export default function AdminPage({ me }: { me: Me }) {
 
       <section className="card">
         <header className="card-header">
+          <div className="card-title">Vendor Catering</div>
+          <div className="muted">Dipakai di tab Tugas › Pom Catering</div>
+        </header>
+        <div className="card-body">
+          <form className="form grid grid-4" onSubmit={addVendor}>
+            <div className="field grid-span-3">
+              <label className="label">Nama vendor</label>
+              <input className="input" value={newVendor} onChange={(e) => setNewVendor(e.target.value)} placeholder="mis. Catering Sinar Pagi" />
+            </div>
+            <div className="row row-right grid-span-1">
+              <button className="button button-primary" type="submit">
+                Tambah Vendor
+              </button>
+            </div>
+          </form>
+          <div className="table-wrap" style={{ marginTop: 12 }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Nama</th>
+                  <th>Dibuat</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vendors.map((v) => (
+                  <VendorRow key={v.id} v={v} onSave={updateVendor} onDelete={deleteVendor} />
+                ))}
+                {vendors.length === 0 && (
+                  <tr>
+                    <td className="muted" colSpan={3}>
+                      Belum ada vendor.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section className="card">
+        <header className="card-header">
           <div className="card-title">Hapus Data</div>
           <div className="muted">Untuk kebutuhan koreksi (admin)</div>
         </header>
@@ -425,6 +512,39 @@ function AdminUserRow({
           Reset Password
         </button>
         <button className="button button-sm" type="button" onClick={() => onDelete(u.id)} disabled={isSelf}>
+          Hapus
+        </button>
+      </td>
+    </tr>
+  )
+}
+
+function VendorRow({
+  v,
+  onSave,
+  onDelete,
+}: {
+  v: { id: number; name: string; created_at?: string }
+  onSave: (id: number, name: string) => void
+  onDelete: (id: number) => void
+}) {
+  const [name, setName] = useState(v.name || '')
+
+  useEffect(() => {
+    setName(v.name || '')
+  }, [v.name])
+
+  return (
+    <tr>
+      <td>
+        <input className="input input-sm" value={name} onChange={(e) => setName(e.target.value)} />
+      </td>
+      <td>{v.created_at || '-'}</td>
+      <td className="row">
+        <button className="button button-sm" type="button" onClick={() => onSave(v.id, name)}>
+          Simpan
+        </button>
+        <button className="button button-sm" type="button" onClick={() => onDelete(v.id)}>
           Hapus
         </button>
       </td>

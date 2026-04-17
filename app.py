@@ -203,6 +203,18 @@ def db_init() -> None:
     )
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_task_occurred ON task_entries(occurred_at)")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS catering_vendors (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL UNIQUE,
+          name_norm TEXT NOT NULL UNIQUE,
+          created_by INTEGER REFERENCES users(id),
+          created_at TEXT NOT NULL
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_catering_vendors_norm ON catering_vendors(name_norm)")
 
     # Migrate audit_log to typed target columns (Option B)
     cur.execute("PRAGMA table_info(audit_log)")
@@ -936,6 +948,26 @@ class AppHandler(BaseHTTPRequestHandler):
 
         sess = self._require_session(conn)
 
+        if path == "/api/vendors/catering":
+            rows = conn.execute("SELECT id, name FROM catering_vendors ORDER BY name ASC").fetchall()
+            if rows:
+                self._send_json(HTTPStatus.OK, {"items": [dict(r) for r in rows]})
+                return
+            raw = (os.getenv("CATERING_VENDORS") or "").strip()
+            fallback = []
+            seen = set()
+            for part in raw.split(","):
+                name = part.strip()
+                if not name or len(name) > 80:
+                    continue
+                norm = normalize_text(name)
+                if not norm or norm in seen:
+                    continue
+                seen.add(norm)
+                fallback.append({"id": None, "name": name})
+            self._send_json(HTTPStatus.OK, {"items": fallback})
+            return
+
         if path == "/api/handover":
             keys_open = conn.execute(
                 """
@@ -1157,6 +1189,12 @@ class AppHandler(BaseHTTPRequestHandler):
                 sql += " WHERE " + " AND ".join(where)
             sql += " ORDER BY id ASC"
             rows = conn.execute(sql, tuple(params)).fetchall()
+            self._send_json(HTTPStatus.OK, {"items": [dict(r) for r in rows]})
+            return
+
+        if path == "/api/admin/vendors/catering":
+            self._require_role(sess, ("admin",))
+            rows = conn.execute("SELECT id, name, created_at FROM catering_vendors ORDER BY name ASC").fetchall()
             self._send_json(HTTPStatus.OK, {"items": [dict(r) for r in rows]})
             return
 
@@ -1392,6 +1430,25 @@ class AppHandler(BaseHTTPRequestHandler):
             )
             conn.commit()
             self._send_json(HTTPStatus.OK, {"ok": True, "id": record_id})
+            return
+
+        if path == "/api/admin/vendors/catering":
+            self._require_role(sess, ("admin",))
+            name = (data.get("name") or "").strip()
+            if not name:
+                raise HttpError(HTTPStatus.BAD_REQUEST, "Nama vendor wajib diisi")
+            if len(name) > 80:
+                raise HttpError(HTTPStatus.BAD_REQUEST, "Nama vendor terlalu panjang")
+            norm = normalize_text(name)
+            dup = conn.execute("SELECT id FROM catering_vendors WHERE name_norm=?", (norm,)).fetchone()
+            if dup:
+                raise HttpError(HTTPStatus.CONFLICT, "Vendor sudah ada")
+            cur = conn.execute(
+                "INSERT INTO catering_vendors(name, name_norm, created_by, created_at) VALUES (?,?,?,?)",
+                (name, norm, sess["user_id"], utc_now_iso()),
+            )
+            conn.commit()
+            self._send_json(HTTPStatus.OK, {"ok": True, "id": cur.lastrowid})
             return
 
         if path.startswith("/api/admin/users/") and path.endswith("/reset_password"):
@@ -1641,6 +1698,26 @@ class AppHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.OK, {"ok": True})
             return
 
+        if path.startswith("/api/admin/vendors/catering/") and path.count("/") == 5:
+            self._require_role(sess, ("admin",))
+            vendor_id = path.split("/")[5]
+            row = conn.execute("SELECT id, name, name_norm, created_at FROM catering_vendors WHERE id=?", (vendor_id,)).fetchone()
+            if not row:
+                raise HttpError(HTTPStatus.NOT_FOUND, "Vendor tidak ditemukan")
+            name = (data.get("name") or "").strip()
+            if not name:
+                raise HttpError(HTTPStatus.BAD_REQUEST, "Nama vendor wajib diisi")
+            if len(name) > 80:
+                raise HttpError(HTTPStatus.BAD_REQUEST, "Nama vendor terlalu panjang")
+            norm = normalize_text(name)
+            dup = conn.execute("SELECT id FROM catering_vendors WHERE name_norm=? AND id<>?", (norm, vendor_id)).fetchone()
+            if dup:
+                raise HttpError(HTTPStatus.CONFLICT, "Nama vendor sudah dipakai")
+            conn.execute("UPDATE catering_vendors SET name=?, name_norm=? WHERE id=?", (name, norm, vendor_id))
+            conn.commit()
+            self._send_json(HTTPStatus.OK, {"ok": True})
+            return
+
         if path.startswith("/api/keys/") and path.count("/") == 3:
             record_id = path.split("/")[3]
             row = conn.execute("SELECT * FROM key_transactions WHERE id=?", (record_id,)).fetchone()
@@ -1695,6 +1772,19 @@ class AppHandler(BaseHTTPRequestHandler):
     def _handle_api_delete(self, conn: sqlite3.Connection, path: str, query):
         sess = self._require_session(conn)
         self._require_role(sess, ("admin",))
+
+        if path.startswith("/api/admin/vendors/catering/"):
+            parts = path.split("/")
+            if len(parts) < 6:
+                raise HttpError(HTTPStatus.BAD_REQUEST, "ID vendor tidak valid")
+            vendor_id = parts[5]
+            row = conn.execute("SELECT id, name FROM catering_vendors WHERE id=?", (vendor_id,)).fetchone()
+            if not row:
+                raise HttpError(HTTPStatus.NOT_FOUND, "Vendor tidak ditemukan")
+            conn.execute("DELETE FROM catering_vendors WHERE id=?", (vendor_id,))
+            conn.commit()
+            self._send_json(HTTPStatus.OK, {"ok": True, "deleted": 1})
+            return
 
         if path == "/api/admin/security_history":
             user_id = (query.get("user_id") or [""])[0].strip()

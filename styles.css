@@ -206,6 +206,8 @@ html[data-focus="keyboard"] .input:focus-visible,html[data-focus="keyboard"] .se
   gap:8px;
   transition:transform .16s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease;
 }
+.button:focus,.tab:focus,.chip:focus{outline:none}
+html[data-focus="keyboard"] .button:focus-visible,html[data-focus="keyboard"] .tab:focus-visible,html[data-focus="keyboard"] .chip:focus-visible{border-color:rgba(212,175,55,.6);box-shadow:0 0 0 4px rgba(212,175,55,.18)}
 .button:active{transform:translateY(1px)}
 .button-primary{border-color:rgba(212,175,55,.6);background:linear-gradient(180deg, rgba(212,175,55,.32), rgba(182,143,33,.28))}
 .button-secondary{border-color:rgba(212,175,55,.25);background:rgba(212,175,55,.10)}
@@ -327,6 +329,34 @@ html[data-focus="keyboard"] .input:focus-visible,html[data-focus="keyboard"] .se
 .grid-4{grid-template-columns:repeat(4, minmax(0, 1fr))}
 .grid-span-3{grid-column:span 3}
 .grid-span-4{grid-column:span 4}
+
+.form.grid-4{grid-template-columns:repeat(2, minmax(0, 1fr));gap:14px}
+.form.grid-4 .grid-span-3,.form.grid-4 .grid-span-4{grid-column:1 / -1}
+.field > .muted{font-size:12px;line-height:1.35}
+.field > .chips{margin-top:6px}
+
+.field-time .time-row{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  flex-wrap:wrap;
+}
+.field-time .time-row .input[type="time"]{width:130px;max-width:100%}
+.field-time .time-row .chips{margin-top:0}
+.field-time .chips .chip{min-width:58px;text-align:center}
+
+.input[type="file"]{padding:10px 12px}
+.input[type="file"]::file-selector-button{
+  border:1px solid var(--border);
+  background:var(--soft-bg-2);
+  color:var(--text);
+  padding:8px 10px;
+  border-radius:10px;
+  margin-right:10px;
+  cursor:pointer;
+  font-weight:650;
+}
+.input[type="file"]::file-selector-button:active{transform:translateY(1px)}
 
 .stat{
   border:1px solid var(--border);
@@ -455,6 +485,7 @@ html[data-focus="keyboard"] .input:focus-visible,html[data-focus="keyboard"] .se
 
 @media (max-width: 560px){
   .grid-2,.grid-3,.grid-4{grid-template-columns:1fr}
+  .form.grid-4{grid-template-columns:1fr}
   .topbar-right{gap:8px}
   .topbar-right{flex-wrap:nowrap;overflow:auto;-webkit-overflow-scrolling:touch}
   .topbar-right .pill-muted{display:none}

@@ -192,23 +192,25 @@ export default function MutasiPage({ me }: { me: Me }) {
                 </select>
               </div>
             )}
-            <div className="field">
+            <div className="field field-time">
               <label className="label" htmlFor="mutasiTime">
                 Jam
               </label>
-              <input className="input" id="mutasiTime" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-              <div className="muted">Akan tersimpan: {fmtDateTime(toIsoLocal(today, time))}</div>
-              <div className="chips">
-                <button className="chip" type="button" onClick={() => setTime(shiftHm(time, -5))}>
-                  -5m
-                </button>
-                <button className="chip" type="button" onClick={() => setTime(nowHm())}>
-                  Sekarang
-                </button>
-                <button className="chip" type="button" onClick={() => setTime(shiftHm(time, 5))}>
-                  +5m
-                </button>
+              <div className="time-row">
+                <input className="input" id="mutasiTime" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+                <div className="chips">
+                  <button className="chip" type="button" onClick={() => setTime(shiftHm(time, -5))}>
+                    -5m
+                  </button>
+                  <button className="chip" type="button" onClick={() => setTime(nowHm())}>
+                    Sekarang
+                  </button>
+                  <button className="chip" type="button" onClick={() => setTime(shiftHm(time, 5))}>
+                    +5m
+                  </button>
+                </div>
               </div>
+              <div className="muted">Akan tersimpan: {fmtDateTime(toIsoLocal(today, time))}</div>
             </div>
             <div className="field grid-span-4">
               <label className="label" htmlFor="mutasiDesc">
