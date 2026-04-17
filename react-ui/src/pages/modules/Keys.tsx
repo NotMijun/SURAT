@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiGet, apiGetBlob, apiPost, apiPostForm } from '../../lib/api'
-import type { KeyTx, Me } from '../../types'
-import { fmtDateTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
+import type { KeyMasterItem, KeyTx, Me } from '../../types'
+import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useToast } from '../../components/ToastHost'
 
 const badge = (s: KeyTx['status']) => {
@@ -32,6 +32,7 @@ export default function KeysPage({ me }: { me: Me }) {
   const [notes, setNotes] = useState('')
   const [petugasId, setPetugasId] = useState<string>(String(me.user.id))
   const [guards, setGuards] = useState<{id: number, display_name: string}[]>([])
+  const [keyMaster, setKeyMaster] = useState<KeyMasterItem[]>([])
   const [photo, setPhoto] = useState<File | null>(null)
   const [photoKey, setPhotoKey] = useState(0)
   const [photoView, setPhotoView] = useState<string | null>(null)
@@ -43,6 +44,12 @@ export default function KeysPage({ me }: { me: Me }) {
       apiGet<{items: any[]}>('/api/guards').then(res => setGuards(res.items || [])).catch(() => {})
     }
   }, [me.user.role])
+
+  useEffect(() => {
+    apiGet<{ items: KeyMasterItem[] }>('/api/keys/master')
+      .then((res) => setKeyMaster(res.items || []))
+      .catch(() => setKeyMaster([]))
+  }, [])
 
   const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number; closedDateField?: 'checkout' | 'checkin' }) => {
     const { q, date, sort, limit } = opts
@@ -368,7 +375,14 @@ export default function KeysPage({ me }: { me: Me }) {
               <label className="label" htmlFor="keyName">
                 Ruangan/Kunci
               </label>
-              <input className="input" id="keyName" value={keyName} onChange={(e) => setKeyName(e.target.value)} placeholder="mis. Radiologi" required />
+              <input className="input" id="keyName" value={keyName} onChange={(e) => setKeyName(e.target.value)} placeholder="mis. Radiologi" required list={keyMaster.length ? 'keyMasterList' : undefined} />
+              {keyMaster.length > 0 && (
+                <datalist id="keyMasterList">
+                  {keyMaster.map((k) => (
+                    <option key={k.id} value={k.name} />
+                  ))}
+                </datalist>
+              )}
             </div>
             <div className="field field-time">
               <label className="label" htmlFor="keyTime">
@@ -455,6 +469,25 @@ export default function KeysPage({ me }: { me: Me }) {
               </div>
             </div>
           </form>
+          <div className="list" style={{ marginTop: 12 }}>
+            <div className="list-item">
+              <div className="list-title">Terakhir dicatat</div>
+              <div className="list-meta">{(openView.length || closedView.length) ? '' : '—'}</div>
+            </div>
+            {[...openView, ...closedView]
+              .sort((a, b) => new Date(b.checkout_at).getTime() - new Date(a.checkout_at).getTime())
+              .slice(0, 3)
+              .map((r) => (
+                <div key={r.id} className="list-item">
+                  <div className="list-title">
+                    {r.key_name} · {r.borrower_name}
+                  </div>
+                  <div className="list-meta">
+                    {fmtTime(r.checkout_at)} · {r.status === 'open' ? 'dititipkan' : r.status === 'closed' ? `diambil ${r.checkin_at ? fmtTime(r.checkin_at) : ''}` : 'void'}
+                  </div>
+                </div>
+              ))}
+          </div>
         </div>
       </section>
 

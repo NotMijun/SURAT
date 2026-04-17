@@ -94,19 +94,44 @@ export default function GuestsPage({ me }: { me: Me }) {
     setBusy(true)
     try {
       setFormError('')
-      if (photo) {
-        const form = new FormData()
-        form.set('name', name)
-        form.set('instansi', instansi)
-        form.set('purpose', purpose)
-        form.set('meet_person', meet)
-        form.set('checkin_at', toIsoLocal(today, time))
-        form.set('notes', notes)
-        form.set('post', postFilter)
-        form.set('photo', photo)
-        await apiPostForm('/api/guests_with_photo', form)
-      } else {
-        await apiPost('/api/guests', { name, instansi, purpose, meet_person: meet, checkin_at: toIsoLocal(today, time), notes, post: postFilter })
+      const payload = { name, instansi, purpose, meet_person: meet, checkin_at: toIsoLocal(today, time), notes, post: postFilter }
+      try {
+        if (photo) {
+          const form = new FormData()
+          form.set('name', payload.name)
+          form.set('instansi', payload.instansi)
+          form.set('purpose', payload.purpose)
+          form.set('meet_person', payload.meet_person)
+          form.set('checkin_at', payload.checkin_at)
+          form.set('notes', payload.notes)
+          form.set('post', payload.post)
+          form.set('photo', photo)
+          await apiPostForm('/api/guests_with_photo', form)
+        } else {
+          await apiPost('/api/guests', payload)
+        }
+      } catch (err: any) {
+        if (err?.status === 409) {
+          const ok = window.confirm(`${String(err?.message || 'Data serupa sudah ada')}\n\nTetap simpan?`)
+          if (!ok) throw err
+          if (photo) {
+            const form = new FormData()
+            form.set('name', payload.name)
+            form.set('instansi', payload.instansi)
+            form.set('purpose', payload.purpose)
+            form.set('meet_person', payload.meet_person)
+            form.set('checkin_at', payload.checkin_at)
+            form.set('notes', payload.notes)
+            form.set('post', payload.post)
+            form.set('force', 'true')
+            form.set('photo', photo)
+            await apiPostForm('/api/guests_with_photo', form)
+          } else {
+            await apiPost('/api/guests', { ...payload, force: true })
+          }
+        } else {
+          throw err
+        }
       }
       setName('')
       setInstansi('')
@@ -339,6 +364,22 @@ export default function GuestsPage({ me }: { me: Me }) {
               </div>
             </div>
           </form>
+          <div className="list" style={{ marginTop: 12 }}>
+            <div className="list-item">
+              <div className="list-title">Terakhir dicatat</div>
+              <div className="list-meta">{items.slice(0, 3).length ? '' : '—'}</div>
+            </div>
+            {items.slice(0, 3).map((r) => (
+              <div key={r.id} className="list-item">
+                <div className="list-title">
+                  {r.name} · {r.instansi}
+                </div>
+                <div className="list-meta">
+                  {fmtTime(r.checkin_at)} {r.status === 'out' && r.checkout_at ? `· keluar ${fmtTime(r.checkout_at)}` : '· masih di dalam'}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 

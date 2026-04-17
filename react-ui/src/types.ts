@@ -60,6 +60,8 @@ export type TaskEntry = {
   destination: string
   notes: string
   extra?: any
+  status?: 'active' | 'void'
+  void_reason?: string | null
   created_by_name?: string
   shift?: string
   post?: string
@@ -72,11 +74,18 @@ export type MutasiEntry = {
   occurred_at: string
   kind: string
   description: string
+  status?: 'active' | 'void'
+  void_reason?: string | null
   created_by_name?: string
   shift?: string
   post?: string
   has_photo?: boolean
   photo_url?: string
+}
+
+export type KeyMasterItem = {
+  id: number
+  name: string
 }
 
 export type AdminUser = {

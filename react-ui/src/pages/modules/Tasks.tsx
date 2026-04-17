@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { apiGet, apiGetBlob, apiPost, apiPostForm } from '../../lib/api'
+import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { Me, TaskEntry } from '../../types'
-import { fmtDateTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
+import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useToast } from '../../components/ToastHost'
 
 export default function TasksPage({ me }: { me: Me }) {
@@ -42,7 +42,7 @@ export default function TasksPage({ me }: { me: Me }) {
     setLoading(true)
     try {
       const res = await apiGet<{ items: TaskEntry[] }>(
-        `/api/tasks?q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}`,
+        `/api/tasks?q=${encodeURIComponent(q.trim())}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&status=all`,
       )
       setItems(res.items || [])
     } catch (err: any) {
@@ -158,6 +158,76 @@ export default function TasksPage({ me }: { me: Me }) {
     return ''
   }
 
+  const canAdmin = me.user.role === 'admin' || me.user.role === 'supervisor'
+
+  const summary = useMemo(() => {
+    if (tab === 'pom') {
+      let totalBox = 0
+      let lastArrived: string | null = null
+      let bermasalah = 0
+      for (const r of viewItems) {
+        if (r.status === 'void') continue
+        const e = r.extra || {}
+        const bc = typeof e.box_count === 'number' ? e.box_count : null
+        if (bc != null && Number.isFinite(bc)) totalBox += bc
+        if (String(e.pom_status || '') === 'Bermasalah') bermasalah += 1
+        const a = e.arrived_at ? String(e.arrived_at) : null
+        if (a) {
+          if (!lastArrived || new Date(a).getTime() > new Date(lastArrived).getTime()) lastArrived = a
+        }
+      }
+      return { kind: 'pom' as const, totalBox, lastArrived, bermasalah }
+    }
+    if (tab === 'galon') {
+      let used = 0
+      let unused = 0
+      let returned = 0
+      for (const r of viewItems) {
+        if (r.status === 'void') continue
+        const e = r.extra || {}
+        const u = typeof e.galon_used === 'number' ? e.galon_used : 0
+        const nu = typeof e.galon_unused === 'number' ? e.galon_unused : 0
+        const re = typeof e.galon_returned === 'number' ? e.galon_returned : 0
+        if (Number.isFinite(u)) used += u
+        if (Number.isFinite(nu)) unused += nu
+        if (Number.isFinite(re)) returned += re
+      }
+      return { kind: 'galon' as const, used, unused, returned }
+    }
+    return { kind: 'umum' as const }
+  }, [tab, viewItems])
+
+  const doEdit = async (r: TaskEntry) => {
+    if (!canAdmin) return
+    if (r.status === 'void') return
+    const next = window.prompt('Ubah catatan tugas:', r.notes || '')
+    if (next == null) return
+    const value = next.trim()
+    try {
+      await apiPatch(`/api/tasks/${r.id}`, { notes: value })
+      toast.push('Tugas diperbarui', 'success')
+      await refresh({ q, date, sort, limit })
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal mengubah'), 'error')
+    }
+  }
+
+  const doVoid = async (r: TaskEntry) => {
+    if (!canAdmin) return
+    if (r.status === 'void') return
+    const reason = window.prompt('Alasan void:', '')
+    if (reason == null) return
+    const value = reason.trim()
+    if (!value) return
+    try {
+      await apiPost(`/api/tasks/${r.id}/void`, { reason: value })
+      toast.push('Tugas di-void', 'success')
+      await refresh({ q, date, sort, limit })
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal void'), 'error')
+    }
+  }
+
   const downloadCsv = (filename: string, rows: Array<Array<string | number>>) => {
     const lines = rows.map((r) => r.map((x) => `"${String(x ?? '').replace(/"/g, '""')}"`).join(','))
     const csv = `\ufeff${lines.join('\n')}`
@@ -217,17 +287,39 @@ export default function TasksPage({ me }: { me: Me }) {
       }
       const payload: any = { kind: finalKind, occurred_at: occurredAt, destination: finalDestination, notes }
       if (extra !== undefined) payload.extra = extra
-      if (photo) {
-        const form = new FormData()
-        form.set('kind', payload.kind)
-        form.set('occurred_at', payload.occurred_at)
-        form.set('destination', payload.destination)
-        form.set('notes', payload.notes)
-        if (payload.extra) form.set('extra_json', JSON.stringify(payload.extra))
-        form.set('photo', photo)
-        await apiPostForm('/api/tasks_with_photo', form)
-      } else {
-        await apiPost('/api/tasks', payload)
+      try {
+        if (photo) {
+          const form = new FormData()
+          form.set('kind', payload.kind)
+          form.set('occurred_at', payload.occurred_at)
+          form.set('destination', payload.destination)
+          form.set('notes', payload.notes)
+          if (payload.extra) form.set('extra_json', JSON.stringify(payload.extra))
+          form.set('photo', photo)
+          await apiPostForm('/api/tasks_with_photo', form)
+        } else {
+          await apiPost('/api/tasks', payload)
+        }
+      } catch (err: any) {
+        if (err?.status === 409) {
+          const ok = window.confirm(`${String(err?.message || 'Data serupa sudah ada')}\n\nTetap simpan?`)
+          if (!ok) throw err
+          if (photo) {
+            const form = new FormData()
+            form.set('kind', payload.kind)
+            form.set('occurred_at', payload.occurred_at)
+            form.set('destination', payload.destination)
+            form.set('notes', payload.notes)
+            if (payload.extra) form.set('extra_json', JSON.stringify(payload.extra))
+            form.set('force', 'true')
+            form.set('photo', photo)
+            await apiPostForm('/api/tasks_with_photo', form)
+          } else {
+            await apiPost('/api/tasks', { ...payload, force: true })
+          }
+        } else {
+          throw err
+        }
       }
       setDestination('')
       setNotes('')
@@ -533,7 +625,11 @@ export default function TasksPage({ me }: { me: Me }) {
       <section className="card">
         <header className="card-header">
           <div className="card-title">Daftar tugas</div>
-          <div className="muted">{loading ? 'Memuat...' : `${viewItems.length} entri`}</div>
+          <div className="muted">
+            {loading ? 'Memuat...' : `${viewItems.length} entri`}
+            {summary.kind === 'pom' ? ` · Total box: ${summary.totalBox}${summary.lastArrived ? ` · Terakhir datang: ${fmtTime(summary.lastArrived)}` : ''}${summary.bermasalah ? ` · Bermasalah: ${summary.bermasalah}` : ''}` : ''}
+            {summary.kind === 'galon' ? ` · Dipakai: ${summary.used} · Tidak dipakai: ${summary.unused} · Dikembalikan: ${summary.returned}` : ''}
+          </div>
         </header>
         <div className="card-body">
           <div className="table-wrap">
@@ -545,8 +641,10 @@ export default function TasksPage({ me }: { me: Me }) {
                   <th>Tujuan</th>
                   <th>Detail</th>
                   <th>Catatan</th>
+                  <th>Status</th>
                   <th>Foto</th>
                   <th>Petugas</th>
+                  {canAdmin && <th>Aksi</th>}
                 </tr>
               </thead>
               <tbody>
@@ -556,7 +654,11 @@ export default function TasksPage({ me }: { me: Me }) {
                     <td data-label="Jenis">{r.kind}</td>
                     <td data-label="Tujuan">{r.destination}</td>
                     <td data-label="Detail">{renderDetails(r) || <span className="muted">-</span>}</td>
-                    <td data-label="Catatan">{r.notes}</td>
+                    <td data-label="Catatan">
+                      {r.notes}
+                      {r.status === 'void' && r.void_reason ? <div className="muted">Void: {r.void_reason}</div> : null}
+                    </td>
+                    <td data-label="Status">{r.status === 'void' ? <span className="badge badge-danger">Void</span> : <span className="badge badge-ok">Aktif</span>}</td>
                     <td data-label="Foto">
                       {r.has_photo && r.photo_url ? (
                         <button className="button button-sm button-secondary" type="button" onClick={() => openPhoto(r.photo_url!)}>
@@ -567,11 +669,27 @@ export default function TasksPage({ me }: { me: Me }) {
                       )}
                     </td>
                     <td data-label="Petugas">{r.created_by_name || '-'}</td>
+                    {canAdmin && (
+                      <td data-label="Aksi">
+                        {r.status === 'void' ? (
+                          <span className="muted">—</span>
+                        ) : (
+                          <div className="row">
+                            <button className="button button-sm" type="button" onClick={() => doEdit(r)}>
+                              Edit
+                            </button>
+                            <button className="button button-sm button-danger" type="button" onClick={() => doVoid(r)}>
+                              Void
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {viewItems.length === 0 && (
                   <tr>
-                    <td className="muted" colSpan={7}>
+                    <td className="muted" colSpan={canAdmin ? 9 : 8}>
                       Tidak ada data.
                     </td>
                   </tr>

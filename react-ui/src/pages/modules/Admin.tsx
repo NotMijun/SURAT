@@ -29,6 +29,8 @@ export default function AdminPage({ me }: { me: Me }) {
   const [users, setUsers] = useState<AdminUser[]>([])
   const [vendors, setVendors] = useState<Array<{ id: number; name: string; created_at?: string }>>([])
   const [newVendor, setNewVendor] = useState('')
+  const [keyMaster, setKeyMaster] = useState<Array<{ id: number; name: string; is_active?: boolean; created_at?: string; updated_at?: string }>>([])
+  const [newKeyName, setNewKeyName] = useState('')
   const [audit, setAudit] = useState<AuditRow[]>([])
   const [history, setHistory] = useState<SecurityHistoryRow[]>([])
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
@@ -54,6 +56,12 @@ export default function AdminPage({ me }: { me: Me }) {
           setVendors(v.items || [])
         } catch {
           setVendors([])
+        }
+        try {
+          const km = await apiGet<{ items: Array<{ id: number; name: string; is_active?: boolean; created_at?: string; updated_at?: string }> }>('/api/admin/keys/master')
+          setKeyMaster(km.items || [])
+        } catch {
+          setKeyMaster([])
         }
         const fallbackId = selectedUserId ?? userItems.find((x) => x.role === 'guard')?.id ?? userItems[0]?.id ?? null
         setSelectedUserId(fallbackId)
@@ -152,6 +160,42 @@ export default function AdminPage({ me }: { me: Me }) {
       await refresh({ userQ, auditQ, historyLimit, selectedUserId })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal menambah vendor'), 'error')
+    }
+  }
+
+  const addKeyMaster = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const name = newKeyName.trim()
+    if (!name) return
+    try {
+      await apiPost('/api/admin/keys/master', { name })
+      setNewKeyName('')
+      toast.push('Master kunci ditambahkan', 'success')
+      await refresh({ userQ, auditQ, historyLimit, selectedUserId })
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal menambah master kunci'), 'error')
+    }
+  }
+
+  const updateKeyMaster = async (id: number, name: string, is_active: boolean) => {
+    try {
+      await apiPatch(`/api/admin/keys/master/${id}`, { name, is_active })
+      toast.push('Master kunci disimpan', 'success')
+      await refresh({ userQ, auditQ, historyLimit, selectedUserId })
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal mengubah master kunci'), 'error')
+    }
+  }
+
+  const disableKeyMaster = async (id: number) => {
+    const ok = window.confirm('Nonaktifkan master kunci ini?')
+    if (!ok) return
+    try {
+      await apiDelete(`/api/admin/keys/master/${id}`)
+      toast.push('Master kunci dinonaktifkan', 'success')
+      await refresh({ userQ, auditQ, historyLimit, selectedUserId })
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal menonaktifkan'), 'error')
     }
   }
 
@@ -386,6 +430,49 @@ export default function AdminPage({ me }: { me: Me }) {
 
       <section className="card">
         <header className="card-header">
+          <div className="card-title">Master Kunci/Ruangan</div>
+          <div className="muted">Dipakai sebagai saran/autocomplete di form Penitipan Kunci</div>
+        </header>
+        <div className="card-body">
+          <form className="form grid grid-4" onSubmit={addKeyMaster}>
+            <div className="field grid-span-3">
+              <label className="label">Nama kunci/ruangan</label>
+              <input className="input" value={newKeyName} onChange={(e) => setNewKeyName(e.target.value)} placeholder="mis. Radiologi" />
+            </div>
+            <div className="row row-right grid-span-1">
+              <button className="button button-primary" type="submit">
+                Tambah
+              </button>
+            </div>
+          </form>
+          <div className="table-wrap" style={{ marginTop: 12 }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Nama</th>
+                  <th>Status</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {keyMaster.map((k) => (
+                  <KeyMasterRow key={k.id} k={k} onSave={updateKeyMaster} onDisable={disableKeyMaster} />
+                ))}
+                {keyMaster.length === 0 && (
+                  <tr>
+                    <td className="muted" colSpan={3}>
+                      Belum ada data.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section className="card">
+        <header className="card-header">
           <div className="card-title">Hapus Data</div>
           <div className="muted">Untuk kebutuhan koreksi (admin)</div>
         </header>
@@ -546,6 +633,46 @@ function VendorRow({
         </button>
         <button className="button button-sm" type="button" onClick={() => onDelete(v.id)}>
           Hapus
+        </button>
+      </td>
+    </tr>
+  )
+}
+
+function KeyMasterRow({
+  k,
+  onSave,
+  onDisable,
+}: {
+  k: { id: number; name: string; is_active?: boolean; created_at?: string; updated_at?: string }
+  onSave: (id: number, name: string, is_active: boolean) => void
+  onDisable: (id: number) => void
+}) {
+  const [name, setName] = useState(k.name || '')
+  const [active, setActive] = useState(k.is_active !== false)
+
+  useEffect(() => {
+    setName(k.name || '')
+    setActive(k.is_active !== false)
+  }, [k.id, k.is_active, k.name])
+
+  return (
+    <tr>
+      <td>
+        <input className="input input-sm" value={name} onChange={(e) => setName(e.target.value)} />
+      </td>
+      <td>
+        <label className="row" style={{ gap: 8 }}>
+          <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
+          <span className="muted">{active ? 'Aktif' : 'Nonaktif'}</span>
+        </label>
+      </td>
+      <td className="row">
+        <button className="button button-sm" type="button" onClick={() => onSave(k.id, name, active)}>
+          Simpan
+        </button>
+        <button className="button button-sm" type="button" onClick={() => onDisable(k.id)}>
+          Nonaktifkan
         </button>
       </td>
     </tr>

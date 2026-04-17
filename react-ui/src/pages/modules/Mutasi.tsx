@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react'
-import { apiGet, apiGetBlob, apiPost, apiPostForm } from '../../lib/api'
+import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { Me, MutasiEntry } from '../../types'
 import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useToast } from '../../components/ToastHost'
@@ -65,7 +65,7 @@ export default function MutasiPage({ me }: { me: Me }) {
     setLoading(true)
     try {
       const res = await apiGet<{ items: MutasiEntry[] }>(
-        `/api/mutasi?q=${encodeURIComponent(q.trim())}&kategori=${encodeURIComponent(fk)}&sub=${encodeURIComponent(fs)}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}`,
+        `/api/mutasi?q=${encodeURIComponent(q.trim())}&kategori=${encodeURIComponent(fk)}&sub=${encodeURIComponent(fs)}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&status=all`,
       )
       setItems(res.items || [])
     } catch (err: any) {
@@ -76,6 +76,7 @@ export default function MutasiPage({ me }: { me: Me }) {
   }, [toast])
 
   const fmtWhen = (iso: string | null | undefined) => (date ? fmtTime(iso) : fmtDateTime(iso))
+  const canAdmin = me.user.role === 'admin' || me.user.role === 'supervisor'
 
   useEffect(() => {
     const t = window.setTimeout(() => refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub }).catch(() => {}), 250)
@@ -105,15 +106,36 @@ export default function MutasiPage({ me }: { me: Me }) {
     const combinedKind = subKategori && subKategori !== 'Lainnya' ? `${kategori} - ${subKategori}` : kategori;
     try {
       setFormError('')
-      if (photo) {
-        const form = new FormData()
-        form.set('kind', combinedKind)
-        form.set('occurred_at', toIsoLocal(today, time))
-        form.set('description', desc)
-        form.set('photo', photo)
-        await apiPostForm('/api/mutasi_with_photo', form)
-      } else {
-        await apiPost('/api/mutasi', { kind: combinedKind, occurred_at: toIsoLocal(today, time), description: desc })
+      const payload = { kind: combinedKind, occurred_at: toIsoLocal(today, time), description: desc }
+      try {
+        if (photo) {
+          const form = new FormData()
+          form.set('kind', payload.kind)
+          form.set('occurred_at', payload.occurred_at)
+          form.set('description', payload.description)
+          form.set('photo', photo)
+          await apiPostForm('/api/mutasi_with_photo', form)
+        } else {
+          await apiPost('/api/mutasi', payload)
+        }
+      } catch (err: any) {
+        if (err?.status === 409) {
+          const ok = window.confirm(`${String(err?.message || 'Data serupa sudah ada')}\n\nTetap simpan?`)
+          if (!ok) throw err
+          if (photo) {
+            const form = new FormData()
+            form.set('kind', payload.kind)
+            form.set('occurred_at', payload.occurred_at)
+            form.set('description', payload.description)
+            form.set('force', 'true')
+            form.set('photo', photo)
+            await apiPostForm('/api/mutasi_with_photo', form)
+          } else {
+            await apiPost('/api/mutasi', { ...payload, force: true })
+          }
+        } else {
+          throw err
+        }
       }
       setDesc('')
       setPhoto(null)
@@ -133,6 +155,38 @@ export default function MutasiPage({ me }: { me: Me }) {
   const closePhoto = () => {
     if (photoView) URL.revokeObjectURL(photoView)
     setPhotoView(null)
+  }
+
+  const doEdit = async (r: MutasiEntry) => {
+    if (!canAdmin) return
+    if (r.status === 'void') return
+    const next = window.prompt('Ubah deskripsi mutasi:', r.description || '')
+    if (next == null) return
+    const value = next.trim()
+    if (!value) return
+    try {
+      await apiPatch(`/api/mutasi/${r.id}`, { description: value })
+      toast.push('Mutasi diperbarui', 'success')
+      await refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub })
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal mengubah'), 'error')
+    }
+  }
+
+  const doVoid = async (r: MutasiEntry) => {
+    if (!canAdmin) return
+    if (r.status === 'void') return
+    const reason = window.prompt('Alasan void:', '')
+    if (reason == null) return
+    const value = reason.trim()
+    if (!value) return
+    try {
+      await apiPost(`/api/mutasi/${r.id}/void`, { reason: value })
+      toast.push('Mutasi di-void', 'success')
+      await refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub })
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal void'), 'error')
+    }
   }
 
   const openPhoto = async (url: string) => {
@@ -329,8 +383,10 @@ export default function MutasiPage({ me }: { me: Me }) {
                   <th>Jam</th>
                   <th>Jenis</th>
                   <th>Deskripsi</th>
+                  <th>Status</th>
                   <th>Foto</th>
                   <th>Petugas</th>
+                  {canAdmin && <th>Aksi</th>}
                 </tr>
               </thead>
               <tbody>
@@ -338,7 +394,11 @@ export default function MutasiPage({ me }: { me: Me }) {
                   <tr key={r.id}>
                     <td data-label="Jam">{fmtWhen(r.occurred_at)}</td>
                     <td data-label="Jenis">{r.kind}</td>
-                    <td data-label="Deskripsi">{r.description}</td>
+                    <td data-label="Deskripsi">
+                      {r.description}
+                      {r.status === 'void' && r.void_reason ? <div className="muted">Void: {r.void_reason}</div> : null}
+                    </td>
+                    <td data-label="Status">{r.status === 'void' ? <span className="badge badge-danger">Void</span> : <span className="badge badge-ok">Aktif</span>}</td>
                     <td data-label="Foto">
                       {r.has_photo && r.photo_url ? (
                         <button className="button button-sm button-secondary" type="button" onClick={() => openPhoto(r.photo_url!)}>
@@ -349,11 +409,27 @@ export default function MutasiPage({ me }: { me: Me }) {
                       )}
                     </td>
                     <td data-label="Petugas">{r.created_by_name || '-'}</td>
+                    {canAdmin && (
+                      <td data-label="Aksi">
+                        {r.status === 'void' ? (
+                          <span className="muted">—</span>
+                        ) : (
+                          <div className="row">
+                            <button className="button button-sm" type="button" onClick={() => doEdit(r)}>
+                              Edit
+                            </button>
+                            <button className="button button-sm button-danger" type="button" onClick={() => doVoid(r)}>
+                              Void
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {items.length === 0 && (
                   <tr>
-                    <td className="muted" colSpan={5}>
+                    <td className="muted" colSpan={canAdmin ? 7 : 6}>
                       Tidak ada data.
                     </td>
                   </tr>

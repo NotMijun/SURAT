@@ -8,7 +8,7 @@ import threading
 import time
 import traceback
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from sys import stderr
 from typing import Any, Literal
@@ -30,6 +30,8 @@ SESSION_TTL_SECONDS = max(60, min(60 * 60 * 24, int(os.getenv("SESSION_TTL_SECON
 LOGIN_RATE_WINDOW_SECONDS = 10 * 60
 LOGIN_RATE_MAX_ATTEMPTS = 8
 MAX_PHOTO_BYTES = 3 * 1024 * 1024
+DEDUPE_WINDOW_SECONDS = max(10, min(10 * 60, int(os.getenv("DEDUPE_WINDOW_SECONDS", 90))))
+VOID_WINDOW_SECONDS = max(10, min(24 * 60 * 60, int(os.getenv("VOID_WINDOW_SECONDS", 10 * 60))))
 
 _schema_lock = threading.Lock()
 _schema_ready = False
@@ -121,6 +123,23 @@ def _parse_truthy(v: Any) -> bool:
         return v
     s = str(v).strip().lower()
     return s in ("1", "true", "yes", "y", "on")
+
+
+def _recent_cutoff_iso(seconds: int) -> str:
+    return (datetime.now(timezone.utc) - timedelta(seconds=max(1, seconds))).isoformat(timespec="seconds")
+
+
+def _can_quick_modify(sess: dict[str, Any], *, created_by: int, created_at_iso: str) -> bool:
+    role = str(sess.get("role") or "")
+    if role in ("admin", "supervisor"):
+        return True
+    if int(sess.get("user_id") or 0) != int(created_by):
+        return False
+    try:
+        t = datetime.fromisoformat(str(created_at_iso).replace("Z", "+00:00"))
+        return (datetime.now(timezone.utc) - t).total_seconds() <= VOID_WINDOW_SECONDS
+    except Exception:
+        return True
 
 
 def _text_field(value: Any, *, field: str, max_len: int, default: str = "") -> str:
@@ -353,6 +372,10 @@ def _ensure_schema(conn) -> None:
             cur.execute("ALTER TABLE mutasi_entries ADD COLUMN IF NOT EXISTS photo_mime TEXT")
             cur.execute("ALTER TABLE mutasi_entries ADD COLUMN IF NOT EXISTS photo_name TEXT")
             cur.execute("ALTER TABLE mutasi_entries ADD COLUMN IF NOT EXISTS photo_uploaded_at TEXT")
+            cur.execute("ALTER TABLE mutasi_entries ADD COLUMN IF NOT EXISTS status TEXT")
+            cur.execute("ALTER TABLE mutasi_entries ADD COLUMN IF NOT EXISTS void_reason TEXT")
+            cur.execute("ALTER TABLE mutasi_entries ADD COLUMN IF NOT EXISTS voided_by BIGINT REFERENCES users(id)")
+            cur.execute("ALTER TABLE mutasi_entries ADD COLUMN IF NOT EXISTS voided_at TEXT")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_mutasi_occurred ON mutasi_entries(occurred_at)")
             cur.execute(
                 """
@@ -409,7 +432,25 @@ def _ensure_schema(conn) -> None:
             cur.execute("ALTER TABLE task_entries ADD COLUMN IF NOT EXISTS photo_name TEXT")
             cur.execute("ALTER TABLE task_entries ADD COLUMN IF NOT EXISTS photo_uploaded_at TEXT")
             cur.execute("ALTER TABLE task_entries ADD COLUMN IF NOT EXISTS extra_json TEXT")
+            cur.execute("ALTER TABLE task_entries ADD COLUMN IF NOT EXISTS status TEXT")
+            cur.execute("ALTER TABLE task_entries ADD COLUMN IF NOT EXISTS void_reason TEXT")
+            cur.execute("ALTER TABLE task_entries ADD COLUMN IF NOT EXISTS voided_by BIGINT REFERENCES users(id)")
+            cur.execute("ALTER TABLE task_entries ADD COLUMN IF NOT EXISTS voided_at TEXT")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_task_occurred ON task_entries(occurred_at)")
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS key_master (
+                  id BIGSERIAL PRIMARY KEY,
+                  name TEXT NOT NULL UNIQUE,
+                  name_norm TEXT NOT NULL UNIQUE,
+                  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                  created_by BIGINT REFERENCES users(id),
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_key_master_active ON key_master(is_active, name)")
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS catering_vendors (
@@ -674,6 +715,7 @@ class CreateMutasiBody(BaseModel):
     kind: str
     occurred_at: str
     description: str
+    force: bool | None = None
 
 
 class CreateGuestBody(BaseModel):
@@ -684,6 +726,7 @@ class CreateGuestBody(BaseModel):
     checkin_at: str
     notes: str | None = None
     post: str | None = None
+    force: bool | None = None
 
 
 class CreateTaskBody(BaseModel):
@@ -692,12 +735,32 @@ class CreateTaskBody(BaseModel):
     destination: str
     notes: str
     extra: Any | None = None
+    force: bool | None = None
 
 class CreateCateringVendorBody(BaseModel):
     name: str
 
 class PatchCateringVendorBody(BaseModel):
     name: str
+
+class VoidBody(BaseModel):
+    reason: str
+
+class PatchTaskBody(BaseModel):
+    destination: str | None = None
+    notes: str | None = None
+    extra: Any | None = None
+
+class PatchMutasiBody(BaseModel):
+    kind: str | None = None
+    description: str | None = None
+
+class CreateKeyMasterBody(BaseModel):
+    name: str
+
+class PatchKeyMasterBody(BaseModel):
+    name: str | None = None
+    is_active: bool | None = None
 
 
 @app.get("/api/health")
@@ -879,6 +942,16 @@ def handover(request: Request):
             )
             guests_in = cur.fetchall()
         return {"open_keys": keys_open, "open_keys_count": open_keys_count, "guests_in": guests_in, "guests_in_count": guests_in_count}
+
+
+@app.get("/api/keys/master")
+def list_key_master(request: Request):
+    with db_connect() as conn:
+        _require_session(conn, request)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT id, name FROM key_master WHERE is_active=TRUE ORDER BY name ASC")
+            rows = cur.fetchall()
+        return {"items": rows}
 
 
 @app.get("/api/keys")
@@ -1224,7 +1297,7 @@ def patch_key(key_id: str, body: PatchKeyBody, request: Request):
 
 
 @app.get("/api/mutasi")
-def list_mutasi(request: Request, q: str = "", kategori: str = "", sub: str = "", date: str = "", sort: str = "occurred_desc", limit: int = 200):
+def list_mutasi(request: Request, q: str = "", kategori: str = "", sub: str = "", date: str = "", sort: str = "occurred_desc", limit: int = 200, status: str = "active"):
     with db_connect() as conn:
         _require_session(conn, request)
         qn = normalize_text(q)
@@ -1233,8 +1306,14 @@ def list_mutasi(request: Request, q: str = "", kategori: str = "", sub: str = ""
         bounds = _day_bounds(date)
         sort = (sort or "occurred_desc").strip()
         limit = max(1, min(500, int(limit or 200)))
+        status = (status or "active").strip().lower()
         where = []
         params: list[Any] = []
+        if status in ("active", "void"):
+            where.append("COALESCE(m.status,'active') = %s")
+            params.append(status)
+        elif status != "all":
+            where.append("COALESCE(m.status,'active') <> 'void'")
         if qn:
             where.append("(lower(kind) LIKE %s OR lower(description) LIKE %s)")
             params.extend([f"%{qn}%", f"%{qn}%"])
@@ -1262,6 +1341,8 @@ def list_mutasi(request: Request, q: str = "", kategori: str = "", sub: str = ""
             order = "m.occurred_at ASC"
         sql = """
           SELECT m.id, m.occurred_at, m.kind, m.description,
+                 COALESCE(m.status,'active') AS status,
+                 m.void_reason,
                  CASE WHEN m.photo_b64 IS NULL OR m.photo_b64='' THEN 0 ELSE 1 END AS has_photo,
                  u.display_name AS created_by_name, m.shift, m.post
           FROM mutasi_entries m
@@ -1303,6 +1384,7 @@ def _create_mutasi(
     kind: str | None,
     occurred_at: str | None,
     description: str | None,
+    force: bool,
     photo_b64: str | None,
     photo_mime: str | None,
     photo_name: str | None,
@@ -1315,10 +1397,29 @@ def _create_mutasi(
         raise HTTPException(status_code=400, detail="Deskripsi wajib diisi")
     now = utc_now_iso()
     with conn.cursor() as cur:
+        if not force:
+            cutoff = _recent_cutoff_iso(DEDUPE_WINDOW_SECONDS)
+            cur.execute(
+                """
+                SELECT id, created_at
+                FROM mutasi_entries
+                WHERE COALESCE(status,'active') <> 'void'
+                  AND lower(kind)=lower(%s)
+                  AND lower(description)=lower(%s)
+                  AND occurred_at=%s
+                  AND created_at > %s
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (kind, desc, occurred, cutoff),
+            )
+            dup = cur.fetchone()
+            if dup:
+                raise HTTPException(status_code=409, detail=f"Data serupa sudah ada (ID {int(dup[0])}).")
         cur.execute(
             """
-            INSERT INTO mutasi_entries(occurred_at, kind, description, created_by, shift, post, photo_b64, photo_mime, photo_name, photo_uploaded_at, created_at, updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            INSERT INTO mutasi_entries(occurred_at, kind, description, created_by, shift, post, status, void_reason, voided_by, voided_at, photo_b64, photo_mime, photo_name, photo_uploaded_at, created_at, updated_at)
+            VALUES (%s,%s,%s,%s,%s,%s,'active',NULL,NULL,NULL,%s,%s,%s,%s,%s,%s)
             RETURNING id
             """,
             (occurred, kind, desc, sess["user_id"], sess["shift"], sess["post"], photo_b64, photo_mime, photo_name, photo_uploaded_at, now, now),
@@ -1341,7 +1442,7 @@ def _create_mutasi(
 def create_mutasi(body: CreateMutasiBody, request: Request):
     with db_connect() as conn:
         sess = _require_session(conn, request)
-        mid = _create_mutasi(conn, sess, body.kind, body.occurred_at, body.description, None, None, None, None)
+        mid = _create_mutasi(conn, sess, body.kind, body.occurred_at, body.description, bool(body.force), None, None, None, None)
         conn.commit()
         return {"ok": True, "id": mid}
 
@@ -1351,14 +1452,81 @@ def create_mutasi_with_photo(
     kind: str = Form(...),
     occurred_at: str | None = Form(None),
     description: str = Form(...),
+    force: str | None = Form(None),
     photo: UploadFile | None = File(None),
 ):
     with db_connect() as conn:
         sess = _require_session(conn, request)
         (photo_b64, photo_mime, photo_name, photo_uploaded_at) = _read_photo_upload(photo)
-        mid = _create_mutasi(conn, sess, kind, occurred_at, description, photo_b64, photo_mime, photo_name, photo_uploaded_at)
+        mid = _create_mutasi(conn, sess, kind, occurred_at, description, _parse_truthy(force), photo_b64, photo_mime, photo_name, photo_uploaded_at)
         conn.commit()
         return {"ok": True, "id": mid}
+
+
+@app.patch("/api/mutasi/{mutasi_id}")
+def patch_mutasi(mutasi_id: int, body: PatchMutasiBody, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM mutasi_entries WHERE id=%s", (int(mutasi_id),))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Data tidak ditemukan")
+            if str(row.get("status") or "active") == "void":
+                raise HTTPException(status_code=400, detail="Data sudah void")
+            if not _can_quick_modify(sess, created_by=int(row["created_by"]), created_at_iso=str(row.get("created_at") or "")):
+                raise HTTPException(status_code=403, detail="Tidak punya akses edit")
+            before = dict(row)
+            updates: dict[str, Any] = {}
+            if body.kind is not None:
+                updates["kind"] = _text_field(body.kind, field="Jenis", max_len=80, default="Lainnya") or "Lainnya"
+            if body.description is not None:
+                desc = (body.description or "").strip()
+                if not desc:
+                    raise HTTPException(status_code=400, detail="Deskripsi wajib diisi")
+                if len(desc) > 240:
+                    raise HTTPException(status_code=400, detail="Deskripsi terlalu panjang")
+                updates["description"] = desc
+            if not updates:
+                return {"ok": True}
+            updates["updated_at"] = utc_now_iso()
+            cols = ", ".join([f"{k}=%s" for k in updates.keys()])
+            params = list(updates.values()) + [int(mutasi_id)]
+            cur.execute(f"UPDATE mutasi_entries SET {cols} WHERE id=%s", tuple(params))
+            cur.execute("SELECT * FROM mutasi_entries WHERE id=%s", (int(mutasi_id),))
+            after = dict(cur.fetchone())
+            _audit(conn, sess, "mutasi_entries", str(mutasi_id), "update", before, after)
+        conn.commit()
+        return {"ok": True}
+
+
+@app.post("/api/mutasi/{mutasi_id}/void")
+def void_mutasi(mutasi_id: int, body: VoidBody, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        reason = _text_field(body.reason, field="Alasan", max_len=120)
+        if not reason:
+            raise HTTPException(status_code=400, detail="Alasan wajib diisi")
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM mutasi_entries WHERE id=%s", (int(mutasi_id),))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Data tidak ditemukan")
+            if str(row.get("status") or "active") == "void":
+                return {"ok": True}
+            if not _can_quick_modify(sess, created_by=int(row["created_by"]), created_at_iso=str(row.get("created_at") or "")):
+                raise HTTPException(status_code=403, detail="Tidak punya akses void")
+            before = dict(row)
+            now = utc_now_iso()
+            cur.execute(
+                "UPDATE mutasi_entries SET status='void', void_reason=%s, voided_by=%s, voided_at=%s, updated_at=%s WHERE id=%s",
+                (reason, int(sess["user_id"]), now, now, int(mutasi_id)),
+            )
+            cur.execute("SELECT * FROM mutasi_entries WHERE id=%s", (int(mutasi_id),))
+            after = dict(cur.fetchone())
+            _audit(conn, sess, "mutasi_entries", str(mutasi_id), "void", before, after)
+        conn.commit()
+        return {"ok": True}
 
 
 @app.get("/api/guests")
@@ -1442,6 +1610,7 @@ def _create_guest(
     checkin_at: str | None,
     notes: str | None,
     post_override: str | None,
+    force: bool,
     photo_b64: str | None,
     photo_mime: str | None,
     photo_name: str | None,
@@ -1461,6 +1630,27 @@ def _create_guest(
     checkin_at = _iso_field(checkin_at, field="Waktu masuk") or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     now = utc_now_iso()
     with conn.cursor() as cur:
+        if not force:
+            cutoff = _recent_cutoff_iso(DEDUPE_WINDOW_SECONDS)
+            cur.execute(
+                """
+                SELECT id, created_at
+                FROM guest_entries
+                WHERE status='in'
+                  AND lower(name)=lower(%s)
+                  AND lower(instansi)=lower(%s)
+                  AND lower(purpose)=lower(%s)
+                  AND lower(meet_person)=lower(%s)
+                  AND post=%s
+                  AND created_at > %s
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (name, instansi, purpose, meet, post_val, cutoff),
+            )
+            dup = cur.fetchone()
+            if dup:
+                raise HTTPException(status_code=409, detail=f"Data serupa sudah ada (ID {int(dup[0])}).")
         cur.execute(
             """
             INSERT INTO guest_entries(
@@ -1500,7 +1690,7 @@ def _create_guest(
 def create_guest(body: CreateGuestBody, request: Request):
     with db_connect() as conn:
         sess = _require_session(conn, request)
-        gid = _create_guest(conn, sess, body.name, body.instansi, body.purpose, body.meet_person, body.checkin_at, body.notes, body.post, None, None, None, None)
+        gid = _create_guest(conn, sess, body.name, body.instansi, body.purpose, body.meet_person, body.checkin_at, body.notes, body.post, bool(body.force), None, None, None, None)
         conn.commit()
         return {"ok": True, "id": gid}
 
@@ -1514,12 +1704,13 @@ def create_guest_with_photo(
     checkin_at: str | None = Form(None),
     notes: str | None = Form(None),
     post: str | None = Form(None),
+    force: str | None = Form(None),
     photo: UploadFile | None = File(None),
 ):
     with db_connect() as conn:
         sess = _require_session(conn, request)
         (photo_b64, photo_mime, photo_name, photo_uploaded_at) = _read_photo_upload(photo)
-        gid = _create_guest(conn, sess, name, instansi, purpose, meet_person, checkin_at, notes, post, photo_b64, photo_mime, photo_name, photo_uploaded_at)
+        gid = _create_guest(conn, sess, name, instansi, purpose, meet_person, checkin_at, notes, post, _parse_truthy(force), photo_b64, photo_mime, photo_name, photo_uploaded_at)
         conn.commit()
         return {"ok": True, "id": gid}
 
@@ -1550,15 +1741,21 @@ def checkout_guest(guest_id: str, request: Request):
 
 
 @app.get("/api/tasks")
-def list_tasks(request: Request, q: str = "", date: str = "", sort: str = "occurred_desc", limit: int = 200):
+def list_tasks(request: Request, q: str = "", date: str = "", sort: str = "occurred_desc", limit: int = 200, status: str = "active"):
     with db_connect() as conn:
         _require_session(conn, request)
         qn = normalize_text(q)
         bounds = _day_bounds(date)
         sort = (sort or "occurred_desc").strip()
         limit = max(1, min(500, int(limit or 200)))
+        status = (status or "active").strip().lower()
         where = []
         params: list[Any] = []
+        if status in ("active", "void"):
+            where.append("COALESCE(t.status,'active') = %s")
+            params.append(status)
+        elif status != "all":
+            where.append("COALESCE(t.status,'active') <> 'void'")
         if qn:
             where.append("(lower(t.kind) LIKE %s OR lower(t.destination) LIKE %s OR lower(t.notes) LIKE %s OR lower(COALESCE(t.extra_json,'')) LIKE %s)")
             params.extend([f"%{qn}%", f"%{qn}%", f"%{qn}%", f"%{qn}%"])
@@ -1570,6 +1767,8 @@ def list_tasks(request: Request, q: str = "", date: str = "", sort: str = "occur
             order = "t.occurred_at ASC"
         sql = """
           SELECT t.id, t.kind, t.occurred_at, t.destination, t.notes, t.extra_json,
+                 COALESCE(t.status,'active') AS status,
+                 t.void_reason,
                  CASE WHEN t.photo_b64 IS NULL OR t.photo_b64='' THEN 0 ELSE 1 END AS has_photo,
                  u.display_name AS created_by_name, t.shift, t.post
           FROM task_entries t
@@ -1620,6 +1819,7 @@ def _create_task(
     destination: str | None,
     notes: str | None,
     extra: Any | None,
+    force: bool,
     photo_b64: str | None,
     photo_mime: str | None,
     photo_name: str | None,
@@ -1639,10 +1839,31 @@ def _create_task(
             raise HTTPException(status_code=400, detail="Data tambahan terlalu besar")
     now = utc_now_iso()
     with conn.cursor() as cur:
+        if not force:
+            cutoff = _recent_cutoff_iso(DEDUPE_WINDOW_SECONDS)
+            cur.execute(
+                """
+                SELECT id, created_at
+                FROM task_entries
+                WHERE COALESCE(status,'active') <> 'void'
+                  AND lower(kind)=lower(%s)
+                  AND lower(destination)=lower(%s)
+                  AND lower(notes)=lower(%s)
+                  AND COALESCE(extra_json,'') = %s
+                  AND occurred_at=%s
+                  AND created_at > %s
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (kind, dest, notes, extra_json or "", occurred, cutoff),
+            )
+            dup = cur.fetchone()
+            if dup:
+                raise HTTPException(status_code=409, detail=f"Data serupa sudah ada (ID {int(dup[0])}).")
         cur.execute(
             """
-            INSERT INTO task_entries(kind, occurred_at, destination, notes, extra_json, created_by, shift, post, photo_b64, photo_mime, photo_name, photo_uploaded_at, created_at, updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            INSERT INTO task_entries(kind, occurred_at, destination, notes, extra_json, status, void_reason, voided_by, voided_at, created_by, shift, post, photo_b64, photo_mime, photo_name, photo_uploaded_at, created_at, updated_at)
+            VALUES (%s,%s,%s,%s,%s,'active',NULL,NULL,NULL,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING id
             """,
             (kind, occurred, dest, notes, extra_json, sess["user_id"], sess["shift"], sess["post"], photo_b64, photo_mime, photo_name, photo_uploaded_at, now, now),
@@ -1665,7 +1886,7 @@ def _create_task(
 def create_task(body: CreateTaskBody, request: Request):
     with db_connect() as conn:
         sess = _require_session(conn, request)
-        tid = _create_task(conn, sess, body.kind, body.occurred_at, body.destination, body.notes, body.extra, None, None, None, None)
+        tid = _create_task(conn, sess, body.kind, body.occurred_at, body.destination, body.notes, body.extra, bool(body.force), None, None, None, None)
         conn.commit()
         return {"ok": True, "id": tid}
 
@@ -1678,6 +1899,7 @@ def create_task_with_photo(
     destination: str = Form(...),
     notes: str | None = Form(None),
     extra_json: str | None = Form(None),
+    force: str | None = Form(None),
     photo: UploadFile | None = File(None),
 ):
     with db_connect() as conn:
@@ -1691,9 +1913,78 @@ def create_task_with_photo(
                 extra = json.loads(extra_json)
             except Exception:
                 raise HTTPException(status_code=400, detail="Data tambahan tidak valid")
-        tid = _create_task(conn, sess, kind, occurred_at, destination, notes, extra, photo_b64, photo_mime, photo_name, photo_uploaded_at)
+        tid = _create_task(conn, sess, kind, occurred_at, destination, notes, extra, _parse_truthy(force), photo_b64, photo_mime, photo_name, photo_uploaded_at)
         conn.commit()
         return {"ok": True, "id": tid}
+
+
+@app.patch("/api/tasks/{task_id}")
+def patch_task(task_id: int, body: PatchTaskBody, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM task_entries WHERE id=%s", (int(task_id),))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Data tidak ditemukan")
+            if str(row.get("status") or "active") == "void":
+                raise HTTPException(status_code=400, detail="Data sudah void")
+            if not _can_quick_modify(sess, created_by=int(row["created_by"]), created_at_iso=str(row.get("created_at") or "")):
+                raise HTTPException(status_code=403, detail="Tidak punya akses edit")
+            before = dict(row)
+            updates: dict[str, Any] = {}
+            if body.destination is not None:
+                updates["destination"] = _text_field(body.destination, field="Tujuan", max_len=80, default="-") or "-"
+            if body.notes is not None:
+                updates["notes"] = _text_field(body.notes, field="Catatan", max_len=240, default="")
+            if body.extra is not None:
+                try:
+                    extra_json = json.dumps(body.extra, ensure_ascii=False, separators=(",", ":"))
+                except Exception:
+                    raise HTTPException(status_code=400, detail="Data tambahan tidak valid")
+                if len(extra_json) > 6000:
+                    raise HTTPException(status_code=400, detail="Data tambahan terlalu besar")
+                updates["extra_json"] = extra_json
+            if not updates:
+                return {"ok": True}
+            updates["updated_at"] = utc_now_iso()
+            cols = ", ".join([f"{k}=%s" for k in updates.keys()])
+            params = list(updates.values()) + [int(task_id)]
+            cur.execute(f"UPDATE task_entries SET {cols} WHERE id=%s", tuple(params))
+            cur.execute("SELECT * FROM task_entries WHERE id=%s", (int(task_id),))
+            after = dict(cur.fetchone())
+            _audit(conn, sess, "task_entries", str(task_id), "update", before, after)
+        conn.commit()
+        return {"ok": True}
+
+
+@app.post("/api/tasks/{task_id}/void")
+def void_task(task_id: int, body: VoidBody, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        reason = _text_field(body.reason, field="Alasan", max_len=120)
+        if not reason:
+            raise HTTPException(status_code=400, detail="Alasan wajib diisi")
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM task_entries WHERE id=%s", (int(task_id),))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Data tidak ditemukan")
+            if str(row.get("status") or "active") == "void":
+                return {"ok": True}
+            if not _can_quick_modify(sess, created_by=int(row["created_by"]), created_at_iso=str(row.get("created_at") or "")):
+                raise HTTPException(status_code=403, detail="Tidak punya akses void")
+            before = dict(row)
+            now = utc_now_iso()
+            cur.execute(
+                "UPDATE task_entries SET status='void', void_reason=%s, voided_by=%s, voided_at=%s, updated_at=%s WHERE id=%s",
+                (reason, int(sess["user_id"]), now, now, int(task_id)),
+            )
+            cur.execute("SELECT * FROM task_entries WHERE id=%s", (int(task_id),))
+            after = dict(cur.fetchone())
+            _audit(conn, sess, "task_entries", str(task_id), "void", before, after)
+        conn.commit()
+        return {"ok": True}
 
 
 @app.get("/api/report/shift")
@@ -1861,6 +2152,98 @@ def delete_admin_catering_vendor(vendor_id: int, request: Request):
         if deleted == 0:
             raise HTTPException(status_code=404, detail="Vendor tidak ditemukan")
         return {"ok": True, "deleted": deleted}
+
+
+@app.get("/api/admin/keys/master")
+def admin_list_key_master(request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        _require_role(sess, ("admin",))
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT id, name, is_active, created_at, updated_at FROM key_master ORDER BY name ASC")
+            rows = cur.fetchall()
+        return {"items": rows}
+
+
+@app.post("/api/admin/keys/master")
+def admin_create_key_master(body: CreateKeyMasterBody, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        _require_role(sess, ("admin",))
+        name = _text_field(body.name, field="Nama kunci", max_len=80)
+        if not name:
+            raise HTTPException(status_code=400, detail="Nama kunci wajib diisi")
+        norm = normalize_text(name)
+        now = utc_now_iso()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO key_master(name, name_norm, is_active, created_by, created_at, updated_at) VALUES (%s,%s,TRUE,%s,%s,%s) RETURNING id",
+                    (name, norm, int(sess["user_id"]), now, now),
+                )
+                kid = int(cur.fetchone()[0])
+                _audit(conn, sess, "auth", str(kid), "key_master_create", None, {"id": kid, "name": name, "is_active": True})
+            conn.commit()
+            return {"ok": True, "id": kid}
+        except psycopg2.IntegrityError:
+            conn.rollback()
+            raise HTTPException(status_code=409, detail="Nama kunci sudah ada")
+
+
+@app.patch("/api/admin/keys/master/{key_id}")
+def admin_patch_key_master(key_id: int, body: PatchKeyMasterBody, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        _require_role(sess, ("admin",))
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM key_master WHERE id=%s", (int(key_id),))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Kunci tidak ditemukan")
+            before = dict(row)
+            updates: dict[str, Any] = {}
+            if body.name is not None:
+                nm = _text_field(body.name, field="Nama kunci", max_len=80)
+                if not nm:
+                    raise HTTPException(status_code=400, detail="Nama kunci wajib diisi")
+                updates["name"] = nm
+                updates["name_norm"] = normalize_text(nm)
+            if body.is_active is not None:
+                updates["is_active"] = bool(body.is_active)
+            if not updates:
+                return {"ok": True}
+            updates["updated_at"] = utc_now_iso()
+            cols = ", ".join([f"{k}=%s" for k in updates.keys()])
+            params = list(updates.values()) + [int(key_id)]
+            try:
+                cur.execute(f"UPDATE key_master SET {cols} WHERE id=%s", tuple(params))
+            except psycopg2.IntegrityError:
+                raise HTTPException(status_code=409, detail="Nama kunci sudah dipakai")
+            cur.execute("SELECT * FROM key_master WHERE id=%s", (int(key_id),))
+            after = dict(cur.fetchone())
+            _audit(conn, sess, "auth", str(key_id), "key_master_update", before, after)
+        conn.commit()
+        return {"ok": True}
+
+
+@app.delete("/api/admin/keys/master/{key_id}")
+def admin_delete_key_master(key_id: int, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        _require_role(sess, ("admin",))
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM key_master WHERE id=%s", (int(key_id),))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Kunci tidak ditemukan")
+            before = dict(row)
+            now = utc_now_iso()
+            cur.execute("UPDATE key_master SET is_active=FALSE, updated_at=%s WHERE id=%s", (now, int(key_id)))
+            cur.execute("SELECT * FROM key_master WHERE id=%s", (int(key_id),))
+            after = dict(cur.fetchone())
+            _audit(conn, sess, "auth", str(key_id), "key_master_disable", before, after)
+        conn.commit()
+        return {"ok": True}
 
 
 @app.post("/api/admin/users")

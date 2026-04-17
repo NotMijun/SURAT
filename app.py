@@ -8,7 +8,7 @@ import sys
 import secrets
 import sqlite3
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -22,11 +22,13 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 ROOT_DIR = Path(__file__).resolve().parent
 DB_PATH = ROOT_DIR / "logbook.db"
-SESSION_TTL_SECONDS = 60 * 60 * 2
+SESSION_TTL_SECONDS = max(60, min(60 * 60 * 24, int(os.getenv("SESSION_TTL_SECONDS", 60 * 60 * 2))))
 COOKIE_NAME = "logbook_sid"
 
 LOGIN_RATE_WINDOW_SECONDS = 10 * 60
 LOGIN_RATE_MAX_ATTEMPTS = 8
+DEDUPE_WINDOW_SECONDS = max(10, min(10 * 60, int(os.getenv("DEDUPE_WINDOW_SECONDS", 90))))
+VOID_WINDOW_SECONDS = max(10, min(24 * 60 * 60, int(os.getenv("VOID_WINDOW_SECONDS", 10 * 60))))
 
 
 def utc_now_iso() -> str:
@@ -39,6 +41,21 @@ def json_dumps(obj) -> bytes:
 
 def normalize_text(s: str) -> str:
     return " ".join((s or "").strip().lower().split())
+
+def _recent_cutoff_iso(seconds: int) -> str:
+    return (datetime.now(timezone.utc) - timedelta(seconds=max(1, seconds))).isoformat(timespec="seconds")
+
+def _can_quick_modify(sess: dict, *, created_by: int, created_at_iso: str) -> bool:
+    role = str(sess.get("role") or "")
+    if role in ("admin", "supervisor"):
+        return True
+    if int(sess.get("user_id") or 0) != int(created_by):
+        return False
+    try:
+        t = datetime.fromisoformat(str(created_at_iso).replace("Z", "+00:00"))
+        return (datetime.now(timezone.utc) - t).total_seconds() <= VOID_WINDOW_SECONDS
+    except Exception:
+        return True
 
 
 def pbkdf2_hash_password(password: str, salt: bytes | None = None) -> str:
@@ -159,6 +176,17 @@ def db_init() -> None:
         """
     )
 
+    cur.execute("PRAGMA table_info(mutasi_entries)")
+    mutasi_cols = {row["name"] for row in cur.fetchall()}
+    if "status" not in mutasi_cols:
+        cur.execute("ALTER TABLE mutasi_entries ADD COLUMN status TEXT")
+    if "void_reason" not in mutasi_cols:
+        cur.execute("ALTER TABLE mutasi_entries ADD COLUMN void_reason TEXT")
+    if "voided_by" not in mutasi_cols:
+        cur.execute("ALTER TABLE mutasi_entries ADD COLUMN voided_by INTEGER REFERENCES users(id)")
+    if "voided_at" not in mutasi_cols:
+        cur.execute("ALTER TABLE mutasi_entries ADD COLUMN voided_at TEXT")
+
     cur.execute("CREATE INDEX IF NOT EXISTS idx_mutasi_occurred ON mutasi_entries(occurred_at)")
 
     cur.execute(
@@ -207,8 +235,31 @@ def db_init() -> None:
     task_cols = {row["name"] for row in cur.fetchall()}
     if "extra_json" not in task_cols:
         cur.execute("ALTER TABLE task_entries ADD COLUMN extra_json TEXT")
+    if "status" not in task_cols:
+        cur.execute("ALTER TABLE task_entries ADD COLUMN status TEXT")
+    if "void_reason" not in task_cols:
+        cur.execute("ALTER TABLE task_entries ADD COLUMN void_reason TEXT")
+    if "voided_by" not in task_cols:
+        cur.execute("ALTER TABLE task_entries ADD COLUMN voided_by INTEGER REFERENCES users(id)")
+    if "voided_at" not in task_cols:
+        cur.execute("ALTER TABLE task_entries ADD COLUMN voided_at TEXT")
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_task_occurred ON task_entries(occurred_at)")
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS key_master (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL UNIQUE,
+          name_norm TEXT NOT NULL UNIQUE,
+          is_active INTEGER NOT NULL DEFAULT 1,
+          created_by INTEGER REFERENCES users(id),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_key_master_active ON key_master(is_active, name)")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS catering_vendors (
@@ -974,6 +1025,11 @@ class AppHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.OK, {"items": fallback})
             return
 
+        if path == "/api/keys/master":
+            rows = conn.execute("SELECT id, name FROM key_master WHERE is_active=1 ORDER BY name ASC").fetchall()
+            self._send_json(HTTPStatus.OK, {"items": [dict(r) for r in rows]})
+            return
+
         if path == "/api/handover":
             open_keys_count = conn.execute("SELECT COUNT(*) AS c FROM key_transactions WHERE status='open'").fetchone()["c"]
             keys_open = conn.execute(
@@ -1036,14 +1092,20 @@ class AppHandler(BaseHTTPRequestHandler):
 
         if path == "/api/mutasi":
             q = normalize_text((query.get("q") or [""])[0])
+            status = (query.get("status") or ["active"])[0].strip().lower()
             params = []
             where = []
+            if status in ("active", "void"):
+                where.append("COALESCE(m.status,'active') = ?")
+                params.append(status)
+            elif status != "all":
+                where.append("COALESCE(m.status,'active') <> 'void'")
             if q:
                 where.append("(lower(kind) LIKE ? OR lower(description) LIKE ?)")
                 params.append(f"%{q}%")
                 params.append(f"%{q}%")
             sql = """
-              SELECT m.id, m.occurred_at, m.kind, m.description, u.display_name AS created_by_name, m.shift, m.post
+              SELECT m.id, m.occurred_at, m.kind, m.description, COALESCE(m.status,'active') AS status, m.void_reason, u.display_name AS created_by_name, m.shift, m.post
               FROM mutasi_entries m
               JOIN users u ON u.id = m.created_by
             """
@@ -1080,13 +1142,19 @@ class AppHandler(BaseHTTPRequestHandler):
 
         if path == "/api/tasks":
             q = normalize_text((query.get("q") or [""])[0])
+            status = (query.get("status") or ["active"])[0].strip().lower()
             params = []
             where = []
+            if status in ("active", "void"):
+                where.append("COALESCE(t.status,'active') = ?")
+                params.append(status)
+            elif status != "all":
+                where.append("COALESCE(t.status,'active') <> 'void'")
             if q:
                 where.append("(lower(kind) LIKE ? OR lower(destination) LIKE ? OR lower(notes) LIKE ? OR lower(COALESCE(extra_json,'')) LIKE ?)")
                 params.extend([f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%"])
             sql = """
-              SELECT t.id, t.kind, t.occurred_at, t.destination, t.notes, t.extra_json, u.display_name AS created_by_name, t.shift, t.post
+              SELECT t.id, t.kind, t.occurred_at, t.destination, t.notes, t.extra_json, COALESCE(t.status,'active') AS status, t.void_reason, u.display_name AS created_by_name, t.shift, t.post
               FROM task_entries t
               JOIN users u ON u.id = t.created_by
             """
@@ -1216,6 +1284,12 @@ class AppHandler(BaseHTTPRequestHandler):
         if path == "/api/admin/vendors/catering":
             self._require_role(sess, ("admin",))
             rows = conn.execute("SELECT id, name, created_at FROM catering_vendors ORDER BY name ASC").fetchall()
+            self._send_json(HTTPStatus.OK, {"items": [dict(r) for r in rows]})
+            return
+
+        if path == "/api/admin/keys/master":
+            self._require_role(sess, ("admin",))
+            rows = conn.execute("SELECT id, name, is_active, created_at, updated_at FROM key_master ORDER BY name ASC").fetchall()
             self._send_json(HTTPStatus.OK, {"items": [dict(r) for r in rows]})
             return
 
@@ -1472,6 +1546,26 @@ class AppHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.OK, {"ok": True, "id": cur.lastrowid})
             return
 
+        if path == "/api/admin/keys/master":
+            self._require_role(sess, ("admin",))
+            name = (data.get("name") or "").strip()
+            if not name:
+                raise HttpError(HTTPStatus.BAD_REQUEST, "Nama kunci wajib diisi")
+            if len(name) > 80:
+                raise HttpError(HTTPStatus.BAD_REQUEST, "Nama kunci terlalu panjang")
+            norm = normalize_text(name)
+            dup = conn.execute("SELECT id FROM key_master WHERE name_norm=?", (norm,)).fetchone()
+            if dup:
+                raise HttpError(HTTPStatus.CONFLICT, "Nama kunci sudah ada")
+            now = utc_now_iso()
+            cur = conn.execute(
+                "INSERT INTO key_master(name, name_norm, is_active, created_by, created_at, updated_at) VALUES (?,?,?,?,?,?)",
+                (name, norm, 1, sess["user_id"], now, now),
+            )
+            conn.commit()
+            self._send_json(HTTPStatus.OK, {"ok": True, "id": cur.lastrowid})
+            return
+
         if path.startswith("/api/admin/users/") and path.endswith("/reset_password"):
             self._require_role(sess, ("admin",))
             parts = path.split("/")
@@ -1605,20 +1699,59 @@ class AppHandler(BaseHTTPRequestHandler):
             occurred_at = (data.get("occurred_at") or "").strip() or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
             kind = (data.get("kind") or "").strip() or "Lainnya"
             description = (data.get("description") or "").strip()
+            force = 1 if str(data.get("force") or "").strip().lower() in ("1", "true", "yes", "y", "on") else 0
             if not description:
                 raise HttpError(HTTPStatus.BAD_REQUEST, "Deskripsi wajib diisi")
             now = utc_now_iso()
+            if not force:
+                cutoff = _recent_cutoff_iso(DEDUPE_WINDOW_SECONDS)
+                dup = conn.execute(
+                    """
+                    SELECT id FROM mutasi_entries
+                    WHERE COALESCE(status,'active')<>'void'
+                      AND lower(kind)=lower(?)
+                      AND lower(description)=lower(?)
+                      AND occurred_at=?
+                      AND created_at > ?
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (kind, description, occurred_at, cutoff),
+                ).fetchone()
+                if dup:
+                    raise HttpError(HTTPStatus.CONFLICT, f"Data serupa sudah ada (ID {dup['id']}).")
             cur = conn.execute(
                 """
-                INSERT INTO mutasi_entries(occurred_at, kind, description, created_by, shift, post, created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?)
+                INSERT INTO mutasi_entries(occurred_at, kind, description, status, void_reason, voided_by, voided_at, created_by, shift, post, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
-                (occurred_at, kind, description, sess["user_id"], sess["shift"], sess["post"], now, now),
+                (occurred_at, kind, description, "active", None, None, None, sess["user_id"], sess["shift"], sess["post"], now, now),
             )
             record_id = cur.lastrowid
-            self._audit(conn, sess, "mutasi_entries", str(record_id), "create", None, {"occurred_at": occurred_at, "kind": kind, "description": description})
+            self._audit(conn, sess, "mutasi_entries", str(record_id), "create", None, {"occurred_at": occurred_at, "kind": kind, "description": description, "status": "active"})
             conn.commit()
             self._send_json(HTTPStatus.OK, {"ok": True, "id": record_id})
+            return
+
+        if path.startswith("/api/mutasi/") and path.endswith("/void"):
+            parts = path.split("/")
+            record_id = parts[3] if len(parts) >= 4 else ""
+            reason = (data.get("reason") or "").strip()
+            if not reason:
+                raise HttpError(HTTPStatus.BAD_REQUEST, "Alasan wajib diisi")
+            row = conn.execute("SELECT * FROM mutasi_entries WHERE id=?", (record_id,)).fetchone()
+            if not row:
+                raise HttpError(HTTPStatus.NOT_FOUND, "Data tidak ditemukan")
+            if (row["status"] or "active") == "void":
+                self._send_json(HTTPStatus.OK, {"ok": True})
+                return
+            if not _can_quick_modify(sess, created_by=int(row["created_by"]), created_at_iso=str(row["created_at"])):
+                raise HttpError(HTTPStatus.FORBIDDEN, "Tidak punya akses void")
+            now = utc_now_iso()
+            conn.execute("UPDATE mutasi_entries SET status='void', void_reason=?, voided_by=?, voided_at=?, updated_at=? WHERE id=?", (reason[:120], sess["user_id"], now, now, record_id))
+            self._audit(conn, sess, "mutasi_entries", str(record_id), "void", dict(row), {**dict(row), "status": "void", "void_reason": reason[:120], "voided_by": sess["user_id"], "voided_at": now, "updated_at": now})
+            conn.commit()
+            self._send_json(HTTPStatus.OK, {"ok": True})
             return
 
         if path == "/api/guests":
@@ -1628,13 +1761,35 @@ class AppHandler(BaseHTTPRequestHandler):
             meet_person = (data.get("meet_person") or "").strip() or "-"
             checkin_at = (data.get("checkin_at") or "").strip() or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
             notes = (data.get("notes") or "").strip()
+            post_override = (data.get("post") or "").strip()
+            force = 1 if str(data.get("force") or "").strip().lower() in ("1", "true", "yes", "y", "on") else 0
             now = utc_now_iso()
+            post_val = post_override or sess["post"]
+            if not force:
+                cutoff = _recent_cutoff_iso(DEDUPE_WINDOW_SECONDS)
+                dup = conn.execute(
+                    """
+                    SELECT id FROM guest_entries
+                    WHERE status='in'
+                      AND lower(name)=lower(?)
+                      AND lower(instansi)=lower(?)
+                      AND lower(purpose)=lower(?)
+                      AND lower(meet_person)=lower(?)
+                      AND post=?
+                      AND created_at > ?
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (name, instansi, purpose, meet_person, post_val, cutoff),
+                ).fetchone()
+                if dup:
+                    raise HttpError(HTTPStatus.CONFLICT, f"Data serupa sudah ada (ID {dup['id']}).")
             cur = conn.execute(
                 """
                 INSERT INTO guest_entries(name, instansi, purpose, meet_person, checkin_at, checkout_at, notes, status, created_by, shift, post, created_at, updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
-                (name, instansi, purpose, meet_person, checkin_at, None, notes, "in", sess["user_id"], sess["shift"], sess["post"], now, now),
+                (name, instansi, purpose, meet_person, checkin_at, None, notes, "in", sess["user_id"], sess["shift"], post_val, now, now),
             )
             record_id = cur.lastrowid
             self._audit(conn, sess, "guest_entries", str(record_id), "create", None, {"name": name, "instansi": instansi, "purpose": purpose, "meet_person": meet_person, "checkin_at": checkin_at, "status": "in", "notes": notes})
@@ -1666,6 +1821,7 @@ class AppHandler(BaseHTTPRequestHandler):
             destination = (data.get("destination") or "").strip() or "-"
             notes = (data.get("notes") or "").strip()
             extra = data.get("extra")
+            force = 1 if str(data.get("force") or "").strip().lower() in ("1", "true", "yes", "y", "on") else 0
             extra_json = None
             if extra is not None:
                 try:
@@ -1675,17 +1831,57 @@ class AppHandler(BaseHTTPRequestHandler):
                 if len(extra_json) > 6000:
                     raise HttpError(HTTPStatus.BAD_REQUEST, "Data tambahan terlalu besar")
             now = utc_now_iso()
+            if not force:
+                cutoff = _recent_cutoff_iso(DEDUPE_WINDOW_SECONDS)
+                dup = conn.execute(
+                    """
+                    SELECT id FROM task_entries
+                    WHERE COALESCE(status,'active')<>'void'
+                      AND lower(kind)=lower(?)
+                      AND lower(destination)=lower(?)
+                      AND lower(notes)=lower(?)
+                      AND COALESCE(extra_json,'') = COALESCE(?, '')
+                      AND occurred_at=?
+                      AND created_at > ?
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (kind, destination, notes, extra_json, occurred_at, cutoff),
+                ).fetchone()
+                if dup:
+                    raise HttpError(HTTPStatus.CONFLICT, f"Data serupa sudah ada (ID {dup['id']}).")
             cur = conn.execute(
                 """
-                INSERT INTO task_entries(kind, occurred_at, destination, notes, extra_json, created_by, shift, post, created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO task_entries(kind, occurred_at, destination, notes, extra_json, status, void_reason, voided_by, voided_at, created_by, shift, post, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
-                (kind, occurred_at, destination, notes, extra_json, sess["user_id"], sess["shift"], sess["post"], now, now),
+                (kind, occurred_at, destination, notes, extra_json, "active", None, None, None, sess["user_id"], sess["shift"], sess["post"], now, now),
             )
             record_id = cur.lastrowid
             self._audit(conn, sess, "task_entries", str(record_id), "create", None, {"kind": kind, "occurred_at": occurred_at, "destination": destination, "notes": notes, "extra": extra if extra is not None else None})
             conn.commit()
             self._send_json(HTTPStatus.OK, {"ok": True, "id": record_id})
+            return
+
+        if path.startswith("/api/tasks/") and path.endswith("/void"):
+            parts = path.split("/")
+            record_id = parts[3] if len(parts) >= 4 else ""
+            reason = (data.get("reason") or "").strip()
+            if not reason:
+                raise HttpError(HTTPStatus.BAD_REQUEST, "Alasan wajib diisi")
+            row = conn.execute("SELECT * FROM task_entries WHERE id=?", (record_id,)).fetchone()
+            if not row:
+                raise HttpError(HTTPStatus.NOT_FOUND, "Data tidak ditemukan")
+            if (row["status"] or "active") == "void":
+                self._send_json(HTTPStatus.OK, {"ok": True})
+                return
+            if not _can_quick_modify(sess, created_by=int(row["created_by"]), created_at_iso=str(row["created_at"])):
+                raise HttpError(HTTPStatus.FORBIDDEN, "Tidak punya akses void")
+            now = utc_now_iso()
+            conn.execute("UPDATE task_entries SET status='void', void_reason=?, voided_by=?, voided_at=?, updated_at=? WHERE id=?", (reason[:120], sess["user_id"], now, now, record_id))
+            self._audit(conn, sess, "task_entries", str(record_id), "void", dict(row), {**dict(row), "status": "void", "void_reason": reason[:120], "voided_by": sess["user_id"], "voided_at": now, "updated_at": now})
+            conn.commit()
+            self._send_json(HTTPStatus.OK, {"ok": True})
             return
 
         raise HttpError(HTTPStatus.NOT_FOUND, "Endpoint tidak ditemukan")
@@ -1744,6 +1940,111 @@ class AppHandler(BaseHTTPRequestHandler):
             if dup:
                 raise HttpError(HTTPStatus.CONFLICT, "Nama vendor sudah dipakai")
             conn.execute("UPDATE catering_vendors SET name=?, name_norm=? WHERE id=?", (name, norm, vendor_id))
+            conn.commit()
+            self._send_json(HTTPStatus.OK, {"ok": True})
+            return
+
+        if path.startswith("/api/admin/keys/master/") and path.count("/") == 5:
+            self._require_role(sess, ("admin",))
+            key_id = path.split("/")[5]
+            row = conn.execute("SELECT id, name, name_norm, is_active, created_at, updated_at FROM key_master WHERE id=?", (key_id,)).fetchone()
+            if not row:
+                raise HttpError(HTTPStatus.NOT_FOUND, "Kunci tidak ditemukan")
+            before = dict(row)
+            updates = {}
+            if "name" in data:
+                name = (data.get("name") or "").strip()
+                if not name:
+                    raise HttpError(HTTPStatus.BAD_REQUEST, "Nama kunci wajib diisi")
+                if len(name) > 80:
+                    raise HttpError(HTTPStatus.BAD_REQUEST, "Nama kunci terlalu panjang")
+                norm = normalize_text(name)
+                dup = conn.execute("SELECT id FROM key_master WHERE name_norm=? AND id<>?", (norm, key_id)).fetchone()
+                if dup:
+                    raise HttpError(HTTPStatus.CONFLICT, "Nama kunci sudah dipakai")
+                updates["name"] = name
+                updates["name_norm"] = norm
+            if "is_active" in data:
+                updates["is_active"] = 1 if int(data.get("is_active") or 0) == 1 else 0
+            if not updates:
+                self._send_json(HTTPStatus.OK, {"ok": True})
+                return
+            updates["updated_at"] = utc_now_iso()
+            cols = ", ".join([f"{k}=?" for k in updates.keys()])
+            params = list(updates.values()) + [key_id]
+            conn.execute(f"UPDATE key_master SET {cols} WHERE id=?", params)
+            after = dict(conn.execute("SELECT id, name, name_norm, is_active, created_at, updated_at FROM key_master WHERE id=?", (key_id,)).fetchone())
+            self._audit(conn, sess, "auth", str(key_id), "key_master_update", before, after)
+            conn.commit()
+            self._send_json(HTTPStatus.OK, {"ok": True})
+            return
+
+        if path.startswith("/api/mutasi/") and path.count("/") == 3:
+            record_id = path.split("/")[3]
+            row = conn.execute("SELECT * FROM mutasi_entries WHERE id=?", (record_id,)).fetchone()
+            if not row:
+                raise HttpError(HTTPStatus.NOT_FOUND, "Data tidak ditemukan")
+            if (row["status"] or "active") == "void":
+                raise HttpError(HTTPStatus.BAD_REQUEST, "Data sudah void")
+            if not _can_quick_modify(sess, created_by=int(row["created_by"]), created_at_iso=str(row["created_at"])):
+                raise HttpError(HTTPStatus.FORBIDDEN, "Tidak punya akses edit")
+            before = dict(row)
+            updates = {}
+            if "kind" in data:
+                kind = (data.get("kind") or "").strip() or "Lainnya"
+                updates["kind"] = kind[:80]
+            if "description" in data:
+                desc = (data.get("description") or "").strip()
+                if not desc:
+                    raise HttpError(HTTPStatus.BAD_REQUEST, "Deskripsi wajib diisi")
+                if len(desc) > 240:
+                    raise HttpError(HTTPStatus.BAD_REQUEST, "Deskripsi terlalu panjang")
+                updates["description"] = desc
+            if not updates:
+                self._send_json(HTTPStatus.OK, {"ok": True})
+                return
+            updates["updated_at"] = utc_now_iso()
+            cols = ", ".join([f"{k}=?" for k in updates.keys()])
+            params = list(updates.values()) + [record_id]
+            conn.execute(f"UPDATE mutasi_entries SET {cols} WHERE id=?", params)
+            after = dict(conn.execute("SELECT * FROM mutasi_entries WHERE id=?", (record_id,)).fetchone())
+            self._audit(conn, sess, "mutasi_entries", str(record_id), "update", before, after)
+            conn.commit()
+            self._send_json(HTTPStatus.OK, {"ok": True})
+            return
+
+        if path.startswith("/api/tasks/") and path.count("/") == 3:
+            record_id = path.split("/")[3]
+            row = conn.execute("SELECT * FROM task_entries WHERE id=?", (record_id,)).fetchone()
+            if not row:
+                raise HttpError(HTTPStatus.NOT_FOUND, "Data tidak ditemukan")
+            if (row["status"] or "active") == "void":
+                raise HttpError(HTTPStatus.BAD_REQUEST, "Data sudah void")
+            if not _can_quick_modify(sess, created_by=int(row["created_by"]), created_at_iso=str(row["created_at"])):
+                raise HttpError(HTTPStatus.FORBIDDEN, "Tidak punya akses edit")
+            before = dict(row)
+            updates = {}
+            if "destination" in data:
+                updates["destination"] = (data.get("destination") or "").strip()[:80] or "-"
+            if "notes" in data:
+                updates["notes"] = (data.get("notes") or "").strip()[:240]
+            if "extra" in data:
+                try:
+                    extra_json = json.dumps(data.get("extra"), ensure_ascii=False, separators=(",", ":"))
+                except Exception:
+                    raise HttpError(HTTPStatus.BAD_REQUEST, "Data tambahan tidak valid")
+                if len(extra_json) > 6000:
+                    raise HttpError(HTTPStatus.BAD_REQUEST, "Data tambahan terlalu besar")
+                updates["extra_json"] = extra_json
+            if not updates:
+                self._send_json(HTTPStatus.OK, {"ok": True})
+                return
+            updates["updated_at"] = utc_now_iso()
+            cols = ", ".join([f"{k}=?" for k in updates.keys()])
+            params = list(updates.values()) + [record_id]
+            conn.execute(f"UPDATE task_entries SET {cols} WHERE id=?", params)
+            after = dict(conn.execute("SELECT * FROM task_entries WHERE id=?", (record_id,)).fetchone())
+            self._audit(conn, sess, "task_entries", str(record_id), "update", before, after)
             conn.commit()
             self._send_json(HTTPStatus.OK, {"ok": True})
             return
@@ -1814,6 +2115,19 @@ class AppHandler(BaseHTTPRequestHandler):
             conn.execute("DELETE FROM catering_vendors WHERE id=?", (vendor_id,))
             conn.commit()
             self._send_json(HTTPStatus.OK, {"ok": True, "deleted": 1})
+            return
+
+        if path.startswith("/api/admin/keys/master/"):
+            parts = path.split("/")
+            if len(parts) < 6:
+                raise HttpError(HTTPStatus.BAD_REQUEST, "ID kunci tidak valid")
+            key_id = parts[5]
+            row = conn.execute("SELECT id, name FROM key_master WHERE id=?", (key_id,)).fetchone()
+            if not row:
+                raise HttpError(HTTPStatus.NOT_FOUND, "Kunci tidak ditemukan")
+            conn.execute("UPDATE key_master SET is_active=0, updated_at=? WHERE id=?", (utc_now_iso(), key_id))
+            conn.commit()
+            self._send_json(HTTPStatus.OK, {"ok": True})
             return
 
         if path == "/api/admin/security_history":

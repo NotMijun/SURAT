@@ -18,6 +18,7 @@ export default function DashboardPage({ me }: { me: Me }) {
   const [keysOpen, setKeysOpen] = useState<KeyTx[]>([])
   const [handover, setHandover] = useState<HandoverRes | null>(null)
   const [overdueCount, setOverdueCount] = useState(0)
+  const [guestsOverdueCount, setGuestsOverdueCount] = useState(0)
   const [q, setQ] = useState('')
   const [loading, setLoading] = useState(true)
 
@@ -58,6 +59,18 @@ export default function DashboardPage({ me }: { me: Me }) {
       if (now - ts > 4 * 60 * 60 * 1000) n += 1
     }
     setOverdueCount(n)
+  }, [handover])
+
+  useEffect(() => {
+    const rows = handover?.guests_in || []
+    const now = Date.now()
+    let n = 0
+    for (const r of rows) {
+      const ts = Date.parse(r.checkin_at || '')
+      if (!Number.isFinite(ts)) continue
+      if (now - ts > 2 * 60 * 60 * 1000) n += 1
+    }
+    setGuestsOverdueCount(n)
   }, [handover])
 
   const copyHandover = async () => {
@@ -216,7 +229,11 @@ export default function DashboardPage({ me }: { me: Me }) {
               <div className="list-item">
                 <div className="list-title">Kunci masih dipinjam</div>
                 <div className="list-meta">
-                  {handover ? `${typeof handover.open_keys_count === 'number' ? handover.open_keys_count : handover.open_keys.length} entri` : '—'}
+                  {handover
+                    ? `${typeof handover.open_keys_count === 'number' ? handover.open_keys_count : handover.open_keys.length} entri${
+                        overdueCount ? ` · >4 jam: ${overdueCount}` : ''
+                      }`
+                    : '—'}
                 </div>
               </div>
               {(handover?.open_keys || []).slice(0, 6).map((r) => (
@@ -234,7 +251,11 @@ export default function DashboardPage({ me }: { me: Me }) {
               <div className="list-item">
                 <div className="list-title">Tamu masih di dalam</div>
                 <div className="list-meta">
-                  {handover ? `${typeof handover.guests_in_count === 'number' ? handover.guests_in_count : handover.guests_in.length} entri` : '—'}
+                  {handover
+                    ? `${typeof handover.guests_in_count === 'number' ? handover.guests_in_count : handover.guests_in.length} entri${
+                        guestsOverdueCount ? ` · >2 jam: ${guestsOverdueCount}` : ''
+                      }`
+                    : '—'}
                 </div>
               </div>
               {(handover?.guests_in || []).slice(0, 6).map((r) => (
