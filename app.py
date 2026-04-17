@@ -975,6 +975,7 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/handover":
+            open_keys_count = conn.execute("SELECT COUNT(*) AS c FROM key_transactions WHERE status='open'").fetchone()["c"]
             keys_open = conn.execute(
                 """
                 SELECT id, borrower_name, unit, key_name, checkout_at, notes, status
@@ -984,6 +985,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 LIMIT 50
                 """
             ).fetchall()
+            guests_in_count = conn.execute("SELECT COUNT(*) AS c FROM guest_entries WHERE status='in'").fetchone()["c"]
             guests_in = conn.execute(
                 """
                 SELECT id, name, instansi, purpose, meet_person, checkin_at, status
@@ -997,7 +999,9 @@ class AppHandler(BaseHTTPRequestHandler):
                 HTTPStatus.OK,
                 {
                     "open_keys": [dict(r) for r in keys_open],
+                    "open_keys_count": int(open_keys_count or 0),
                     "guests_in": [dict(r) for r in guests_in],
+                    "guests_in_count": int(guests_in_count or 0),
                 },
             )
             return

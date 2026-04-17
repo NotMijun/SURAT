@@ -4,9 +4,16 @@ import type { Me, MutasiEntry } from '../../types'
 import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useToast } from '../../components/ToastHost'
 
+const KATEGORI_OPTS: Record<string, string[]> = {
+  'Kejadian Operasional': ['Catering', 'Galon', 'Patroli/Ronda', 'Pemeliharaan', 'Lainnya'],
+  'Kejadian Khusus': ['Komplain', 'Kehilangan', 'Kecelakaan', 'Keributan', 'Lainnya'],
+  Lainnya: ['Lainnya'],
+}
+
 export default function MutasiPage({ me }: { me: Me }) {
   const toast = useToast()
   const today = toYmd(new Date())
+  const draftKey = `draft:mutasi:${me.user.id}`
   const [q, setQ] = useState('')
   const [filterKategori, setFilterKategori] = useState('')
   const [filterSub, setFilterSub] = useState('')
@@ -16,12 +23,7 @@ export default function MutasiPage({ me }: { me: Me }) {
   const [items, setItems] = useState<MutasiEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-
-  const KATEGORI_OPTS: Record<string, string[]> = {
-    'Kejadian Operasional': ['Catering', 'Galon', 'Patroli/Ronda', 'Pemeliharaan', 'Lainnya'],
-    'Kejadian Khusus': ['Komplain', 'Kehilangan', 'Kecelakaan', 'Keributan', 'Lainnya'],
-    'Lainnya': ['Lainnya']
-  }
+  const [formError, setFormError] = useState<string>('')
 
   const [kategori, setKategori] = useState('Kejadian Operasional')
   const [subKategori, setSubKategori] = useState('Catering')
@@ -30,6 +32,33 @@ export default function MutasiPage({ me }: { me: Me }) {
   const [photo, setPhoto] = useState<File | null>(null)
   const [photoKey, setPhotoKey] = useState(0)
   const [photoView, setPhotoView] = useState<string | null>(null)
+
+  useEffect(() => {
+    const raw = localStorage.getItem(draftKey)
+    if (!raw) return
+    try {
+      const d = JSON.parse(raw)
+      if (d && typeof d === 'object') {
+        if (typeof d.kategori === 'string' && KATEGORI_OPTS[d.kategori]) {
+          setKategori(d.kategori)
+          const first = KATEGORI_OPTS[d.kategori][0] || ''
+          setSubKategori(typeof d.subKategori === 'string' ? d.subKategori : first)
+        }
+        if (typeof d.time === 'string') setTime(d.time || nowHm())
+        if (typeof d.desc === 'string') setDesc(d.desc)
+      }
+    } catch {
+      localStorage.removeItem(draftKey)
+    }
+  }, [draftKey])
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const payload = { kategori, subKategori, time, desc }
+      localStorage.setItem(draftKey, JSON.stringify(payload))
+    }, 300)
+    return () => window.clearTimeout(t)
+  }, [desc, draftKey, kategori, subKategori, time])
 
   const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number; fk: string; fs: string }) => {
     const { q, date, sort, limit, fk, fs } = opts
@@ -75,6 +104,7 @@ export default function MutasiPage({ me }: { me: Me }) {
     setBusy(true)
     const combinedKind = subKategori && subKategori !== 'Lainnya' ? `${kategori} - ${subKategori}` : kategori;
     try {
+      setFormError('')
       if (photo) {
         const form = new FormData()
         form.set('kind', combinedKind)
@@ -88,10 +118,13 @@ export default function MutasiPage({ me }: { me: Me }) {
       setDesc('')
       setPhoto(null)
       setPhotoKey((x) => x + 1)
+      localStorage.removeItem(draftKey)
       toast.push('Mutasi dicatat', 'success')
       await refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub })
     } catch (err: any) {
-      toast.push(String(err?.message || err || 'Gagal menyimpan'), 'error')
+      const msg = String(err?.message || err || 'Gagal menyimpan')
+      setFormError(msg)
+      toast.push(msg, 'error')
     } finally {
       setBusy(false)
     }
@@ -174,6 +207,11 @@ export default function MutasiPage({ me }: { me: Me }) {
         </header>
         <div className="card-body">
           <form className="form grid grid-4" onSubmit={onSubmit}>
+            {formError && (
+              <div className="grid-span-4">
+                <div className="inline-error">{formError}</div>
+              </div>
+            )}
             <div className="field">
               <label className="label" htmlFor="mutasiKategori">
                 Kategori
@@ -248,10 +286,31 @@ export default function MutasiPage({ me }: { me: Me }) {
               />
               <div className="muted">{photo ? `Dipilih: ${photo.name}` : 'Tidak ada foto'}</div>
             </div>
-            <div className="row row-right grid-span-4">
-              <button className="button button-primary" type="submit" disabled={busy}>
-                {busy ? 'Menyimpan...' : 'Simpan'}
-              </button>
+            <div className="sticky-actions grid-span-4">
+              <div className="row row-right">
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    const ok = window.confirm('Hapus draft mutasi?')
+                    if (!ok) return
+                    localStorage.removeItem(draftKey)
+                    setFormError('')
+                    setKategori('Kejadian Operasional')
+                    setSubKategori('Catering')
+                    setTime(nowHm())
+                    setDesc('')
+                    setPhoto(null)
+                    setPhotoKey((x) => x + 1)
+                  }}
+                >
+                  Reset
+                </button>
+                <button className="button button-primary" type="submit" disabled={busy}>
+                  {busy ? 'Menyimpan...' : 'Simpan'}
+                </button>
+              </div>
             </div>
           </form>
         </div>

@@ -21,6 +21,7 @@ export default function Shell() {
   const token = useMemo(() => localStorage.getItem(tokenKey) || '', [])
   const [me, setMe] = useState<Me | null>(null)
   const [loading, setLoading] = useState(true)
+  const [navCounts, setNavCounts] = useState<{ keysOpen: number | null; guestsIn: number | null }>({ keysOpen: null, guestsIn: null })
   const [theme, setTheme] = useState<'light' | 'dark'>(localStorage.getItem(themeKey) === 'light' ? 'light' : 'dark')
   const [compact] = useState(localStorage.getItem(compactKey) === 'true')
   const [accent, setAccent] = useState<Accent>((localStorage.getItem(accentKey) as Accent) || 'gold')
@@ -109,6 +110,33 @@ export default function Shell() {
     }, 0)
     return () => window.clearTimeout(t)
   }, [loading])
+
+  useEffect(() => {
+    if (loading) return
+    if (!me) return
+    let cancelled = false
+    const load = async () => {
+      try {
+        const h = await apiGet<{ open_keys_count?: number; guests_in_count?: number }>('/api/handover')
+        if (cancelled) return
+        const keysOpen = typeof h.open_keys_count === 'number' ? h.open_keys_count : null
+        const guestsIn = typeof h.guests_in_count === 'number' ? h.guests_in_count : null
+        setNavCounts({ keysOpen, guestsIn })
+      } catch {
+        if (cancelled) return
+        setNavCounts({ keysOpen: null, guestsIn: null })
+      }
+    }
+    load()
+    const t = window.setInterval(load, 60_000)
+    const onFocus = () => load()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      cancelled = true
+      window.clearInterval(t)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [loading, me])
 
   const logout = async () => {
     try {
@@ -200,9 +228,11 @@ export default function Shell() {
           </NavLink>
           <NavLink className={tabClass} to="/kunci">
             Kunci
+            {typeof navCounts.keysOpen === 'number' && navCounts.keysOpen > 0 && <span className="tab-count">{navCounts.keysOpen > 99 ? '99+' : String(navCounts.keysOpen)}</span>}
           </NavLink>
           <NavLink className={tabClass} to="/tamu">
             Tamu
+            {typeof navCounts.guestsIn === 'number' && navCounts.guestsIn > 0 && <span className="tab-count">{navCounts.guestsIn > 99 ? '99+' : String(navCounts.guestsIn)}</span>}
           </NavLink>
           <NavLink className={tabClass} to="/tugas">
             Tugas

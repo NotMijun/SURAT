@@ -854,6 +854,8 @@ def handover(request: Request):
     with db_connect() as conn:
         _require_session(conn, request)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT COUNT(*)::int AS c FROM key_transactions WHERE status='open'")
+            open_keys_count = int(cur.fetchone()["c"])
             cur.execute(
                 """
                 SELECT id, borrower_name, unit, key_name, checkout_at, notes, status
@@ -864,6 +866,8 @@ def handover(request: Request):
                 """
             )
             keys_open = cur.fetchall()
+            cur.execute("SELECT COUNT(*)::int AS c FROM guest_entries WHERE status='in'")
+            guests_in_count = int(cur.fetchone()["c"])
             cur.execute(
                 """
                 SELECT id, name, instansi, purpose, meet_person, checkin_at, status
@@ -874,7 +878,7 @@ def handover(request: Request):
                 """
             )
             guests_in = cur.fetchall()
-        return {"open_keys": keys_open, "guests_in": guests_in}
+        return {"open_keys": keys_open, "open_keys_count": open_keys_count, "guests_in": guests_in, "guests_in_count": guests_in_count}
 
 
 @app.get("/api/keys")

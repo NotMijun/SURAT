@@ -6,7 +6,9 @@ import { useToast } from '../../components/ToastHost'
 
 type HandoverRes = {
   open_keys: Array<{ id: number; borrower_name: string; unit: string; key_name: string; checkout_at: string; notes: string | null; status: string }>
+  open_keys_count?: number
   guests_in: Array<{ id: number; name: string; instansi: string; purpose: string; meet_person: string; checkin_at: string; status: string }>
+  guests_in_count?: number
 }
 
 export default function DashboardPage({ me }: { me: Me }) {
@@ -57,6 +59,36 @@ export default function DashboardPage({ me }: { me: Me }) {
     }
     setOverdueCount(n)
   }, [handover])
+
+  const copyHandover = async () => {
+    const h = handover
+    const r = report
+    const keysCount = typeof h?.open_keys_count === 'number' ? h.open_keys_count : (h?.open_keys?.length || 0)
+    const guestsCount = typeof h?.guests_in_count === 'number' ? h.guests_in_count : (h?.guests_in?.length || 0)
+    const lines: string[] = []
+    lines.push('LOGBOOK SECURITY RS — SERAH TERIMA')
+    if (r) lines.push(`${r.date} · Shift ${r.shift} · Pos ${r.post}`)
+    lines.push(`Petugas: ${me.user.display_name}`)
+    lines.push('')
+    lines.push(`Kunci masih dipinjam: ${keysCount}`)
+    for (const x of (h?.open_keys || []).slice(0, 10)) {
+      lines.push(`- ${x.key_name} · ${x.borrower_name} · ${fmtTime(x.checkout_at)} · ${x.unit || '-'}${x.notes ? ` · ${x.notes}` : ''}`)
+    }
+    if ((h?.open_keys || []).length > 10) lines.push('- …')
+    lines.push('')
+    lines.push(`Tamu masih di dalam: ${guestsCount}`)
+    for (const x of (h?.guests_in || []).slice(0, 10)) {
+      lines.push(`- ${x.name} · ${x.instansi} · ${fmtTime(x.checkin_at)} · ${x.purpose} · ${x.meet_person}`)
+    }
+    if ((h?.guests_in || []).length > 10) lines.push('- …')
+    const text = lines.join('\n')
+    try {
+      await navigator.clipboard.writeText(text)
+      toast.push('Ringkasan disalin', 'success')
+    } catch {
+      window.prompt('Salin ringkasan ini:', text)
+    }
+  }
 
   return (
     <section className="section">
@@ -170,6 +202,9 @@ export default function DashboardPage({ me }: { me: Me }) {
         <header className="card-header">
           <div className="card-title">Serah terima (ringkas)</div>
           <div className="row">
+            <button className="button button-secondary button-sm" type="button" onClick={copyHandover}>
+              Copy ringkasan
+            </button>
             <button className="button button-secondary button-sm" type="button" onClick={() => window.print()}>
               Cetak
             </button>
@@ -180,7 +215,9 @@ export default function DashboardPage({ me }: { me: Me }) {
             <div className="list">
               <div className="list-item">
                 <div className="list-title">Kunci masih dipinjam</div>
-                <div className="list-meta">{handover ? `${handover.open_keys.length} entri (limit 50)` : '—'}</div>
+                <div className="list-meta">
+                  {handover ? `${typeof handover.open_keys_count === 'number' ? handover.open_keys_count : handover.open_keys.length} entri` : '—'}
+                </div>
               </div>
               {(handover?.open_keys || []).slice(0, 6).map((r) => (
                 <div key={r.id} className="list-item">
@@ -196,7 +233,9 @@ export default function DashboardPage({ me }: { me: Me }) {
             <div className="list">
               <div className="list-item">
                 <div className="list-title">Tamu masih di dalam</div>
-                <div className="list-meta">{handover ? `${handover.guests_in.length} entri (limit 50)` : '—'}</div>
+                <div className="list-meta">
+                  {handover ? `${typeof handover.guests_in_count === 'number' ? handover.guests_in_count : handover.guests_in.length} entri` : '—'}
+                </div>
               </div>
               {(handover?.guests_in || []).slice(0, 6).map((r) => (
                 <div key={r.id} className="list-item">

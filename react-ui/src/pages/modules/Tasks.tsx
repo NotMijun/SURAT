@@ -7,6 +7,7 @@ import { useToast } from '../../components/ToastHost'
 export default function TasksPage({ me }: { me: Me }) {
   const toast = useToast()
   const today = toYmd(new Date())
+  const draftKey = useMemo(() => `draft:tasks:${me.user.id}`, [me.user.id])
   const [q, setQ] = useState('')
   const [date, setDate] = useState(today)
   const [sort, setSort] = useState<'occurred_desc' | 'occurred_asc'>('occurred_desc')
@@ -14,6 +15,7 @@ export default function TasksPage({ me }: { me: Me }) {
   const [items, setItems] = useState<TaskEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [formError, setFormError] = useState<string>('')
 
   type TaskTab = 'umum' | 'pom' | 'galon'
   const [tab, setTab] = useState<TaskTab>('umum')
@@ -64,6 +66,53 @@ export default function TasksPage({ me }: { me: Me }) {
   useEffect(() => {
     refresh({ q: '', date: today, sort: 'occurred_desc', limit: 200 }).catch(() => {})
   }, [refresh, today])
+
+  useEffect(() => {
+    const raw = localStorage.getItem(draftKey)
+    if (!raw) return
+    try {
+      const d = JSON.parse(raw)
+      if (d && typeof d === 'object') {
+        if (d.tab === 'umum' || d.tab === 'pom' || d.tab === 'galon') setTab(d.tab)
+        if (typeof d.kind === 'string') setKind(d.kind)
+        if (typeof d.time === 'string') setTime(d.time || nowHm())
+        if (typeof d.destination === 'string') setDestination(d.destination)
+        if (typeof d.notes === 'string') setNotes(d.notes)
+        if (typeof d.vendor === 'string') setVendor(d.vendor)
+        if (typeof d.pomStatus === 'string') setPomStatus(d.pomStatus)
+        if (typeof d.pomArrivedTime === 'string') setPomArrivedTime(d.pomArrivedTime)
+        if (typeof d.boxCount === 'string') setBoxCount(d.boxCount)
+        if (typeof d.galonUsed === 'string') setGalonUsed(d.galonUsed)
+        if (typeof d.galonUnused === 'string') setGalonUnused(d.galonUnused)
+        if (typeof d.galonReturned === 'string') setGalonReturned(d.galonReturned)
+        if (typeof d.galonTo === 'string') setGalonTo(d.galonTo)
+      }
+    } catch {
+      localStorage.removeItem(draftKey)
+    }
+  }, [draftKey])
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const payload = {
+        tab,
+        kind,
+        time,
+        destination,
+        notes,
+        vendor,
+        pomStatus,
+        pomArrivedTime,
+        boxCount,
+        galonUsed,
+        galonUnused,
+        galonReturned,
+        galonTo,
+      }
+      localStorage.setItem(draftKey, JSON.stringify(payload))
+    }, 300)
+    return () => window.clearTimeout(t)
+  }, [boxCount, destination, draftKey, galonReturned, galonTo, galonUnused, galonUsed, kind, notes, pomArrivedTime, pomStatus, tab, time, vendor])
 
   useEffect(() => {
     loadVendors()
@@ -126,6 +175,7 @@ export default function TasksPage({ me }: { me: Me }) {
     if (busy) return
     setBusy(true)
     try {
+      setFormError('')
       const occurredAt = toIsoLocal(today, time)
       let finalKind = kind
       let finalDestination = destination
@@ -191,10 +241,13 @@ export default function TasksPage({ me }: { me: Me }) {
       setGalonTo('')
       setPhoto(null)
       setPhotoKey((x) => x + 1)
+      localStorage.removeItem(draftKey)
       toast.push('Tugas dicatat', 'success')
       await refresh({ q, date, sort, limit })
     } catch (err: any) {
-      toast.push(String(err?.message || err || 'Gagal menyimpan'), 'error')
+      const msg = String(err?.message || err || 'Gagal menyimpan')
+      setFormError(msg)
+      toast.push(msg, 'error')
     } finally {
       setBusy(false)
     }
@@ -284,6 +337,11 @@ export default function TasksPage({ me }: { me: Me }) {
         </header>
         <div className="card-body">
           <form className="form grid grid-4" onSubmit={onSubmit}>
+            {formError && (
+              <div className="grid-span-4">
+                <div className="inline-error">{formError}</div>
+              </div>
+            )}
             {tab === 'umum' && (
               <div className="field">
                 <label className="label" htmlFor="taskKind">
@@ -433,10 +491,40 @@ export default function TasksPage({ me }: { me: Me }) {
               />
               <div className="muted">{photo ? `Dipilih: ${photo.name}` : 'Tidak ada foto'}</div>
             </div>
-            <div className="row row-right grid-span-4">
-              <button className="button button-primary" type="submit" disabled={busy}>
-                {busy ? 'Menyimpan...' : 'Simpan'}
-              </button>
+            <div className="sticky-actions grid-span-4">
+              <div className="row row-right">
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    const ok = window.confirm('Hapus draft input tugas?')
+                    if (!ok) return
+                    localStorage.removeItem(draftKey)
+                    setFormError('')
+                    setTab('umum')
+                    setKind('Antar sampel')
+                    setTime(nowHm())
+                    setDestination('')
+                    setNotes('')
+                    setVendor('')
+                    setPomStatus('Datang')
+                    setPomArrivedTime('')
+                    setBoxCount('')
+                    setGalonUsed('')
+                    setGalonUnused('')
+                    setGalonReturned('')
+                    setGalonTo('')
+                    setPhoto(null)
+                    setPhotoKey((x) => x + 1)
+                  }}
+                >
+                  Reset
+                </button>
+                <button className="button button-primary" type="submit" disabled={busy}>
+                  {busy ? 'Menyimpan...' : 'Simpan'}
+                </button>
+              </div>
             </div>
           </form>
         </div>

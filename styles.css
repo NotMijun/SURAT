@@ -213,6 +213,21 @@ html[data-focus="keyboard"] .button:focus-visible,html[data-focus="keyboard"] .t
 .button-secondary{border-color:rgba(212,175,55,.25);background:rgba(212,175,55,.10)}
 .button-ghost{border-color:transparent;background:transparent}
 .button-sm{padding:8px 10px;border-radius:var(--radius-sm);font-size:14px}
+.inline-error{
+  border:1px solid rgba(255,91,122,.55);
+  background:rgba(255,91,122,.11);
+  color:#ffc1cd;
+  border-radius:var(--radius-sm);
+  padding:10px 12px;
+  font-weight:650;
+}
+.sticky-actions{
+  position:sticky;
+  bottom:0;
+  padding:12px 0 0 0;
+  background:linear-gradient(180deg, rgba(0,0,0,0), var(--bg) 38%);
+  z-index:2;
+}
 
 .pill{
   padding:7px 10px;
@@ -434,6 +449,16 @@ html[data-focus="keyboard"] .button:focus-visible,html[data-focus="keyboard"] .t
   font-size:14px;
   white-space:nowrap;
   transition:transform .12s ease, background .12s ease, border-color .12s ease;
+}
+.tab-count{
+  margin-left:8px;
+  padding:2px 7px;
+  border-radius:999px;
+  font-size:12px;
+  line-height:1.2;
+  border:1px solid rgba(212,175,55,.35);
+  background:rgba(212,175,55,.12);
+  color:var(--text);
 }
 .tab[aria-selected="true"]{
   border-color:rgba(212,175,55,.65);

@@ -13,6 +13,7 @@ const badge = (s: KeyTx['status']) => {
 export default function KeysPage({ me }: { me: Me }) {
   const toast = useToast()
   const today = useMemo(() => toYmd(new Date()), [])
+  const draftKey = useMemo(() => `draft:keys:${me.user.id}`, [me.user.id])
   const [q, setQ] = useState('')
   const [date, setDate] = useState(today)
   const [sort, setSort] = useState<'checkout_desc' | 'checkout_asc' | 'checkin_desc' | 'checkin_asc'>('checkout_desc')
@@ -35,6 +36,7 @@ export default function KeysPage({ me }: { me: Me }) {
   const [photoKey, setPhotoKey] = useState(0)
   const [photoView, setPhotoView] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [formError, setFormError] = useState<string>('')
 
   useEffect(() => {
     if (me.user.role === 'admin') {
@@ -75,6 +77,32 @@ export default function KeysPage({ me }: { me: Me }) {
   useEffect(() => {
     refresh({ q: '', date: today, sort: 'checkout_desc', limit: 200, closedDateField: 'checkout' }).catch(() => {})
   }, [refresh, today])
+
+  useEffect(() => {
+    const raw = localStorage.getItem(draftKey)
+    if (!raw) return
+    try {
+      const d = JSON.parse(raw)
+      if (d && typeof d === 'object') {
+        if (typeof d.borrower === 'string') setBorrower(d.borrower)
+        if (typeof d.unit === 'string') setUnit(d.unit)
+        if (typeof d.keyName === 'string') setKeyName(d.keyName)
+        if (typeof d.time === 'string') setTime(d.time || nowHm())
+        if (typeof d.notes === 'string') setNotes(d.notes)
+        if (typeof d.petugasId === 'string') setPetugasId(d.petugasId)
+      }
+    } catch {
+      localStorage.removeItem(draftKey)
+    }
+  }, [draftKey])
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const payload = { borrower, unit, keyName, time, notes, petugasId }
+      localStorage.setItem(draftKey, JSON.stringify(payload))
+    }, 300)
+    return () => window.clearTimeout(t)
+  }, [borrower, draftKey, keyName, notes, petugasId, time, unit])
 
   const hmToMinutes = (hm: string) => {
     const [h, m] = String(hm || '').split(':', 2)
@@ -123,6 +151,7 @@ export default function KeysPage({ me }: { me: Me }) {
     if (busy) return
     setBusy(true)
     try {
+      setFormError('')
       const payload = {
         borrower_name: borrower,
         unit,
@@ -170,19 +199,24 @@ export default function KeysPage({ me }: { me: Me }) {
       setNotes('')
       setPhoto(null)
       setPhotoKey((x) => x + 1)
+      localStorage.removeItem(draftKey)
       toast.push('Disimpan', 'success')
       const closedDateField = date === today && filterBy === 'ambil' ? 'checkin' : 'checkout'
       await refresh({ q, date, sort, limit, closedDateField })
     } catch (err: any) {
-      toast.push(String(err?.message || err || 'Gagal menyimpan'), 'error')
+      const msg = String(err?.message || err || 'Gagal menyimpan')
+      setFormError(msg)
+      toast.push(msg, 'error')
     } finally {
       setBusy(false)
     }
   }
 
-  const doReturn = async (id: number) => {
+  const doReturn = async (r: KeyTx) => {
+    const ok = window.confirm(`Tandai kunci sudah diambil?\n\n${r.key_name} · ${r.borrower_name}\nTitip: ${fmtDateTime(r.checkout_at)}\n\nLanjutkan?`)
+    if (!ok) return
     try {
-      await apiPost(`/api/keys/${id}/return`, {})
+      await apiPost(`/api/keys/${r.id}/return`, {})
       toast.push('Kunci ditandai diambil', 'success')
       const closedDateField = date === today && filterBy === 'ambil' ? 'checkin' : 'checkout'
       await refresh({ q, date, sort, limit, closedDateField })
@@ -313,6 +347,11 @@ export default function KeysPage({ me }: { me: Me }) {
         </header>
         <div className="card-body">
           <form className="form grid grid-4" onSubmit={onSubmit}>
+            {formError && (
+              <div className="grid-span-4">
+                <div className="inline-error">{formError}</div>
+              </div>
+            )}
             <div className="field">
               <label className="label" htmlFor="keyBorrower">
                 Nama penitip
@@ -387,10 +426,33 @@ export default function KeysPage({ me }: { me: Me }) {
               />
               <div className="muted">{photo ? `Dipilih: ${photo.name}` : 'Tidak ada foto'}</div>
             </div>
-            <div className="row row-right grid-span-4">
-              <button className="button button-primary" type="submit" disabled={busy}>
-                {busy ? 'Menyimpan...' : 'Simpan'}
-              </button>
+            <div className="sticky-actions grid-span-4">
+              <div className="row row-right">
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    const ok = window.confirm('Hapus draft penitipan kunci?')
+                    if (!ok) return
+                    localStorage.removeItem(draftKey)
+                    setFormError('')
+                    setBorrower('')
+                    setUnit('')
+                    setKeyName('')
+                    setNotes('')
+                    setTime(nowHm())
+                    setPetugasId(String(me.user.id))
+                    setPhoto(null)
+                    setPhotoKey((x) => x + 1)
+                  }}
+                >
+                  Reset
+                </button>
+                <button className="button button-primary" type="submit" disabled={busy}>
+                  {busy ? 'Menyimpan...' : 'Simpan'}
+                </button>
+              </div>
             </div>
           </form>
         </div>
@@ -434,7 +496,7 @@ export default function KeysPage({ me }: { me: Me }) {
                         )}
                       </td>
                       <td data-label="Aksi">
-                        <button className="button button-sm" type="button" onClick={() => doReturn(r.id)} style={{ marginRight: 8 }}>
+                        <button className="button button-sm" type="button" onClick={() => doReturn(r)} style={{ marginRight: 8 }}>
                           Ambil
                         </button>
                         <button className="button button-sm button-danger" type="button" onClick={() => doUndo(r.id)}>

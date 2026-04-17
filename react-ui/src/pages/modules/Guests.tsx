@@ -7,6 +7,7 @@ import { useToast } from '../../components/ToastHost'
 export default function GuestsPage({ me }: { me: Me }) {
   const toast = useToast()
   const today = useMemo(() => toYmd(new Date()), [])
+  const draftKey = useMemo(() => `draft:guests:${me.user.id}`, [me.user.id])
   const [q, setQ] = useState('')
   const [postFilter, setPostFilter] = useState<'IGD' | 'Pintu Utama'>(() => (/^igd$/i.test((me.post || '').trim()) ? 'IGD' : 'Pintu Utama'))
   const [date, setDate] = useState(today)
@@ -25,6 +26,7 @@ export default function GuestsPage({ me }: { me: Me }) {
   const [photoKey, setPhotoKey] = useState(0)
   const [photoView, setPhotoView] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [formError, setFormError] = useState<string>('')
 
   const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number; post: string }) => {
     const { q, date, sort, limit, post } = opts
@@ -50,6 +52,30 @@ export default function GuestsPage({ me }: { me: Me }) {
     refresh({ q: '', date: today, sort: 'checkin_desc', limit: 200, post: postFilter }).catch(() => {})
   }, [postFilter, refresh, today])
 
+  useEffect(() => {
+    const raw = localStorage.getItem(draftKey)
+    if (!raw) return
+    try {
+      const d = JSON.parse(raw)
+      if (typeof d.name === 'string') setName(d.name)
+      if (typeof d.instansi === 'string') setInstansi(d.instansi)
+      if (typeof d.purpose === 'string') setPurpose(d.purpose)
+      if (typeof d.meet === 'string') setMeet(d.meet)
+      if (typeof d.time === 'string') setTime(d.time || nowHm())
+      if (typeof d.notes === 'string') setNotes(d.notes)
+    } catch {
+      localStorage.removeItem(draftKey)
+    }
+  }, [draftKey])
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const payload = { name, instansi, purpose, meet, time, notes }
+      localStorage.setItem(draftKey, JSON.stringify(payload))
+    }, 300)
+    return () => window.clearTimeout(t)
+  }, [draftKey, instansi, meet, name, notes, purpose, time])
+
   const downloadCsv = (filename: string, rows: Array<Array<string | number>>) => {
     const lines = rows.map((r) => r.map((x) => `"${String(x ?? '').replace(/"/g, '""')}"`).join(','))
     const csv = `\ufeff${lines.join('\n')}`
@@ -67,6 +93,7 @@ export default function GuestsPage({ me }: { me: Me }) {
     if (busy) return
     setBusy(true)
     try {
+      setFormError('')
       if (photo) {
         const form = new FormData()
         form.set('name', name)
@@ -88,20 +115,25 @@ export default function GuestsPage({ me }: { me: Me }) {
       setNotes('')
       setPhoto(null)
       setPhotoKey((x) => x + 1)
+      localStorage.removeItem(draftKey)
       toast.push('Tamu masuk dicatat', 'success')
       await refresh({ q, date, sort, limit, post: postFilter })
     } catch (err: any) {
-      toast.push(String(err?.message || err || 'Gagal menyimpan'), 'error')
+      const msg = String(err?.message || err || 'Gagal menyimpan')
+      setFormError(msg)
+      toast.push(msg, 'error')
     } finally {
       setBusy(false)
     }
   }
 
-  const checkout = async (id: number) => {
+  const checkout = async (r: GuestEntry) => {
+    const ok = window.confirm(`Checkout tamu ini?\n\n${r.name} · ${r.instansi}\nMasuk: ${fmtDateTime(r.checkin_at)}\n\nLanjutkan?`)
+    if (!ok) return
     try {
-      await apiPost(`/api/guests/${id}/checkout`, {})
+      await apiPost(`/api/guests/${r.id}/checkout`, {})
       const nowIso = new Date().toISOString()
-      setItems((prev) => prev.map((x) => (x.id === id ? { ...x, status: 'out', checkout_at: nowIso } : x)))
+      setItems((prev) => prev.map((x) => (x.id === r.id ? { ...x, status: 'out', checkout_at: nowIso } : x)))
       toast.push('Tamu checkout', 'success')
       await refresh({ q, date, sort, limit, post: postFilter })
     } catch (err: any) {
@@ -193,6 +225,11 @@ export default function GuestsPage({ me }: { me: Me }) {
         </header>
         <div className="card-body">
           <form className="form grid grid-4" onSubmit={onSubmit}>
+            {formError && (
+              <div className="grid-span-4">
+                <div className="inline-error">{formError}</div>
+              </div>
+            )}
             <div className="field">
               <label className="label" htmlFor="guestName">
                 Nama
@@ -273,10 +310,33 @@ export default function GuestsPage({ me }: { me: Me }) {
               />
               <div className="muted">{photo ? `Dipilih: ${photo.name}` : 'Tidak ada foto'}</div>
             </div>
-            <div className="row row-right grid-span-4">
-              <button className="button button-primary" type="submit" disabled={busy}>
-                {busy ? 'Menyimpan...' : 'Simpan'}
-              </button>
+            <div className="sticky-actions grid-span-4">
+              <div className="row row-right">
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  onClick={() => {
+                    const ok = window.confirm('Hapus draft input tamu?')
+                    if (!ok) return
+                    localStorage.removeItem(draftKey)
+                    setName('')
+                    setInstansi('')
+                    setPurpose('')
+                    setMeet('')
+                    setNotes('')
+                    setTime(nowHm())
+                    setFormError('')
+                    setPhoto(null)
+                    setPhotoKey((x) => x + 1)
+                  }}
+                  disabled={busy}
+                >
+                  Reset
+                </button>
+                <button className="button button-primary" type="submit" disabled={busy}>
+                  {busy ? 'Menyimpan...' : 'Simpan'}
+                </button>
+              </div>
             </div>
           </form>
         </div>
@@ -322,7 +382,7 @@ export default function GuestsPage({ me }: { me: Me }) {
                     </td>
                     <td data-label="Aksi">
                       {r.status === 'in' ? (
-                        <button className="button button-sm" type="button" onClick={() => checkout(r.id)}>
+                        <button className="button button-sm" type="button" onClick={() => checkout(r)}>
                           Keluar
                         </button>
                       ) : (
