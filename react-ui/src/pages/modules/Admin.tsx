@@ -38,10 +38,27 @@ export default function AdminPage({ me }: { me: Me }) {
   const [loading, setLoading] = useState(true)
 
   const selectedUser = useMemo(() => users.find((u) => u.id === selectedUserId) || null, [selectedUserId, users])
+  const loadHistory = useCallback(
+    async (userId: number | null, limitValue: number) => {
+      if (!userId) {
+        setHistory([])
+        return
+      }
+      try {
+        const h = await apiGet<{ items: SecurityHistoryRow[] }>(
+          `/api/admin/security_history?user_id=${encodeURIComponent(String(userId))}&limit=${encodeURIComponent(String(limitValue))}`,
+        )
+        setHistory(h.items || [])
+      } catch (err: any) {
+        toast.push(String(err?.message || err || 'Gagal memuat riwayat'), 'error')
+      }
+    },
+    [toast],
+  )
 
   const refresh = useCallback(
-    async (opts: { userQ: string; auditQ: string; historyLimit: number; selectedUserId: number | null }) => {
-      const { userQ, auditQ, historyLimit, selectedUserId } = opts
+    async (opts: { userQ: string; auditQ: string }) => {
+      const { userQ, auditQ } = opts
       setLoading(true)
       try {
         const [u, a] = await Promise.all([
@@ -63,15 +80,10 @@ export default function AdminPage({ me }: { me: Me }) {
         } catch {
           setKeyMaster([])
         }
-        const fallbackId = selectedUserId ?? userItems.find((x) => x.role === 'guard')?.id ?? userItems[0]?.id ?? null
-        setSelectedUserId(fallbackId)
-        if (fallbackId) {
-          const h = await apiGet<{ items: SecurityHistoryRow[] }>(
-            `/api/admin/security_history?user_id=${encodeURIComponent(String(fallbackId))}&limit=${encodeURIComponent(String(historyLimit))}`,
-          )
-          setHistory(h.items || [])
-        } else {
-          setHistory([])
+        const selectedStillExists = selectedUserId != null && userItems.some((x) => x.id === selectedUserId)
+        const fallbackId = selectedStillExists ? selectedUserId : userItems.find((x) => x.role === 'guard')?.id ?? userItems[0]?.id ?? null
+        if (fallbackId !== selectedUserId) {
+          setSelectedUserId(fallbackId)
         }
       } catch (err: any) {
         toast.push(String(err?.message || err || 'Gagal memuat admin'), 'error')
@@ -79,35 +91,27 @@ export default function AdminPage({ me }: { me: Me }) {
         setLoading(false)
       }
     },
-    [toast],
+    [selectedUserId, toast],
   )
 
   useEffect(() => {
-    const t = window.setTimeout(() => refresh({ userQ, auditQ, historyLimit, selectedUserId }).catch(() => {}), 300)
+    const t = window.setTimeout(() => refresh({ userQ, auditQ }).catch(() => {}), 300)
     return () => window.clearTimeout(t)
-  }, [auditQ, historyLimit, refresh, selectedUserId, userQ])
+  }, [auditQ, refresh, userQ])
 
   useEffect(() => {
-    refresh({ userQ: '', auditQ: '', historyLimit, selectedUserId: null }).catch(() => {})
-  }, [historyLimit, refresh])
+    loadHistory(selectedUserId, historyLimit).catch(() => {})
+  }, [historyLimit, loadHistory, selectedUserId])
 
-  const selectUser = async (id: number) => {
+  const selectUser = (id: number) => {
     setSelectedUserId(id)
-    try {
-      const h = await apiGet<{ items: SecurityHistoryRow[] }>(
-        `/api/admin/security_history?user_id=${encodeURIComponent(String(id))}&limit=${encodeURIComponent(String(historyLimit))}`,
-      )
-      setHistory(h.items || [])
-    } catch (err: any) {
-      toast.push(String(err?.message || err || 'Gagal memuat riwayat'), 'error')
-    }
   }
 
   const saveUser = async (u: AdminUser, patch: Partial<Pick<AdminUser, 'display_name' | 'role' | 'is_active'>>) => {
     try {
       await apiPatch(`/api/admin/users/${u.id}`, patch)
       toast.push('User disimpan', 'success')
-      await refresh({ userQ, auditQ, historyLimit, selectedUserId })
+      await refresh({ userQ, auditQ })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal simpan user'), 'error')
     }
@@ -118,7 +122,8 @@ export default function AdminPage({ me }: { me: Me }) {
     if (!ok) return
     try {
       const res = await apiPost<{ temp_password: string }>(`/api/admin/users/${id}/reset_password`, {})
-      toast.push(`Password baru: ${res.temp_password}`, 'success')
+      window.prompt('Password sementara (simpan dan segera sampaikan):', res.temp_password)
+      toast.push('Password user berhasil direset', 'success')
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal reset password'), 'error')
     }
@@ -130,7 +135,7 @@ export default function AdminPage({ me }: { me: Me }) {
     try {
       const res = await apiDelete<{ mode: string }>(`/api/admin/users/${id}/delete`)
       toast.push(res.mode === 'deleted' ? 'Akun dihapus' : 'Akun dinonaktifkan', 'success')
-      await refresh({ userQ, auditQ, historyLimit, selectedUserId })
+      await refresh({ userQ, auditQ })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal hapus akun'), 'error')
     }
@@ -143,7 +148,8 @@ export default function AdminPage({ me }: { me: Me }) {
     try {
       const res = await apiDelete<{ deleted: number }>(`/api/admin/security_history?user_id=${encodeURIComponent(String(selectedUserId))}&keep=0`)
       toast.push(`Riwayat dihapus (${res.deleted} entri)`, 'success')
-      await refresh({ userQ, auditQ, historyLimit, selectedUserId })
+      await refresh({ userQ, auditQ })
+      await loadHistory(selectedUserId, historyLimit)
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal hapus riwayat'), 'error')
     }
@@ -157,7 +163,7 @@ export default function AdminPage({ me }: { me: Me }) {
       await apiPost('/api/admin/vendors/catering', { name })
       setNewVendor('')
       toast.push('Vendor ditambahkan', 'success')
-      await refresh({ userQ, auditQ, historyLimit, selectedUserId })
+      await refresh({ userQ, auditQ })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal menambah vendor'), 'error')
     }
@@ -171,7 +177,7 @@ export default function AdminPage({ me }: { me: Me }) {
       await apiPost('/api/admin/keys/master', { name })
       setNewKeyName('')
       toast.push('Master kunci ditambahkan', 'success')
-      await refresh({ userQ, auditQ, historyLimit, selectedUserId })
+      await refresh({ userQ, auditQ })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal menambah master kunci'), 'error')
     }
@@ -181,7 +187,7 @@ export default function AdminPage({ me }: { me: Me }) {
     try {
       await apiPatch(`/api/admin/keys/master/${id}`, { name, is_active })
       toast.push('Master kunci disimpan', 'success')
-      await refresh({ userQ, auditQ, historyLimit, selectedUserId })
+      await refresh({ userQ, auditQ })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal mengubah master kunci'), 'error')
     }
@@ -193,7 +199,7 @@ export default function AdminPage({ me }: { me: Me }) {
     try {
       await apiDelete(`/api/admin/keys/master/${id}`)
       toast.push('Master kunci dinonaktifkan', 'success')
-      await refresh({ userQ, auditQ, historyLimit, selectedUserId })
+      await refresh({ userQ, auditQ })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal menonaktifkan'), 'error')
     }
@@ -203,7 +209,7 @@ export default function AdminPage({ me }: { me: Me }) {
     try {
       await apiPatch(`/api/admin/vendors/catering/${id}`, { name })
       toast.push('Vendor disimpan', 'success')
-      await refresh({ userQ, auditQ, historyLimit, selectedUserId })
+      await refresh({ userQ, auditQ })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal mengubah vendor'), 'error')
     }
@@ -215,7 +221,7 @@ export default function AdminPage({ me }: { me: Me }) {
     try {
       await apiDelete(`/api/admin/vendors/catering/${id}`)
       toast.push('Vendor dihapus', 'success')
-      await refresh({ userQ, auditQ, historyLimit, selectedUserId })
+      await refresh({ userQ, auditQ })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal menghapus vendor'), 'error')
     }
@@ -234,7 +240,7 @@ export default function AdminPage({ me }: { me: Me }) {
       await apiDelete(`/api/admin/records/${encodeURIComponent(table)}?id=${encodeURIComponent(id)}&note=${encodeURIComponent(note)}`)
       toast.push('Data diproses', 'success')
       e.currentTarget.reset()
-      await refresh({ userQ, auditQ, historyLimit, selectedUserId })
+      await refresh({ userQ, auditQ })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal hapus data'), 'error')
     }
@@ -247,7 +253,7 @@ export default function AdminPage({ me }: { me: Me }) {
         <div className="section-actions">
           <input className="input input-sm" value={userQ} onChange={(e) => setUserQ(e.target.value)} placeholder="Cari user..." />
           <input className="input input-sm" value={auditQ} onChange={(e) => setAuditQ(e.target.value)} placeholder="Cari audit..." />
-          <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ userQ, auditQ, historyLimit, selectedUserId })}>
+          <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ userQ, auditQ })}>
             Refresh
           </button>
         </div>

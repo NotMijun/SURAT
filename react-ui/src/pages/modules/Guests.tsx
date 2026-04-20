@@ -49,10 +49,6 @@ export default function GuestsPage({ me }: { me: Me }) {
   }, [date, limit, q, refresh, sort, postFilter])
 
   useEffect(() => {
-    refresh({ q: '', date: today, sort: 'checkin_desc', limit: 200, post: postFilter }).catch(() => {})
-  }, [postFilter, refresh, today])
-
-  useEffect(() => {
     const raw = localStorage.getItem(draftKey)
     if (!raw) return
     try {
@@ -224,8 +220,8 @@ export default function GuestsPage({ me }: { me: Me }) {
                     r.instansi,
                     r.purpose,
                     r.meet_person,
-                    fmtTime(r.checkin_at),
-                    fmtTime(r.checkout_at),
+                    fmtDateTime(r.checkin_at),
+                    fmtDateTime(r.checkout_at),
                     r.notes || '',
                     r.has_photo ? 'Ya' : 'Tidak',
                     r.created_by_name || '-',
@@ -259,19 +255,19 @@ export default function GuestsPage({ me }: { me: Me }) {
               <label className="label" htmlFor="guestName">
                 Nama
               </label>
-              <input className="input" id="guestName" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nama tamu" />
+              <input className="input" id="guestName" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nama tamu" required />
             </div>
             <div className="field">
               <label className="label" htmlFor="guestInstansi">
                 Instansi
               </label>
-              <input className="input" id="guestInstansi" value={instansi} onChange={(e) => setInstansi(e.target.value)} placeholder="mis. Vendor" />
+              <input className="input" id="guestInstansi" value={instansi} onChange={(e) => setInstansi(e.target.value)} placeholder="mis. Vendor" required />
             </div>
             <div className="field">
               <label className="label" htmlFor="guestPurpose">
                 Divisi Tujuan
               </label>
-              <input className="input" id="guestPurpose" value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="mis. IT / HRD" />
+              <input className="input" id="guestPurpose" value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="mis. IT / HRD" required />
             </div>
             <div className="field field-time">
               <label className="label" htmlFor="guestTime">
@@ -297,7 +293,7 @@ export default function GuestsPage({ me }: { me: Me }) {
               <label className="label" htmlFor="guestMeet">
                 Orang yang ditemui
               </label>
-              <input className="input" id="guestMeet" value={meet} onChange={(e) => setMeet(e.target.value)} placeholder="Nama staf/unit" />
+              <input className="input" id="guestMeet" value={meet} onChange={(e) => setMeet(e.target.value)} placeholder="Nama staf/unit" required />
             </div>
             <div className="field grid-span-4">
               <label className="label" htmlFor="guestNotes">

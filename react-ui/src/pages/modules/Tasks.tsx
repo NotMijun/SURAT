@@ -64,10 +64,6 @@ export default function TasksPage({ me }: { me: Me }) {
   }, [date, limit, q, refresh, sort])
 
   useEffect(() => {
-    refresh({ q: '', date: today, sort: 'occurred_desc', limit: 200 }).catch(() => {})
-  }, [refresh, today])
-
-  useEffect(() => {
     const raw = localStorage.getItem(draftKey)
     if (!raw) return
     try {

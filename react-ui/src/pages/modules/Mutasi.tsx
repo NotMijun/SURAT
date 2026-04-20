@@ -83,10 +83,6 @@ export default function MutasiPage({ me }: { me: Me }) {
     return () => window.clearTimeout(t)
   }, [date, limit, q, refresh, sort, filterKategori, filterSub])
 
-  useEffect(() => {
-    refresh({ q: '', date: today, sort: 'occurred_desc', limit: 200, fk: '', fs: '' }).catch(() => {})
-  }, [refresh, today])
-
   const downloadCsv = (filename: string, rows: Array<Array<string | number>>) => {
     const lines = rows.map((r) => r.map((x) => `"${String(x ?? '').replace(/"/g, '""')}"`).join(','))
     const csv = `\ufeff${lines.join('\n')}`

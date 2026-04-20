@@ -20,20 +20,20 @@ export default function DashboardPage({ me }: { me: Me }) {
   const [overdueCount, setOverdueCount] = useState(0)
   const [guestsOverdueCount, setGuestsOverdueCount] = useState(0)
   const [q, setQ] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [loadingMeta, setLoadingMeta] = useState(true)
+  const [loadingKeys, setLoadingKeys] = useState(true)
+  const loading = loadingMeta || loadingKeys
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
+    setLoadingMeta(true)
     Promise.all([
       apiGet<ShiftReport>(`/api/report/shift?date=${encodeURIComponent(today)}&shift=${encodeURIComponent(me.shift)}&post=${encodeURIComponent(me.post)}`),
-      apiGet<{ items: KeyTx[] }>(`/api/keys?status=open&q=${encodeURIComponent(q)}`),
       apiGet<HandoverRes>('/api/handover'),
     ])
-      .then(([r, k, h]) => {
+      .then(([r, h]) => {
         if (cancelled) return
         setReport(r)
-        setKeysOpen(k.items || [])
         setHandover(h)
       })
       .catch((err: any) => {
@@ -42,12 +42,33 @@ export default function DashboardPage({ me }: { me: Me }) {
       })
       .finally(() => {
         if (cancelled) return
-        setLoading(false)
+        setLoadingMeta(false)
       })
     return () => {
       cancelled = true
     }
-  }, [me.post, me.shift, q, toast, today])
+  }, [me.post, me.shift, toast, today])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoadingKeys(true)
+    apiGet<{ items: KeyTx[] }>(`/api/keys?status=open&q=${encodeURIComponent(q)}`)
+      .then((k) => {
+        if (cancelled) return
+        setKeysOpen(k.items || [])
+      })
+      .catch((err: any) => {
+        if (cancelled) return
+        toast.push(String(err?.message || err || 'Gagal memuat data kunci'), 'error')
+      })
+      .finally(() => {
+        if (cancelled) return
+        setLoadingKeys(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [q, toast])
 
   useEffect(() => {
     const rows = handover?.open_keys || []

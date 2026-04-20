@@ -58,6 +58,16 @@ def _can_quick_modify(sess: dict, *, created_by: int, created_at_iso: str) -> bo
     except Exception:
         return True
 
+def _day_bounds(ymd: str) -> tuple[str, str] | None:
+    v = (ymd or "").strip()
+    if not v:
+        return None
+    try:
+        d = datetime.strptime(v, "%Y-%m-%d")
+    except Exception:
+        return None
+    return (d.strftime("%Y-%m-%dT00:00:00"), d.strftime("%Y-%m-%dT23:59:59"))
+
 
 def pbkdf2_hash_password(password: str, salt: bytes | None = None) -> str:
     salt = salt or secrets.token_bytes(16)
@@ -1067,15 +1077,40 @@ class AppHandler(BaseHTTPRequestHandler):
         if path == "/api/keys":
             status = (query.get("status") or ["open"])[0]
             q = normalize_text((query.get("q") or [""])[0])
+            date = (query.get("date") or [""])[0]
+            date_field = ((query.get("date_field") or ["checkout"])[0] or "checkout").strip().lower()
+            sort = ((query.get("sort") or ["checkout_desc"])[0] or "checkout_desc").strip()
+            try:
+                limit = max(1, min(500, int((query.get("limit") or ["200"])[0] or "200")))
+            except Exception:
+                limit = 200
+            bounds = _day_bounds(date)
             params = []
             where = []
             if status in ("open", "closed", "void"):
-                where.append("status = ?")
+                where.append("kt.status = ?")
                 params.append(status)
+            if status == "open":
+                date_field = "checkout"
+            if date_field not in ("checkout", "checkin"):
+                date_field = "checkout"
             if q:
-                where.append("(borrower_name_norm LIKE ? OR key_name_norm LIKE ?)")
+                where.append("(kt.borrower_name_norm LIKE ? OR kt.key_name_norm LIKE ? OR kt.checkout_at LIKE ? OR COALESCE(kt.checkin_at,'') LIKE ?)")
                 params.append(f"%{q}%")
                 params.append(f"%{q}%")
+                params.append(f"%{q}%")
+                params.append(f"%{q}%")
+            if bounds:
+                date_col = "kt.checkout_at" if date_field == "checkout" else "kt.checkin_at"
+                where.append(f"{date_col} BETWEEN ? AND ?")
+                params.extend([bounds[0], bounds[1]])
+            order = "datetime(kt.checkout_at) DESC"
+            if sort == "checkout_asc":
+                order = "datetime(kt.checkout_at) ASC"
+            elif sort == "checkin_desc":
+                order = "datetime(kt.checkin_at) DESC"
+            elif sort == "checkin_asc":
+                order = "datetime(kt.checkin_at) ASC"
             sql = """
               SELECT kt.id, kt.borrower_name, kt.unit, kt.key_name, kt.checkout_at, kt.checkin_at, kt.notes, kt.status,
                      u.display_name AS created_by_name,
@@ -1087,13 +1122,23 @@ class AppHandler(BaseHTTPRequestHandler):
             """
             if where:
                 sql += " WHERE " + " AND ".join(where)
-            sql += " ORDER BY datetime(kt.checkout_at) DESC LIMIT 200"
+            sql += f" ORDER BY {order} LIMIT ?"
+            params.append(limit)
             rows = conn.execute(sql, tuple(params)).fetchall()
             self._send_json(HTTPStatus.OK, {"items": [dict(r) for r in rows]})
             return
 
         if path == "/api/mutasi":
             q = normalize_text((query.get("q") or [""])[0])
+            kategori = ((query.get("kategori") or [""])[0] or "").strip()
+            sub = ((query.get("sub") or [""])[0] or "").strip()
+            date = (query.get("date") or [""])[0]
+            sort = ((query.get("sort") or ["occurred_desc"])[0] or "occurred_desc").strip()
+            try:
+                limit = max(1, min(500, int((query.get("limit") or ["200"])[0] or "200")))
+            except Exception:
+                limit = 200
+            bounds = _day_bounds(date)
             status = (query.get("status") or ["active"])[0].strip().lower()
             params = []
             where = []
@@ -1106,6 +1151,28 @@ class AppHandler(BaseHTTPRequestHandler):
                 where.append("(lower(kind) LIKE ? OR lower(description) LIKE ?)")
                 params.append(f"%{q}%")
                 params.append(f"%{q}%")
+            if kategori and sub:
+                if sub == "Lainnya":
+                    where.append("m.kind = ?")
+                    params.append(kategori)
+                else:
+                    where.append("m.kind = ?")
+                    params.append(f"{kategori} - {sub}")
+            elif kategori:
+                where.append("m.kind LIKE ?")
+                params.append(f"{kategori}%")
+                if sub:
+                    where.append("m.kind LIKE ?")
+                    params.append(f"%{sub}%")
+            elif sub:
+                where.append("m.kind LIKE ?")
+                params.append(f"%{sub}%")
+            if bounds:
+                where.append("m.occurred_at BETWEEN ? AND ?")
+                params.extend([bounds[0], bounds[1]])
+            order = "datetime(m.occurred_at) DESC"
+            if sort == "occurred_asc":
+                order = "datetime(m.occurred_at) ASC"
             sql = """
               SELECT m.id, m.occurred_at, m.kind, m.description, COALESCE(m.status,'active') AS status, m.void_reason, u.display_name AS created_by_name, m.shift, m.post
               FROM mutasi_entries m
@@ -1113,7 +1180,8 @@ class AppHandler(BaseHTTPRequestHandler):
             """
             if where:
                 sql += " WHERE " + " AND ".join(where)
-            sql += " ORDER BY datetime(m.occurred_at) DESC LIMIT 200"
+            sql += f" ORDER BY {order} LIMIT ?"
+            params.append(limit)
             rows = conn.execute(sql, tuple(params)).fetchall()
             self._send_json(HTTPStatus.OK, {"items": [dict(r) for r in rows]})
             return
@@ -1122,10 +1190,17 @@ class AppHandler(BaseHTTPRequestHandler):
             status = (query.get("status") or ["in"])[0]
             q = normalize_text((query.get("q") or [""])[0])
             post_val = (query.get("post") or [""])[0].strip()
+            date = (query.get("date") or [""])[0]
+            sort = ((query.get("sort") or ["checkin_desc"])[0] or "checkin_desc").strip()
+            try:
+                limit = max(1, min(500, int((query.get("limit") or ["200"])[0] or "200")))
+            except Exception:
+                limit = 200
+            bounds = _day_bounds(date)
             params = []
             where = []
             if status in ("in", "out"):
-                where.append("status = ?")
+                where.append("g.status = ?")
                 params.append(status)
             if post_val:
                 if post_val == "Pintu Utama":
@@ -1140,6 +1215,12 @@ class AppHandler(BaseHTTPRequestHandler):
             if q:
                 where.append("(lower(name) LIKE ? OR lower(instansi) LIKE ? OR lower(purpose) LIKE ?)")
                 params.extend([f"%{q}%", f"%{q}%", f"%{q}%"])
+            if bounds:
+                where.append("g.checkin_at BETWEEN ? AND ?")
+                params.extend([bounds[0], bounds[1]])
+            order = "datetime(g.checkin_at) DESC"
+            if sort == "checkin_asc":
+                order = "datetime(g.checkin_at) ASC"
             sql = """
               SELECT g.id, g.name, g.instansi, g.purpose, g.meet_person, g.checkin_at, g.checkout_at, g.notes, g.status,
                      u.display_name AS created_by_name, g.shift, g.post
@@ -1148,13 +1229,21 @@ class AppHandler(BaseHTTPRequestHandler):
             """
             if where:
                 sql += " WHERE " + " AND ".join(where)
-            sql += " ORDER BY datetime(g.checkin_at) DESC LIMIT 200"
+            sql += f" ORDER BY {order} LIMIT ?"
+            params.append(limit)
             rows = conn.execute(sql, tuple(params)).fetchall()
             self._send_json(HTTPStatus.OK, {"items": [dict(r) for r in rows]})
             return
 
         if path == "/api/tasks":
             q = normalize_text((query.get("q") or [""])[0])
+            date = (query.get("date") or [""])[0]
+            sort = ((query.get("sort") or ["occurred_desc"])[0] or "occurred_desc").strip()
+            try:
+                limit = max(1, min(500, int((query.get("limit") or ["200"])[0] or "200")))
+            except Exception:
+                limit = 200
+            bounds = _day_bounds(date)
             status = (query.get("status") or ["active"])[0].strip().lower()
             params = []
             where = []
@@ -1166,6 +1255,12 @@ class AppHandler(BaseHTTPRequestHandler):
             if q:
                 where.append("(lower(kind) LIKE ? OR lower(destination) LIKE ? OR lower(notes) LIKE ? OR lower(COALESCE(extra_json,'')) LIKE ?)")
                 params.extend([f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%"])
+            if bounds:
+                where.append("t.occurred_at BETWEEN ? AND ?")
+                params.extend([bounds[0], bounds[1]])
+            order = "datetime(t.occurred_at) DESC"
+            if sort == "occurred_asc":
+                order = "datetime(t.occurred_at) ASC"
             sql = """
               SELECT t.id, t.kind, t.occurred_at, t.destination, t.notes, t.extra_json, COALESCE(t.status,'active') AS status, t.void_reason, u.display_name AS created_by_name, t.shift, t.post
               FROM task_entries t
@@ -1173,7 +1268,8 @@ class AppHandler(BaseHTTPRequestHandler):
             """
             if where:
                 sql += " WHERE " + " AND ".join(where)
-            sql += " ORDER BY datetime(t.occurred_at) DESC LIMIT 200"
+            sql += f" ORDER BY {order} LIMIT ?"
+            params.append(limit)
             rows = conn.execute(sql, tuple(params)).fetchall()
             items = []
             for r in rows:
@@ -1198,25 +1294,68 @@ class AppHandler(BaseHTTPRequestHandler):
                 date = datetime.now().strftime("%Y-%m-%d")
             start = f"{date}T00:00:00"
             end = f"{date}T23:59:59"
+            f_shift = (shift or sess["shift"] or "").strip()
+            f_post = (post or sess["post"] or "").strip()
+            key_where = "checkout_at BETWEEN ? AND ?"
+            key_params = [start, end]
+            if f_shift:
+                key_where += " AND created_shift=?"
+                key_params.append(f_shift)
+            if f_post:
+                key_where += " AND created_post=?"
+                key_params.append(f_post)
 
             key_total = conn.execute(
-                "SELECT COUNT(1) AS c FROM key_transactions WHERE checkout_at BETWEEN ? AND ?",
-                (start, end),
+                f"SELECT COUNT(1) AS c FROM key_transactions WHERE {key_where}",
+                tuple(key_params),
             ).fetchone()["c"]
+            key_open_where = "status='open'"
+            key_open_params = []
+            if f_shift:
+                key_open_where += " AND created_shift=?"
+                key_open_params.append(f_shift)
+            if f_post:
+                key_open_where += " AND created_post=?"
+                key_open_params.append(f_post)
             key_open = conn.execute(
-                "SELECT COUNT(1) AS c FROM key_transactions WHERE status='open'",
+                f"SELECT COUNT(1) AS c FROM key_transactions WHERE {key_open_where}",
+                tuple(key_open_params),
             ).fetchone()["c"]
+            guest_where = "checkin_at BETWEEN ? AND ?"
+            guest_params = [start, end]
+            if f_shift:
+                guest_where += " AND shift=?"
+                guest_params.append(f_shift)
+            if f_post:
+                guest_where += " AND post=?"
+                guest_params.append(f_post)
             guest_total = conn.execute(
-                "SELECT COUNT(1) AS c FROM guest_entries WHERE checkin_at BETWEEN ? AND ?",
-                (start, end),
+                f"SELECT COUNT(1) AS c FROM guest_entries WHERE {guest_where}",
+                tuple(guest_params),
             ).fetchone()["c"]
+            task_where = "occurred_at BETWEEN ? AND ?"
+            task_params = [start, end]
+            if f_shift:
+                task_where += " AND shift=?"
+                task_params.append(f_shift)
+            if f_post:
+                task_where += " AND post=?"
+                task_params.append(f_post)
             task_total = conn.execute(
-                "SELECT COUNT(1) AS c FROM task_entries WHERE occurred_at BETWEEN ? AND ?",
-                (start, end),
+                f"SELECT COUNT(1) AS c FROM task_entries WHERE {task_where}",
+                tuple(task_params),
             ).fetchone()["c"]
+            mutasi_where = "occurred_at BETWEEN ? AND ?"
+            mutasi_params = [start, end]
+            if f_shift:
+                mutasi_where += " AND shift=?"
+                mutasi_params.append(f_shift)
+            if f_post:
+                mutasi_where += " AND post=?"
+                mutasi_params.append(f_post)
             mutasi_total = conn.execute(
-                "SELECT COUNT(1) AS c FROM mutasi_entries WHERE occurred_at BETWEEN ? AND ?",
-                (start, end),
+                f"SELECT COUNT(1) AS c FROM mutasi_entries WHERE {mutasi_where}",
+                tuple(mutasi_params),
             ).fetchone()["c"]
 
             self._send_json(

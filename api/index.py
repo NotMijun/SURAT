@@ -2054,21 +2054,67 @@ def report_shift(request: Request, date: str = "", shift: str = "", post: str = 
             date = datetime.now().strftime("%Y-%m-%d")
         start = f"{date}T00:00:00"
         end = f"{date}T23:59:59"
+        f_shift = (shift or sess["shift"] or "").strip()
+        f_post = (post or sess["post"] or "").strip()
         with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(1) FROM key_transactions WHERE checkout_at BETWEEN %s AND %s", (start, end))
+            key_where = ["checkout_at BETWEEN %s AND %s"]
+            key_params: list[Any] = [start, end]
+            if f_shift:
+                key_where.append("created_shift=%s")
+                key_params.append(f_shift)
+            if f_post:
+                key_where.append("created_post=%s")
+                key_params.append(f_post)
+            cur.execute(f"SELECT COUNT(1) FROM key_transactions WHERE {' AND '.join(key_where)}", tuple(key_params))
             key_total = int(cur.fetchone()[0] or 0)
-            cur.execute("SELECT COUNT(1) FROM key_transactions WHERE status='open'")
+
+            key_open_where = ["status='open'"]
+            key_open_params: list[Any] = []
+            if f_shift:
+                key_open_where.append("created_shift=%s")
+                key_open_params.append(f_shift)
+            if f_post:
+                key_open_where.append("created_post=%s")
+                key_open_params.append(f_post)
+            cur.execute(f"SELECT COUNT(1) FROM key_transactions WHERE {' AND '.join(key_open_where)}", tuple(key_open_params))
             key_open = int(cur.fetchone()[0] or 0)
-            cur.execute("SELECT COUNT(1) FROM guest_entries WHERE checkin_at BETWEEN %s AND %s", (start, end))
+
+            guest_where = ["checkin_at BETWEEN %s AND %s"]
+            guest_params: list[Any] = [start, end]
+            if f_shift:
+                guest_where.append("shift=%s")
+                guest_params.append(f_shift)
+            if f_post:
+                guest_where.append("post=%s")
+                guest_params.append(f_post)
+            cur.execute(f"SELECT COUNT(1) FROM guest_entries WHERE {' AND '.join(guest_where)}", tuple(guest_params))
             guest_total = int(cur.fetchone()[0] or 0)
-            cur.execute("SELECT COUNT(1) FROM task_entries WHERE occurred_at BETWEEN %s AND %s", (start, end))
+
+            task_where = ["occurred_at BETWEEN %s AND %s"]
+            task_params: list[Any] = [start, end]
+            if f_shift:
+                task_where.append("shift=%s")
+                task_params.append(f_shift)
+            if f_post:
+                task_where.append("post=%s")
+                task_params.append(f_post)
+            cur.execute(f"SELECT COUNT(1) FROM task_entries WHERE {' AND '.join(task_where)}", tuple(task_params))
             task_total = int(cur.fetchone()[0] or 0)
-            cur.execute("SELECT COUNT(1) FROM mutasi_entries WHERE occurred_at BETWEEN %s AND %s", (start, end))
+
+            mutasi_where = ["occurred_at BETWEEN %s AND %s"]
+            mutasi_params: list[Any] = [start, end]
+            if f_shift:
+                mutasi_where.append("shift=%s")
+                mutasi_params.append(f_shift)
+            if f_post:
+                mutasi_where.append("post=%s")
+                mutasi_params.append(f_post)
+            cur.execute(f"SELECT COUNT(1) FROM mutasi_entries WHERE {' AND '.join(mutasi_where)}", tuple(mutasi_params))
             mutasi_total = int(cur.fetchone()[0] or 0)
         return {
             "date": date,
-            "shift": shift or sess["shift"],
-            "post": post or sess["post"],
+            "shift": f_shift,
+            "post": f_post,
             "counts": {"keys_total": key_total, "keys_open": key_open, "guests_total": guest_total, "tasks_total": task_total, "mutasi_total": mutasi_total},
         }
 

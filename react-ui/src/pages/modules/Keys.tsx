@@ -82,10 +82,6 @@ export default function KeysPage({ me }: { me: Me }) {
   }, [date, limit, q, refresh, sort, filterBy, today])
 
   useEffect(() => {
-    refresh({ q: '', date: today, sort: 'checkout_desc', limit: 200, closedDateField: 'checkout' }).catch(() => {})
-  }, [refresh, today])
-
-  useEffect(() => {
     const raw = localStorage.getItem(draftKey)
     if (!raw) return
     try {
@@ -584,7 +580,7 @@ export default function KeysPage({ me }: { me: Me }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {closedView.slice(0, 120).map((r) => (
+                  {closedView.map((r) => (
                     <tr key={r.id}>
                       <td data-label="Nama">{r.borrower_name}</td>
                       <td data-label="Ruangan">{r.key_name}</td>
