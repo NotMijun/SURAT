@@ -2,7 +2,7 @@ import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { Me, MutasiEntry } from '../../types'
 import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
-import { useToast } from '../../components/ToastHost'
+import { useConfirm, useToast } from '../../components/ToastHost'
 
 const KATEGORI_OPTS: Record<string, string[]> = {
   'Kejadian Operasional': ['Catering', 'Galon', 'Patroli/Ronda', 'Pemeliharaan', 'Lainnya'],
@@ -12,6 +12,7 @@ const KATEGORI_OPTS: Record<string, string[]> = {
 
 export default function MutasiPage({ me }: { me: Me }) {
   const toast = useToast()
+  const confirm = useConfirm()
   const today = toYmd(new Date())
   const draftKey = `draft:mutasi:${me.user.id}`
   const [q, setQ] = useState('')
@@ -116,7 +117,11 @@ export default function MutasiPage({ me }: { me: Me }) {
         }
       } catch (err: any) {
         if (err?.status === 409) {
-          const ok = window.confirm(`${String(err?.message || 'Data serupa sudah ada')}\n\nTetap simpan?`)
+          const ok = await confirm.confirm({
+            title: 'Konfirmasi Simpan',
+            message: `${String(err?.message || 'Data serupa sudah ada')}\n\nTetap simpan?`,
+            confirmText: 'Tetap Simpan',
+          })
           if (!ok) throw err
           if (photo) {
             const form = new FormData()
@@ -156,7 +161,13 @@ export default function MutasiPage({ me }: { me: Me }) {
   const doEdit = async (r: MutasiEntry) => {
     if (!canAdmin) return
     if (r.status === 'void') return
-    const next = window.prompt('Ubah deskripsi mutasi:', r.description || '')
+    const next = await confirm.prompt({
+      title: 'Edit Mutasi',
+      message: 'Ubah deskripsi mutasi:',
+      initialValue: r.description || '',
+      confirmText: 'Simpan',
+      cancelText: 'Batal',
+    })
     if (next == null) return
     const value = next.trim()
     if (!value) return
@@ -172,7 +183,7 @@ export default function MutasiPage({ me }: { me: Me }) {
   const doVoid = async (r: MutasiEntry) => {
     if (!canAdmin) return
     if (r.status === 'void') return
-    const reason = window.prompt('Alasan void:', '')
+    const reason = await confirm.prompt({ title: 'Void Mutasi', message: 'Alasan void:', initialValue: '', confirmText: 'Void', cancelText: 'Batal', required: true })
     if (reason == null) return
     const value = reason.trim()
     if (!value) return
@@ -343,16 +354,18 @@ export default function MutasiPage({ me }: { me: Me }) {
                   type="button"
                   disabled={busy}
                   onClick={() => {
-                    const ok = window.confirm('Hapus draft mutasi?')
-                    if (!ok) return
-                    localStorage.removeItem(draftKey)
-                    setFormError('')
-                    setKategori('Kejadian Operasional')
-                    setSubKategori('Catering')
-                    setTime(nowHm())
-                    setDesc('')
-                    setPhoto(null)
-                    setPhotoKey((x) => x + 1)
+                    ;(async () => {
+                      const ok = await confirm.confirm({ title: 'Reset Draft', message: 'Hapus draft mutasi?', confirmText: 'Hapus' })
+                      if (!ok) return
+                      localStorage.removeItem(draftKey)
+                      setFormError('')
+                      setKategori('Kejadian Operasional')
+                      setSubKategori('Catering')
+                      setTime(nowHm())
+                      setDesc('')
+                      setPhoto(null)
+                      setPhotoKey((x) => x + 1)
+                    })().catch(() => {})
                   }}
                 >
                   Reset

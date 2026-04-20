@@ -3,7 +3,7 @@ import { Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import { apiGet, apiPost } from '../lib/api'
 import { accentKey, clearToken, compactKey, themeKey, tokenKey } from '../lib/storage'
 import type { Me } from '../types'
-import { useToast } from '../components/ToastHost'
+import { useConfirm, useToast } from '../components/ToastHost'
 import DashboardPage from './modules/Dashboard'
 import KeysPage from './modules/Keys'
 import GuestsPage from './modules/Guests'
@@ -18,6 +18,7 @@ type Accent = (typeof accents)[number]
 export default function Shell() {
   const nav = useNavigate()
   const toast = useToast()
+  const confirm = useConfirm()
   const token = useMemo(() => localStorage.getItem(tokenKey) || '', [])
   const [me, setMe] = useState<Me | null>(null)
   const [loading, setLoading] = useState(true)
@@ -148,7 +149,7 @@ export default function Shell() {
   }
 
   const logoutAll = async () => {
-    const ok = window.confirm('Keluar dari semua perangkat?')
+    const ok = await confirm.confirm({ title: 'Keluar Semua', message: 'Keluar dari semua perangkat?', confirmText: 'Keluar Semua' })
     if (!ok) return
     try {
       await apiPost('/api/logout_all', {})

@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../lib/api'
 import type { AdminUser, AuditRow, Me } from '../../types'
-import { useToast } from '../../components/ToastHost'
+import { useConfirm, useToast } from '../../components/ToastHost'
 
 type SecurityHistoryRow = {
   id: number
@@ -24,6 +24,7 @@ const titleForRole = (role: string) => {
 
 export default function AdminPage({ me }: { me: Me }) {
   const toast = useToast()
+  const confirm = useConfirm()
   const [userQ, setUserQ] = useState('')
   const [auditQ, setAuditQ] = useState('')
   const [users, setUsers] = useState<AdminUser[]>([])
@@ -118,11 +119,18 @@ export default function AdminPage({ me }: { me: Me }) {
   }
 
   const resetPassword = async (id: number) => {
-    const ok = window.confirm('Reset password user ini? Password lama akan diganti.')
+    const ok = await confirm.confirm({ title: 'Reset Password', message: 'Reset password user ini? Password lama akan diganti.', confirmText: 'Reset' })
     if (!ok) return
     try {
       const res = await apiPost<{ temp_password: string }>(`/api/admin/users/${id}/reset_password`, {})
-      window.prompt('Password sementara (simpan dan segera sampaikan):', res.temp_password)
+      await confirm.prompt({
+        title: 'Password Sementara',
+        message: 'Password sementara (simpan dan segera sampaikan):',
+        initialValue: res.temp_password,
+        readOnly: true,
+        showCancel: false,
+        confirmText: 'Tutup',
+      })
       toast.push('Password user berhasil direset', 'success')
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal reset password'), 'error')
@@ -130,7 +138,11 @@ export default function AdminPage({ me }: { me: Me }) {
   }
 
   const deleteUser = async (id: number) => {
-    const ok = window.confirm('Hapus akun ini? Jika tidak bisa dihapus karena ada relasi data, akun akan dinonaktifkan.')
+    const ok = await confirm.confirm({
+      title: 'Hapus Akun',
+      message: 'Hapus akun ini? Jika tidak bisa dihapus karena ada relasi data, akun akan dinonaktifkan.',
+      confirmText: 'Hapus',
+    })
     if (!ok) return
     try {
       const res = await apiDelete<{ mode: string }>(`/api/admin/users/${id}/delete`)
@@ -143,7 +155,11 @@ export default function AdminPage({ me }: { me: Me }) {
 
   const clearHistory = async () => {
     if (!selectedUserId) return
-    const ok = window.confirm('Hapus semua riwayat security ini? Ini akan menghapus catatan login/logout dan aktivitasnya.')
+    const ok = await confirm.confirm({
+      title: 'Hapus Riwayat',
+      message: 'Hapus semua riwayat security ini? Ini akan menghapus catatan login/logout dan aktivitasnya.',
+      confirmText: 'Hapus',
+    })
     if (!ok) return
     try {
       const res = await apiDelete<{ deleted: number }>(`/api/admin/security_history?user_id=${encodeURIComponent(String(selectedUserId))}&keep=0`)
@@ -194,7 +210,7 @@ export default function AdminPage({ me }: { me: Me }) {
   }
 
   const disableKeyMaster = async (id: number) => {
-    const ok = window.confirm('Nonaktifkan master kunci ini?')
+    const ok = await confirm.confirm({ title: 'Nonaktifkan Master Kunci', message: 'Nonaktifkan master kunci ini?', confirmText: 'Nonaktifkan' })
     if (!ok) return
     try {
       await apiDelete(`/api/admin/keys/master/${id}`)
@@ -216,7 +232,7 @@ export default function AdminPage({ me }: { me: Me }) {
   }
 
   const deleteVendor = async (id: number) => {
-    const ok = window.confirm('Hapus vendor ini?')
+    const ok = await confirm.confirm({ title: 'Hapus Vendor', message: 'Hapus vendor ini?', confirmText: 'Hapus' })
     if (!ok) return
     try {
       await apiDelete(`/api/admin/vendors/catering/${id}`)
@@ -234,7 +250,7 @@ export default function AdminPage({ me }: { me: Me }) {
     const id = String(fd.get('id') || '')
     const note = String(fd.get('note') || '')
     if (!table || !id) return
-    const ok = window.confirm(`Hapus data ${table} ID ${id}?`)
+    const ok = await confirm.confirm({ title: 'Hapus Data', message: `Hapus data ${table} ID ${id}?`, confirmText: 'Hapus' })
     if (!ok) return
     try {
       await apiDelete(`/api/admin/records/${encodeURIComponent(table)}?id=${encodeURIComponent(id)}&note=${encodeURIComponent(note)}`)

@@ -2,10 +2,11 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiGet, apiGetBlob, apiPost, apiPostForm } from '../../lib/api'
 import type { GuestEntry, Me } from '../../types'
 import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
-import { useToast } from '../../components/ToastHost'
+import { useConfirm, useToast } from '../../components/ToastHost'
 
 export default function GuestsPage({ me }: { me: Me }) {
   const toast = useToast()
+  const confirm = useConfirm()
   const today = useMemo(() => toYmd(new Date()), [])
   const draftKey = useMemo(() => `draft:guests:${me.user.id}`, [me.user.id])
   const [q, setQ] = useState('')
@@ -108,7 +109,11 @@ export default function GuestsPage({ me }: { me: Me }) {
         }
       } catch (err: any) {
         if (err?.status === 409) {
-          const ok = window.confirm(`${String(err?.message || 'Data serupa sudah ada')}\n\nTetap simpan?`)
+          const ok = await confirm.confirm({
+            title: 'Konfirmasi Simpan',
+            message: `${String(err?.message || 'Data serupa sudah ada')}\n\nTetap simpan?`,
+            confirmText: 'Tetap Simpan',
+          })
           if (!ok) throw err
           if (photo) {
             const form = new FormData()
@@ -149,7 +154,11 @@ export default function GuestsPage({ me }: { me: Me }) {
   }
 
   const checkout = async (r: GuestEntry) => {
-    const ok = window.confirm(`Checkout tamu ini?\n\n${r.name} · ${r.instansi}\nMasuk: ${fmtDateTime(r.checkin_at)}\n\nLanjutkan?`)
+    const ok = await confirm.confirm({
+      title: 'Checkout Tamu',
+      message: `Checkout tamu ini?\n\n${r.name} · ${r.instansi}\nMasuk: ${fmtDateTime(r.checkin_at)}\n\nLanjutkan?`,
+      confirmText: 'Checkout',
+    })
     if (!ok) return
     try {
       await apiPost(`/api/guests/${r.id}/checkout`, {})
@@ -337,18 +346,20 @@ export default function GuestsPage({ me }: { me: Me }) {
                   className="button button-secondary"
                   type="button"
                   onClick={() => {
-                    const ok = window.confirm('Hapus draft input tamu?')
-                    if (!ok) return
-                    localStorage.removeItem(draftKey)
-                    setName('')
-                    setInstansi('')
-                    setPurpose('')
-                    setMeet('')
-                    setNotes('')
-                    setTime(nowHm())
-                    setFormError('')
-                    setPhoto(null)
-                    setPhotoKey((x) => x + 1)
+                    ;(async () => {
+                      const ok = await confirm.confirm({ title: 'Reset Draft', message: 'Hapus draft input tamu?', confirmText: 'Hapus' })
+                      if (!ok) return
+                      localStorage.removeItem(draftKey)
+                      setName('')
+                      setInstansi('')
+                      setPurpose('')
+                      setMeet('')
+                      setNotes('')
+                      setTime(nowHm())
+                      setFormError('')
+                      setPhoto(null)
+                      setPhotoKey((x) => x + 1)
+                    })().catch(() => {})
                   }}
                   disabled={busy}
                 >

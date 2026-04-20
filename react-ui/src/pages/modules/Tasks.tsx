@@ -2,10 +2,11 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { Me, TaskEntry } from '../../types'
 import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
-import { useToast } from '../../components/ToastHost'
+import { useConfirm, useToast } from '../../components/ToastHost'
 
 export default function TasksPage({ me }: { me: Me }) {
   const toast = useToast()
+  const confirm = useConfirm()
   const today = toYmd(new Date())
   const draftKey = useMemo(() => `draft:tasks:${me.user.id}`, [me.user.id])
   const [q, setQ] = useState('')
@@ -196,7 +197,14 @@ export default function TasksPage({ me }: { me: Me }) {
   const doEdit = async (r: TaskEntry) => {
     if (!canAdmin) return
     if (r.status === 'void') return
-    const next = window.prompt('Ubah catatan tugas:', r.notes || '')
+    const next = await confirm.prompt({
+      title: 'Edit Catatan',
+      message: 'Ubah catatan tugas:',
+      initialValue: r.notes || '',
+      confirmText: 'Simpan',
+      cancelText: 'Batal',
+      required: false,
+    })
     if (next == null) return
     const value = next.trim()
     try {
@@ -211,7 +219,7 @@ export default function TasksPage({ me }: { me: Me }) {
   const doVoid = async (r: TaskEntry) => {
     if (!canAdmin) return
     if (r.status === 'void') return
-    const reason = window.prompt('Alasan void:', '')
+    const reason = await confirm.prompt({ title: 'Void Tugas', message: 'Alasan void:', initialValue: '', confirmText: 'Void', cancelText: 'Batal', required: true })
     if (reason == null) return
     const value = reason.trim()
     if (!value) return
@@ -298,7 +306,11 @@ export default function TasksPage({ me }: { me: Me }) {
         }
       } catch (err: any) {
         if (err?.status === 409) {
-          const ok = window.confirm(`${String(err?.message || 'Data serupa sudah ada')}\n\nTetap simpan?`)
+          const ok = await confirm.confirm({
+            title: 'Konfirmasi Simpan',
+            message: `${String(err?.message || 'Data serupa sudah ada')}\n\nTetap simpan?`,
+            confirmText: 'Tetap Simpan',
+          })
           if (!ok) throw err
           if (photo) {
             const form = new FormData()
@@ -586,25 +598,27 @@ export default function TasksPage({ me }: { me: Me }) {
                   type="button"
                   disabled={busy}
                   onClick={() => {
-                    const ok = window.confirm('Hapus draft input tugas?')
-                    if (!ok) return
-                    localStorage.removeItem(draftKey)
-                    setFormError('')
-                    setTab('umum')
-                    setKind('Antar sampel')
-                    setTime(nowHm())
-                    setDestination('')
-                    setNotes('')
-                    setVendor('')
-                    setPomStatus('Datang')
-                    setPomArrivedTime('')
-                    setBoxCount('')
-                    setGalonUsed('')
-                    setGalonUnused('')
-                    setGalonReturned('')
-                    setGalonTo('')
-                    setPhoto(null)
-                    setPhotoKey((x) => x + 1)
+                    ;(async () => {
+                      const ok = await confirm.confirm({ title: 'Reset Draft', message: 'Hapus draft input tugas?', confirmText: 'Hapus' })
+                      if (!ok) return
+                      localStorage.removeItem(draftKey)
+                      setFormError('')
+                      setTab('umum')
+                      setKind('Antar sampel')
+                      setTime(nowHm())
+                      setDestination('')
+                      setNotes('')
+                      setVendor('')
+                      setPomStatus('Datang')
+                      setPomArrivedTime('')
+                      setBoxCount('')
+                      setGalonUsed('')
+                      setGalonUnused('')
+                      setGalonReturned('')
+                      setGalonTo('')
+                      setPhoto(null)
+                      setPhotoKey((x) => x + 1)
+                    })().catch(() => {})
                   }}
                 >
                   Reset

@@ -2,7 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiGet, apiGetBlob, apiPost, apiPostForm } from '../../lib/api'
 import type { KeyMasterItem, KeyTx, Me } from '../../types'
 import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
-import { useToast } from '../../components/ToastHost'
+import { useConfirm, useToast } from '../../components/ToastHost'
 
 const badge = (s: KeyTx['status']) => {
   if (s === 'closed') return <span className="badge badge-ok">Diambil</span>
@@ -12,6 +12,7 @@ const badge = (s: KeyTx['status']) => {
 
 export default function KeysPage({ me }: { me: Me }) {
   const toast = useToast()
+  const confirm = useConfirm()
   const today = useMemo(() => toYmd(new Date()), [])
   const draftKey = useMemo(() => `draft:keys:${me.user.id}`, [me.user.id])
   const [q, setQ] = useState('')
@@ -179,7 +180,7 @@ export default function KeysPage({ me }: { me: Me }) {
         }
       } catch (err: any) {
         const msg = String(err?.message || err || '')
-        const ok = window.confirm(`${msg}\n\nTetap simpan?`)
+        const ok = await confirm.confirm({ title: 'Konfirmasi Simpan', message: `${msg}\n\nTetap simpan?`, confirmText: 'Tetap Simpan' })
         if (!ok) throw err
         if (photo) {
           const form = new FormData()
@@ -216,7 +217,11 @@ export default function KeysPage({ me }: { me: Me }) {
   }
 
   const doReturn = async (r: KeyTx) => {
-    const ok = window.confirm(`Tandai kunci sudah diambil?\n\n${r.key_name} · ${r.borrower_name}\nTitip: ${fmtDateTime(r.checkout_at)}\n\nLanjutkan?`)
+    const ok = await confirm.confirm({
+      title: 'Ambil Kunci',
+      message: `Tandai kunci sudah diambil?\n\n${r.key_name} · ${r.borrower_name}\nTitip: ${fmtDateTime(r.checkout_at)}\n\nLanjutkan?`,
+      confirmText: 'Tandai Diambil',
+    })
     if (!ok) return
     try {
       await apiPost(`/api/keys/${r.id}/return`, {})
@@ -229,7 +234,7 @@ export default function KeysPage({ me }: { me: Me }) {
   }
 
   const doUndo = async (id: number) => {
-    const ok = window.confirm('Batalkan penitipan kunci ini?')
+    const ok = await confirm.confirm({ title: 'Undo Penitipan', message: 'Batalkan penitipan kunci ini?', confirmText: 'Batalkan' })
     if (!ok) return
     try {
       await apiPost(`/api/keys/${id}/undo`, {})
@@ -242,7 +247,11 @@ export default function KeysPage({ me }: { me: Me }) {
   }
 
   const doReopen = async (r: KeyTx) => {
-    const ok = window.confirm(`Undo ambil kunci ini (kembali status dipinjam)?\n\n${r.key_name} · ${r.borrower_name}\nTitip: ${fmtDateTime(r.checkout_at)}\nAmbil: ${fmtDateTime(r.checkin_at || '')}\n\nLanjutkan?`)
+    const ok = await confirm.confirm({
+      title: 'Undo Ambil',
+      message: `Undo ambil kunci ini (kembali status dipinjam)?\n\n${r.key_name} · ${r.borrower_name}\nTitip: ${fmtDateTime(r.checkout_at)}\nAmbil: ${fmtDateTime(r.checkin_at || '')}\n\nLanjutkan?`,
+      confirmText: 'Undo Ambil',
+    })
     if (!ok) return
     try {
       await apiPost(`/api/keys/${r.id}/reopen`, {})
@@ -456,18 +465,20 @@ export default function KeysPage({ me }: { me: Me }) {
                   type="button"
                   disabled={busy}
                   onClick={() => {
-                    const ok = window.confirm('Hapus draft penitipan kunci?')
-                    if (!ok) return
-                    localStorage.removeItem(draftKey)
-                    setFormError('')
-                    setBorrower('')
-                    setUnit('')
-                    setKeyName('')
-                    setNotes('')
-                    setTime(nowHm())
-                    setPetugasId(String(me.user.id))
-                    setPhoto(null)
-                    setPhotoKey((x) => x + 1)
+                    ;(async () => {
+                      const ok = await confirm.confirm({ title: 'Reset Draft', message: 'Hapus draft penitipan kunci?', confirmText: 'Hapus' })
+                      if (!ok) return
+                      localStorage.removeItem(draftKey)
+                      setFormError('')
+                      setBorrower('')
+                      setUnit('')
+                      setKeyName('')
+                      setNotes('')
+                      setTime(nowHm())
+                      setPetugasId(String(me.user.id))
+                      setPhoto(null)
+                      setPhotoKey((x) => x + 1)
+                    })().catch(() => {})
                   }}
                 >
                   Reset

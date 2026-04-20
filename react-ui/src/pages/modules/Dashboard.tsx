@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { apiGet } from '../../lib/api'
 import type { KeyTx, Me, ShiftReport } from '../../types'
 import { fmtTime, toYmd } from '../../lib/time'
-import { useToast } from '../../components/ToastHost'
+import { useConfirm, useToast } from '../../components/ToastHost'
 
 type HandoverRes = {
   open_keys: Array<{ id: number; borrower_name: string; unit: string; key_name: string; checkout_at: string; notes: string | null; status: string }>
@@ -13,6 +13,7 @@ type HandoverRes = {
 
 export default function DashboardPage({ me }: { me: Me }) {
   const toast = useToast()
+  const confirm = useConfirm()
   const today = useMemo(() => toYmd(new Date()), [])
   const [report, setReport] = useState<ShiftReport | null>(null)
   const [keysOpen, setKeysOpen] = useState<KeyTx[]>([])
@@ -120,7 +121,7 @@ export default function DashboardPage({ me }: { me: Me }) {
       await navigator.clipboard.writeText(text)
       toast.push('Ringkasan disalin', 'success')
     } catch {
-      window.prompt('Salin ringkasan ini:', text)
+      await confirm.prompt({ title: 'Ringkasan Serah Terima', message: 'Salin ringkasan ini:', initialValue: text, readOnly: true, showCancel: false, confirmText: 'Tutup' })
     }
   }
 
