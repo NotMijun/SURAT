@@ -1,4 +1,5 @@
 import base64
+import cgi
 import hashlib
 import hmac
 import json
@@ -30,6 +31,7 @@ LOGIN_RATE_MAX_ATTEMPTS = 8
 DEDUPE_WINDOW_SECONDS = max(10, min(10 * 60, int(os.getenv("DEDUPE_WINDOW_SECONDS", 90))))
 VOID_WINDOW_SECONDS = max(10, min(24 * 60 * 60, int(os.getenv("VOID_WINDOW_SECONDS", 10 * 60))))
 KEY_REOPEN_WINDOW_SECONDS = max(10, min(24 * 60 * 60, int(os.getenv("KEY_REOPEN_WINDOW_SECONDS", 10 * 60))))
+MAX_PHOTO_BYTES = 3 * 1024 * 1024
 
 
 def utc_now_iso() -> str:
@@ -170,6 +172,16 @@ def db_init() -> None:
     cur.execute("CREATE INDEX IF NOT EXISTS idx_key_open ON key_transactions(status, key_name_norm)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_key_borrower ON key_transactions(borrower_name_norm)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_key_checkout ON key_transactions(checkout_at)")
+    cur.execute("PRAGMA table_info(key_transactions)")
+    key_cols = {row["name"] for row in cur.fetchall()}
+    if "photo_b64" not in key_cols:
+        cur.execute("ALTER TABLE key_transactions ADD COLUMN photo_b64 TEXT")
+    if "photo_mime" not in key_cols:
+        cur.execute("ALTER TABLE key_transactions ADD COLUMN photo_mime TEXT")
+    if "photo_name" not in key_cols:
+        cur.execute("ALTER TABLE key_transactions ADD COLUMN photo_name TEXT")
+    if "photo_uploaded_at" not in key_cols:
+        cur.execute("ALTER TABLE key_transactions ADD COLUMN photo_uploaded_at TEXT")
 
     cur.execute(
         """
@@ -197,6 +209,14 @@ def db_init() -> None:
         cur.execute("ALTER TABLE mutasi_entries ADD COLUMN voided_by INTEGER REFERENCES users(id)")
     if "voided_at" not in mutasi_cols:
         cur.execute("ALTER TABLE mutasi_entries ADD COLUMN voided_at TEXT")
+    if "photo_b64" not in mutasi_cols:
+        cur.execute("ALTER TABLE mutasi_entries ADD COLUMN photo_b64 TEXT")
+    if "photo_mime" not in mutasi_cols:
+        cur.execute("ALTER TABLE mutasi_entries ADD COLUMN photo_mime TEXT")
+    if "photo_name" not in mutasi_cols:
+        cur.execute("ALTER TABLE mutasi_entries ADD COLUMN photo_name TEXT")
+    if "photo_uploaded_at" not in mutasi_cols:
+        cur.execute("ALTER TABLE mutasi_entries ADD COLUMN photo_uploaded_at TEXT")
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_mutasi_occurred ON mutasi_entries(occurred_at)")
 
@@ -223,6 +243,16 @@ def db_init() -> None:
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_guest_status ON guest_entries(status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_guest_checkin ON guest_entries(checkin_at)")
+    cur.execute("PRAGMA table_info(guest_entries)")
+    guest_cols = {row["name"] for row in cur.fetchall()}
+    if "photo_b64" not in guest_cols:
+        cur.execute("ALTER TABLE guest_entries ADD COLUMN photo_b64 TEXT")
+    if "photo_mime" not in guest_cols:
+        cur.execute("ALTER TABLE guest_entries ADD COLUMN photo_mime TEXT")
+    if "photo_name" not in guest_cols:
+        cur.execute("ALTER TABLE guest_entries ADD COLUMN photo_name TEXT")
+    if "photo_uploaded_at" not in guest_cols:
+        cur.execute("ALTER TABLE guest_entries ADD COLUMN photo_uploaded_at TEXT")
 
     cur.execute(
         """
@@ -254,6 +284,14 @@ def db_init() -> None:
         cur.execute("ALTER TABLE task_entries ADD COLUMN voided_by INTEGER REFERENCES users(id)")
     if "voided_at" not in task_cols:
         cur.execute("ALTER TABLE task_entries ADD COLUMN voided_at TEXT")
+    if "photo_b64" not in task_cols:
+        cur.execute("ALTER TABLE task_entries ADD COLUMN photo_b64 TEXT")
+    if "photo_mime" not in task_cols:
+        cur.execute("ALTER TABLE task_entries ADD COLUMN photo_mime TEXT")
+    if "photo_name" not in task_cols:
+        cur.execute("ALTER TABLE task_entries ADD COLUMN photo_name TEXT")
+    if "photo_uploaded_at" not in task_cols:
+        cur.execute("ALTER TABLE task_entries ADD COLUMN photo_uploaded_at TEXT")
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_task_occurred ON task_entries(occurred_at)")
 
@@ -638,13 +676,19 @@ class AppHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         return
 
-    def _send(self, status: int, body: bytes, content_type: str):
+    def _send_bytes(self, status: int, body: bytes, content_type: str, extra_headers: dict[str, str] | None = None):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        if extra_headers:
+            for k, v in extra_headers.items():
+                self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
+
+    def _send(self, status: int, body: bytes, content_type: str):
+        self._send_bytes(status, body, content_type)
 
     def _send_json(self, status: int, obj):
         self._send(status, json_dumps(obj), "application/json; charset=utf-8")
@@ -662,6 +706,41 @@ class AppHandler(BaseHTTPRequestHandler):
             return json.loads(raw.decode("utf-8"))
         except Exception:
             raise HttpError(HTTPStatus.BAD_REQUEST, "JSON tidak valid")
+
+    def _read_multipart(self) -> tuple[dict[str, str], dict[str, cgi.FieldStorage]]:
+        env = {
+            "REQUEST_METHOD": "POST",
+            "CONTENT_TYPE": self.headers.get("Content-Type") or "",
+        }
+        fs = cgi.FieldStorage(fp=self.rfile, headers=self.headers, environ=env, keep_blank_values=True)
+        fields: dict[str, str] = {}
+        files: dict[str, cgi.FieldStorage] = {}
+        if not fs:
+            return (fields, files)
+        for key in fs.keys():
+            item = fs[key]
+            if isinstance(item, list):
+                item = item[0]
+            if getattr(item, "filename", None):
+                files[key] = item
+            else:
+                fields[key] = str(getattr(item, "value", "") or "")
+        return (fields, files)
+
+    def _read_photo_item(self, item: cgi.FieldStorage | None) -> tuple[str | None, str | None, str | None, str | None]:
+        if not item or not getattr(item, "file", None):
+            return (None, None, None, None)
+        ctype = (getattr(item, "type", "") or "").strip().lower()
+        if not ctype.startswith("image/"):
+            raise HttpError(HTTPStatus.BAD_REQUEST, "File foto harus berupa gambar (image/*)")
+        data = item.file.read() or b""
+        if not data:
+            return (None, None, None, None)
+        if len(data) > MAX_PHOTO_BYTES:
+            raise HttpError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Ukuran foto terlalu besar (maks 3MB)")
+        b64 = base64.b64encode(data).decode("ascii")
+        name = (getattr(item, "filename", "") or "").strip() or "photo"
+        return (b64, ctype, name, utc_now_iso())
 
     def _parse_cookies(self) -> SimpleCookie:
         c = SimpleCookie()
@@ -1016,6 +1095,54 @@ class AppHandler(BaseHTTPRequestHandler):
 
         sess = self._require_session(conn)
 
+        if path.startswith("/api/keys/") and path.endswith("/photo"):
+            parts = path.split("/")
+            record_id = parts[3] if len(parts) >= 4 else ""
+            row = conn.execute("SELECT photo_b64, photo_mime, photo_name FROM key_transactions WHERE id=?", (record_id,)).fetchone()
+            if not row or not (row["photo_b64"] or ""):
+                raise HttpError(HTTPStatus.NOT_FOUND, "Foto tidak ditemukan")
+            data = base64.b64decode((row["photo_b64"] or "").encode("ascii"))
+            mime = (row["photo_mime"] or "application/octet-stream").strip()
+            name = (row["photo_name"] or "photo").strip()
+            self._send_bytes(HTTPStatus.OK, data, mime, {"Content-Disposition": f'inline; filename="{name}"'})
+            return
+
+        if path.startswith("/api/guests/") and path.endswith("/photo"):
+            parts = path.split("/")
+            record_id = parts[3] if len(parts) >= 4 else ""
+            row = conn.execute("SELECT photo_b64, photo_mime, photo_name FROM guest_entries WHERE id=?", (record_id,)).fetchone()
+            if not row or not (row["photo_b64"] or ""):
+                raise HttpError(HTTPStatus.NOT_FOUND, "Foto tidak ditemukan")
+            data = base64.b64decode((row["photo_b64"] or "").encode("ascii"))
+            mime = (row["photo_mime"] or "application/octet-stream").strip()
+            name = (row["photo_name"] or "photo").strip()
+            self._send_bytes(HTTPStatus.OK, data, mime, {"Content-Disposition": f'inline; filename="{name}"'})
+            return
+
+        if path.startswith("/api/mutasi/") and path.endswith("/photo"):
+            parts = path.split("/")
+            record_id = parts[3] if len(parts) >= 4 else ""
+            row = conn.execute("SELECT photo_b64, photo_mime, photo_name FROM mutasi_entries WHERE id=?", (record_id,)).fetchone()
+            if not row or not (row["photo_b64"] or ""):
+                raise HttpError(HTTPStatus.NOT_FOUND, "Foto tidak ditemukan")
+            data = base64.b64decode((row["photo_b64"] or "").encode("ascii"))
+            mime = (row["photo_mime"] or "application/octet-stream").strip()
+            name = (row["photo_name"] or "photo").strip()
+            self._send_bytes(HTTPStatus.OK, data, mime, {"Content-Disposition": f'inline; filename="{name}"'})
+            return
+
+        if path.startswith("/api/tasks/") and path.endswith("/photo"):
+            parts = path.split("/")
+            record_id = parts[3] if len(parts) >= 4 else ""
+            row = conn.execute("SELECT photo_b64, photo_mime, photo_name FROM task_entries WHERE id=?", (record_id,)).fetchone()
+            if not row or not (row["photo_b64"] or ""):
+                raise HttpError(HTTPStatus.NOT_FOUND, "Foto tidak ditemukan")
+            data = base64.b64decode((row["photo_b64"] or "").encode("ascii"))
+            mime = (row["photo_mime"] or "application/octet-stream").strip()
+            name = (row["photo_name"] or "photo").strip()
+            self._send_bytes(HTTPStatus.OK, data, mime, {"Content-Disposition": f'inline; filename="{name}"'})
+            return
+
         if path == "/api/vendors/catering":
             rows = conn.execute("SELECT id, name FROM catering_vendors ORDER BY name ASC").fetchall()
             if rows:
@@ -1113,6 +1240,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 order = "datetime(kt.checkin_at) ASC"
             sql = """
               SELECT kt.id, kt.borrower_name, kt.unit, kt.key_name, kt.checkout_at, kt.checkin_at, kt.notes, kt.status,
+                     CASE WHEN kt.photo_b64 IS NULL OR kt.photo_b64='' THEN 0 ELSE 1 END AS has_photo,
                      u.display_name AS created_by_name,
                      u2.display_name AS closed_by_name,
                      kt.created_shift, kt.created_post, kt.closed_shift, kt.closed_post
@@ -1125,7 +1253,14 @@ class AppHandler(BaseHTTPRequestHandler):
             sql += f" ORDER BY {order} LIMIT ?"
             params.append(limit)
             rows = conn.execute(sql, tuple(params)).fetchall()
-            self._send_json(HTTPStatus.OK, {"items": [dict(r) for r in rows]})
+            items = []
+            for r in rows:
+                d = dict(r)
+                d["has_photo"] = bool(int(d.get("has_photo") or 0))
+                if d["has_photo"]:
+                    d["photo_url"] = f"/api/keys/{d['id']}/photo"
+                items.append(d)
+            self._send_json(HTTPStatus.OK, {"items": items})
             return
 
         if path == "/api/mutasi":
@@ -1174,7 +1309,9 @@ class AppHandler(BaseHTTPRequestHandler):
             if sort == "occurred_asc":
                 order = "datetime(m.occurred_at) ASC"
             sql = """
-              SELECT m.id, m.occurred_at, m.kind, m.description, COALESCE(m.status,'active') AS status, m.void_reason, u.display_name AS created_by_name, m.shift, m.post
+              SELECT m.id, m.occurred_at, m.kind, m.description, COALESCE(m.status,'active') AS status, m.void_reason,
+                     CASE WHEN m.photo_b64 IS NULL OR m.photo_b64='' THEN 0 ELSE 1 END AS has_photo,
+                     u.display_name AS created_by_name, m.shift, m.post
               FROM mutasi_entries m
               JOIN users u ON u.id = m.created_by
             """
@@ -1183,7 +1320,14 @@ class AppHandler(BaseHTTPRequestHandler):
             sql += f" ORDER BY {order} LIMIT ?"
             params.append(limit)
             rows = conn.execute(sql, tuple(params)).fetchall()
-            self._send_json(HTTPStatus.OK, {"items": [dict(r) for r in rows]})
+            items = []
+            for r in rows:
+                d = dict(r)
+                d["has_photo"] = bool(int(d.get("has_photo") or 0))
+                if d["has_photo"]:
+                    d["photo_url"] = f"/api/mutasi/{d['id']}/photo"
+                items.append(d)
+            self._send_json(HTTPStatus.OK, {"items": items})
             return
 
         if path == "/api/guests":
@@ -1223,6 +1367,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 order = "datetime(g.checkin_at) ASC"
             sql = """
               SELECT g.id, g.name, g.instansi, g.purpose, g.meet_person, g.checkin_at, g.checkout_at, g.notes, g.status,
+                     CASE WHEN g.photo_b64 IS NULL OR g.photo_b64='' THEN 0 ELSE 1 END AS has_photo,
                      u.display_name AS created_by_name, g.shift, g.post
               FROM guest_entries g
               JOIN users u ON u.id = g.created_by
@@ -1232,7 +1377,14 @@ class AppHandler(BaseHTTPRequestHandler):
             sql += f" ORDER BY {order} LIMIT ?"
             params.append(limit)
             rows = conn.execute(sql, tuple(params)).fetchall()
-            self._send_json(HTTPStatus.OK, {"items": [dict(r) for r in rows]})
+            items = []
+            for r in rows:
+                d = dict(r)
+                d["has_photo"] = bool(int(d.get("has_photo") or 0))
+                if d["has_photo"]:
+                    d["photo_url"] = f"/api/guests/{d['id']}/photo"
+                items.append(d)
+            self._send_json(HTTPStatus.OK, {"items": items})
             return
 
         if path == "/api/tasks":
@@ -1262,7 +1414,9 @@ class AppHandler(BaseHTTPRequestHandler):
             if sort == "occurred_asc":
                 order = "datetime(t.occurred_at) ASC"
             sql = """
-              SELECT t.id, t.kind, t.occurred_at, t.destination, t.notes, t.extra_json, COALESCE(t.status,'active') AS status, t.void_reason, u.display_name AS created_by_name, t.shift, t.post
+              SELECT t.id, t.kind, t.occurred_at, t.destination, t.notes, t.extra_json, COALESCE(t.status,'active') AS status, t.void_reason,
+                     CASE WHEN t.photo_b64 IS NULL OR t.photo_b64='' THEN 0 ELSE 1 END AS has_photo,
+                     u.display_name AS created_by_name, t.shift, t.post
               FROM task_entries t
               JOIN users u ON u.id = t.created_by
             """
@@ -1274,6 +1428,9 @@ class AppHandler(BaseHTTPRequestHandler):
             items = []
             for r in rows:
                 d = dict(r)
+                d["has_photo"] = bool(int(d.get("has_photo") or 0))
+                if d["has_photo"]:
+                    d["photo_url"] = f"/api/tasks/{d['id']}/photo"
                 extra_raw = (d.get("extra_json") or "").strip()
                 if extra_raw:
                     try:
@@ -1362,8 +1519,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 HTTPStatus.OK,
                 {
                     "date": date,
-                    "shift": shift or sess["shift"],
-                    "post": post or sess["post"],
+                    "shift": f_shift,
+                    "post": f_post,
                     "counts": {
                         "keys_total": key_total,
                         "keys_open": key_open,
@@ -1643,7 +1800,12 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         sess = self._require_session(conn)
-        data = self._read_json()
+        photo_paths = {"/api/keys_with_photo", "/api/guests_with_photo", "/api/tasks_with_photo", "/api/mutasi_with_photo"}
+        if path in photo_paths:
+            (fields, files) = self._read_multipart()
+            data = fields
+        else:
+            data = self._read_json()
 
         if path == "/api/admin/users":
             self._require_role(sess, ("admin",))
@@ -1735,6 +1897,92 @@ class AppHandler(BaseHTTPRequestHandler):
             self._audit(conn, sess, "users", str(user_id), "reset_password", before, after)
             conn.commit()
             self._send_json(HTTPStatus.OK, {"ok": True, "temp_password": temp_password})
+            return
+
+        if path == "/api/keys_with_photo":
+            borrower_name = (data.get("borrower_name") or "").strip() or "Tidak diketahui"
+            unit = (data.get("unit") or "").strip() or "-"
+            key_name = (data.get("key_name") or "").strip()
+            checkout_at = (data.get("checkout_at") or "").strip() or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            notes = (data.get("notes") or "").strip()
+            force = 1 if str(data.get("force") or "").strip().lower() in ("1", "true", "yes", "y", "on") else 0
+            if not key_name:
+                raise HttpError(HTTPStatus.BAD_REQUEST, "Kunci/ruangan wajib diisi")
+
+            (photo_b64, photo_mime, photo_name, photo_uploaded_at) = self._read_photo_item(files.get("photo"))
+
+            key_norm = normalize_text(key_name)
+            borrower_norm = normalize_text(borrower_name)
+            created_by = int(sess["user_id"])
+            petugas_id_raw = (data.get("petugas_id") or "").strip()
+            if petugas_id_raw and str(sess.get("role") or "") == "admin":
+                try:
+                    pid = int(petugas_id_raw)
+                    ok_user = conn.execute("SELECT id FROM users WHERE id=?", (pid,)).fetchone()
+                    if ok_user:
+                        created_by = pid
+                except Exception:
+                    pass
+
+            existing_open = conn.execute(
+                "SELECT id, borrower_name, unit, key_name, checkout_at FROM key_transactions WHERE status='open' AND key_name_norm=?",
+                (key_norm,),
+            ).fetchone()
+            if existing_open and not force:
+                raise HttpError(HTTPStatus.CONFLICT, f"Kunci '{existing_open['key_name']}' masih tercatat dipinjam (ID {existing_open['id']}).")
+
+            recent_dup = conn.execute(
+                """
+                SELECT id FROM key_transactions
+                WHERE borrower_name_norm=? AND key_name_norm=? AND status='open'
+                LIMIT 1
+                """,
+                (borrower_norm, key_norm),
+            ).fetchone()
+            if recent_dup and not force:
+                raise HttpError(HTTPStatus.CONFLICT, f"Transaksi serupa sudah ada (ID {recent_dup['id']}).")
+
+            now = utc_now_iso()
+            cur = conn.execute(
+                """
+                INSERT INTO key_transactions(
+                  borrower_name, borrower_name_norm, unit, key_name, key_name_norm, checkout_at, checkin_at, notes, status,
+                  created_by, created_shift, created_post, photo_b64, photo_mime, photo_name, photo_uploaded_at, created_at, updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    borrower_name,
+                    borrower_norm,
+                    unit,
+                    key_name,
+                    key_norm,
+                    checkout_at,
+                    None,
+                    notes,
+                    "open",
+                    created_by,
+                    sess["shift"],
+                    sess["post"],
+                    photo_b64,
+                    photo_mime,
+                    photo_name,
+                    photo_uploaded_at,
+                    now,
+                    now,
+                ),
+            )
+            record_id = cur.lastrowid
+            self._audit(
+                conn,
+                sess,
+                "key_transactions",
+                str(record_id),
+                "create",
+                None,
+                {"borrower_name": borrower_name, "unit": unit, "key_name": key_name, "checkout_at": checkout_at, "notes": notes, "status": "open", "has_photo": bool(photo_b64)},
+            )
+            conn.commit()
+            self._send_json(HTTPStatus.OK, {"ok": True, "id": record_id})
             return
 
         if path == "/api/keys":
@@ -1894,6 +2142,45 @@ class AppHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.OK, {"ok": True})
             return
 
+        if path == "/api/mutasi_with_photo":
+            occurred_at = (data.get("occurred_at") or "").strip() or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            kind = (data.get("kind") or "").strip() or "Lainnya"
+            description = (data.get("description") or "").strip()
+            force = 1 if str(data.get("force") or "").strip().lower() in ("1", "true", "yes", "y", "on") else 0
+            if not description:
+                raise HttpError(HTTPStatus.BAD_REQUEST, "Deskripsi wajib diisi")
+            (photo_b64, photo_mime, photo_name, photo_uploaded_at) = self._read_photo_item(files.get("photo"))
+            now = utc_now_iso()
+            if not force:
+                cutoff = _recent_cutoff_iso(DEDUPE_WINDOW_SECONDS)
+                dup = conn.execute(
+                    """
+                    SELECT id FROM mutasi_entries
+                    WHERE COALESCE(status,'active')<>'void'
+                      AND lower(kind)=lower(?)
+                      AND lower(description)=lower(?)
+                      AND occurred_at=?
+                      AND created_at > ?
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (kind, description, occurred_at, cutoff),
+                ).fetchone()
+                if dup:
+                    raise HttpError(HTTPStatus.CONFLICT, f"Data serupa sudah ada (ID {dup['id']}).")
+            cur = conn.execute(
+                """
+                INSERT INTO mutasi_entries(occurred_at, kind, description, status, void_reason, voided_by, voided_at, photo_b64, photo_mime, photo_name, photo_uploaded_at, created_by, shift, post, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (occurred_at, kind, description, "active", None, None, None, photo_b64, photo_mime, photo_name, photo_uploaded_at, sess["user_id"], sess["shift"], sess["post"], now, now),
+            )
+            record_id = cur.lastrowid
+            self._audit(conn, sess, "mutasi_entries", str(record_id), "create", None, {"occurred_at": occurred_at, "kind": kind, "description": description, "status": "active", "has_photo": bool(photo_b64)})
+            conn.commit()
+            self._send_json(HTTPStatus.OK, {"ok": True, "id": record_id})
+            return
+
         if path == "/api/mutasi":
             occurred_at = (data.get("occurred_at") or "").strip() or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
             kind = (data.get("kind") or "").strip() or "Lainnya"
@@ -1951,6 +2238,50 @@ class AppHandler(BaseHTTPRequestHandler):
             self._audit(conn, sess, "mutasi_entries", str(record_id), "void", dict(row), {**dict(row), "status": "void", "void_reason": reason[:120], "voided_by": sess["user_id"], "voided_at": now, "updated_at": now})
             conn.commit()
             self._send_json(HTTPStatus.OK, {"ok": True})
+            return
+
+        if path == "/api/guests_with_photo":
+            name = (data.get("name") or "").strip() or "Tidak diketahui"
+            instansi = (data.get("instansi") or "").strip() or "-"
+            purpose = (data.get("purpose") or "").strip() or "-"
+            meet_person = (data.get("meet_person") or "").strip() or "-"
+            checkin_at = (data.get("checkin_at") or "").strip() or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            notes = (data.get("notes") or "").strip()
+            post_override = (data.get("post") or "").strip()
+            force = 1 if str(data.get("force") or "").strip().lower() in ("1", "true", "yes", "y", "on") else 0
+            (photo_b64, photo_mime, photo_name, photo_uploaded_at) = self._read_photo_item(files.get("photo"))
+            now = utc_now_iso()
+            post_val = post_override or sess["post"]
+            if not force:
+                cutoff = _recent_cutoff_iso(DEDUPE_WINDOW_SECONDS)
+                dup = conn.execute(
+                    """
+                    SELECT id FROM guest_entries
+                    WHERE status='in'
+                      AND lower(name)=lower(?)
+                      AND lower(instansi)=lower(?)
+                      AND lower(purpose)=lower(?)
+                      AND lower(meet_person)=lower(?)
+                      AND post=?
+                      AND created_at > ?
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (name, instansi, purpose, meet_person, post_val, cutoff),
+                ).fetchone()
+                if dup:
+                    raise HttpError(HTTPStatus.CONFLICT, f"Data serupa sudah ada (ID {dup['id']}).")
+            cur = conn.execute(
+                """
+                INSERT INTO guest_entries(name, instansi, purpose, meet_person, checkin_at, checkout_at, notes, status, photo_b64, photo_mime, photo_name, photo_uploaded_at, created_by, shift, post, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (name, instansi, purpose, meet_person, checkin_at, None, notes, "in", photo_b64, photo_mime, photo_name, photo_uploaded_at, sess["user_id"], sess["shift"], post_val, now, now),
+            )
+            record_id = cur.lastrowid
+            self._audit(conn, sess, "guest_entries", str(record_id), "create", None, {"name": name, "instansi": instansi, "purpose": purpose, "meet_person": meet_person, "checkin_at": checkin_at, "status": "in", "notes": notes, "has_photo": bool(photo_b64)})
+            conn.commit()
+            self._send_json(HTTPStatus.OK, {"ok": True, "id": record_id})
             return
 
         if path == "/api/guests":
@@ -2012,6 +2343,57 @@ class AppHandler(BaseHTTPRequestHandler):
             self._audit(conn, sess, "guest_entries", str(record_id), "checkout", dict(row), {**dict(row), "status": "out", "checkout_at": now, "updated_at": now})
             conn.commit()
             self._send_json(HTTPStatus.OK, {"ok": True})
+            return
+
+        if path == "/api/tasks_with_photo":
+            kind = (data.get("kind") or "").strip() or "Lainnya"
+            occurred_at = (data.get("occurred_at") or "").strip() or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            destination = (data.get("destination") or "").strip() or "-"
+            notes = (data.get("notes") or "").strip()
+            extra_json_raw = (data.get("extra_json") or "").strip()
+            force = 1 if str(data.get("force") or "").strip().lower() in ("1", "true", "yes", "y", "on") else 0
+            extra = None
+            extra_json = None
+            if extra_json_raw:
+                if len(extra_json_raw) > 6000:
+                    raise HttpError(HTTPStatus.BAD_REQUEST, "Data tambahan terlalu besar")
+                try:
+                    extra = json.loads(extra_json_raw)
+                except Exception:
+                    raise HttpError(HTTPStatus.BAD_REQUEST, "Data tambahan tidak valid")
+                extra_json = json.dumps(extra, ensure_ascii=False, separators=(",", ":"))
+            (photo_b64, photo_mime, photo_name, photo_uploaded_at) = self._read_photo_item(files.get("photo"))
+            now = utc_now_iso()
+            if not force:
+                cutoff = _recent_cutoff_iso(DEDUPE_WINDOW_SECONDS)
+                dup = conn.execute(
+                    """
+                    SELECT id FROM task_entries
+                    WHERE COALESCE(status,'active')<>'void'
+                      AND lower(kind)=lower(?)
+                      AND lower(destination)=lower(?)
+                      AND lower(notes)=lower(?)
+                      AND COALESCE(extra_json,'') = COALESCE(?, '')
+                      AND occurred_at=?
+                      AND created_at > ?
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (kind, destination, notes, extra_json, occurred_at, cutoff),
+                ).fetchone()
+                if dup:
+                    raise HttpError(HTTPStatus.CONFLICT, f"Data serupa sudah ada (ID {dup['id']}).")
+            cur = conn.execute(
+                """
+                INSERT INTO task_entries(kind, occurred_at, destination, notes, extra_json, status, void_reason, voided_by, voided_at, photo_b64, photo_mime, photo_name, photo_uploaded_at, created_by, shift, post, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (kind, occurred_at, destination, notes, extra_json, "active", None, None, None, photo_b64, photo_mime, photo_name, photo_uploaded_at, sess["user_id"], sess["shift"], sess["post"], now, now),
+            )
+            record_id = cur.lastrowid
+            self._audit(conn, sess, "task_entries", str(record_id), "create", None, {"kind": kind, "occurred_at": occurred_at, "destination": destination, "notes": notes, "extra": extra if extra is not None else None, "has_photo": bool(photo_b64)})
+            conn.commit()
+            self._send_json(HTTPStatus.OK, {"ok": True, "id": record_id})
             return
 
         if path == "/api/tasks":
