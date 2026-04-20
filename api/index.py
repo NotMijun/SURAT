@@ -32,6 +32,7 @@ LOGIN_RATE_MAX_ATTEMPTS = 8
 MAX_PHOTO_BYTES = 3 * 1024 * 1024
 DEDUPE_WINDOW_SECONDS = max(10, min(10 * 60, int(os.getenv("DEDUPE_WINDOW_SECONDS", 90))))
 VOID_WINDOW_SECONDS = max(10, min(24 * 60 * 60, int(os.getenv("VOID_WINDOW_SECONDS", 10 * 60))))
+KEY_REOPEN_WINDOW_SECONDS = max(10, min(24 * 60 * 60, int(os.getenv("KEY_REOPEN_WINDOW_SECONDS", 10 * 60))))
 
 _schema_lock = threading.Lock()
 _schema_ready = False
@@ -929,13 +930,14 @@ def handover(request: Request):
                 """
             )
             keys_open = cur.fetchall()
-            cur.execute("SELECT COUNT(*)::int AS c FROM guest_entries WHERE status='in'")
+            cur.execute("SELECT COUNT(*)::int AS c FROM guest_entries WHERE status='in' AND (post='IGD' OR post='Pintu Utama' OR post='Lobby')")
             guests_in_count = int(cur.fetchone()["c"])
             cur.execute(
                 """
                 SELECT id, name, instansi, purpose, meet_person, checkin_at, status
                 FROM guest_entries
                 WHERE status='in'
+                  AND (post='IGD' OR post='Pintu Utama' OR post='Lobby')
                 ORDER BY checkin_at DESC
                 LIMIT 50
                 """
@@ -1250,6 +1252,63 @@ def undo_key(key_id: str, request: Request):
             cur.execute("SELECT * FROM key_transactions WHERE id=%s", (key_id,))
             after = dict(cur.fetchone())
             _audit(conn, sess, "key_transactions", str(key_id), "undo", before, after)
+        conn.commit()
+        return {"ok": True}
+
+
+@app.post("/api/keys/{key_id}/reopen")
+def reopen_key(key_id: str, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM key_transactions WHERE id=%s", (key_id,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Data tidak ditemukan")
+            if row["status"] != "closed":
+                raise HTTPException(status_code=400, detail="Hanya transaksi closed yang bisa di-undo ambil")
+            closed_by = int(row.get("closed_by") or 0)
+            if sess.get("role") not in ("admin", "supervisor"):
+                if int(sess["user_id"]) != closed_by:
+                    raise HTTPException(status_code=403, detail="Tidak punya akses undo ambil")
+                checkin_at = (row.get("checkin_at") or "").strip()
+                allow = True
+                try:
+                    t = datetime.fromisoformat(checkin_at.replace("Z", "+00:00"))
+                    if t.tzinfo is None:
+                        allow = (datetime.now() - t).total_seconds() <= KEY_REOPEN_WINDOW_SECONDS
+                    else:
+                        allow = (datetime.now(timezone.utc) - t.astimezone(timezone.utc)).total_seconds() <= KEY_REOPEN_WINDOW_SECONDS
+                except Exception:
+                    allow = True
+                if not allow:
+                    raise HTTPException(status_code=400, detail="Undo ambil sudah melewati batas waktu")
+            key_norm = str(row.get("key_name_norm") or "")
+            cur.execute(
+                "SELECT id FROM key_transactions WHERE status='open' AND key_name_norm=%s AND id<>%s LIMIT 1",
+                (key_norm, key_id),
+            )
+            conflict = cur.fetchone()
+            if conflict:
+                raise HTTPException(status_code=409, detail="Tidak bisa undo ambil: ada transaksi open lain untuk kunci yang sama")
+            before = dict(row)
+            now = utc_now_iso()
+            cur.execute(
+                """
+                UPDATE key_transactions
+                SET status='open',
+                    checkin_at=NULL,
+                    closed_by=NULL,
+                    closed_shift=NULL,
+                    closed_post=NULL,
+                    updated_at=%s
+                WHERE id=%s
+                """,
+                (now, key_id),
+            )
+            cur.execute("SELECT * FROM key_transactions WHERE id=%s", (key_id,))
+            after = dict(cur.fetchone())
+            _audit(conn, sess, "key_transactions", str(key_id), "reopen", before, after)
         conn.commit()
         return {"ok": True}
 

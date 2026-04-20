@@ -245,6 +245,19 @@ export default function KeysPage({ me }: { me: Me }) {
     }
   }
 
+  const doReopen = async (r: KeyTx) => {
+    const ok = window.confirm(`Undo ambil kunci ini (kembali status dipinjam)?\n\n${r.key_name} · ${r.borrower_name}\nTitip: ${fmtDateTime(r.checkout_at)}\nAmbil: ${fmtDateTime(r.checkin_at || '')}\n\nLanjutkan?`)
+    if (!ok) return
+    try {
+      await apiPost(`/api/keys/${r.id}/reopen`, {})
+      toast.push('Status dikembalikan ke dipinjam', 'success')
+      const closedDateField = date === today && filterBy === 'ambil' ? 'checkin' : 'checkout'
+      await refresh({ q, date, sort, limit, closedDateField })
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal undo ambil'), 'error')
+    }
+  }
+
   const closePhoto = () => {
     if (photoView) URL.revokeObjectURL(photoView)
     setPhotoView(null)
@@ -567,6 +580,7 @@ export default function KeysPage({ me }: { me: Me }) {
                     <th>Ambil</th>
                     <th>Status</th>
                     <th>Foto</th>
+                    <th>Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -586,11 +600,20 @@ export default function KeysPage({ me }: { me: Me }) {
                           <span className="muted">-</span>
                         )}
                       </td>
+                      <td data-label="Aksi">
+                        {r.status === 'closed' ? (
+                          <button className="button button-sm button-secondary" type="button" onClick={() => doReopen(r)}>
+                            Undo ambil
+                          </button>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                   {closedView.length === 0 && (
                     <tr>
-                      <td className="muted" colSpan={6}>
+                      <td className="muted" colSpan={7}>
                         Tidak ada data.
                       </td>
                     </tr>

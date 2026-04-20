@@ -29,6 +29,7 @@ LOGIN_RATE_WINDOW_SECONDS = 10 * 60
 LOGIN_RATE_MAX_ATTEMPTS = 8
 DEDUPE_WINDOW_SECONDS = max(10, min(10 * 60, int(os.getenv("DEDUPE_WINDOW_SECONDS", 90))))
 VOID_WINDOW_SECONDS = max(10, min(24 * 60 * 60, int(os.getenv("VOID_WINDOW_SECONDS", 10 * 60))))
+KEY_REOPEN_WINDOW_SECONDS = max(10, min(24 * 60 * 60, int(os.getenv("KEY_REOPEN_WINDOW_SECONDS", 10 * 60))))
 
 
 def utc_now_iso() -> str:
@@ -1041,12 +1042,13 @@ class AppHandler(BaseHTTPRequestHandler):
                 LIMIT 50
                 """
             ).fetchall()
-            guests_in_count = conn.execute("SELECT COUNT(*) AS c FROM guest_entries WHERE status='in'").fetchone()["c"]
+            guests_in_count = conn.execute("SELECT COUNT(*) AS c FROM guest_entries WHERE status='in' AND (post='IGD' OR post='Pintu Utama' OR post='Lobby')").fetchone()["c"]
             guests_in = conn.execute(
                 """
                 SELECT id, name, instansi, purpose, meet_person, checkin_at, status
                 FROM guest_entries
                 WHERE status = 'in'
+                  AND (post='IGD' OR post='Pintu Utama' OR post='Lobby')
                 ORDER BY datetime(checkin_at) DESC
                 LIMIT 50
                 """
@@ -1119,11 +1121,22 @@ class AppHandler(BaseHTTPRequestHandler):
         if path == "/api/guests":
             status = (query.get("status") or ["in"])[0]
             q = normalize_text((query.get("q") or [""])[0])
+            post_val = (query.get("post") or [""])[0].strip()
             params = []
             where = []
             if status in ("in", "out"):
                 where.append("status = ?")
                 params.append(status)
+            if post_val:
+                if post_val == "Pintu Utama":
+                    where.append("(g.post = ? OR g.post = ?)")
+                    params.extend(["Pintu Utama", "Lobby"])
+                elif post_val == "Lobby":
+                    where.append("(g.post = ? OR g.post = ?)")
+                    params.extend(["Lobby", "Pintu Utama"])
+                else:
+                    where.append("g.post = ?")
+                    params.append(post_val)
             if q:
                 where.append("(lower(name) LIKE ? OR lower(instansi) LIKE ? OR lower(purpose) LIKE ?)")
                 params.extend([f"%{q}%", f"%{q}%", f"%{q}%"])
@@ -1691,6 +1704,53 @@ class AppHandler(BaseHTTPRequestHandler):
                 dict(row),
                 {**dict(row), "status": "closed", "checkin_at": now, "closed_by": sess["user_id"], "closed_shift": sess["shift"], "closed_post": sess["post"], "updated_at": now},
             )
+            conn.commit()
+            self._send_json(HTTPStatus.OK, {"ok": True})
+            return
+
+        if path.startswith("/api/keys/") and path.endswith("/reopen"):
+            parts = path.split("/")
+            if len(parts) < 4:
+                raise HttpError(HTTPStatus.BAD_REQUEST, "ID tidak valid")
+            record_id = parts[3]
+            row = conn.execute("SELECT * FROM key_transactions WHERE id = ?", (record_id,)).fetchone()
+            if not row:
+                raise HttpError(HTTPStatus.NOT_FOUND, "Data tidak ditemukan")
+            if row["status"] != "closed":
+                raise HttpError(HTTPStatus.BAD_REQUEST, "Hanya transaksi closed yang bisa di-undo ambil")
+            if sess["role"] not in ("admin", "supervisor"):
+                if int(row.get("closed_by") or 0) != int(sess["user_id"]):
+                    raise HttpError(HTTPStatus.FORBIDDEN, "Tidak punya akses undo ambil")
+                checkin_at = (row.get("checkin_at") or "").strip()
+                allow = True
+                try:
+                    t = datetime.fromisoformat(checkin_at.replace("Z", "+00:00"))
+                    if t.tzinfo is None:
+                        allow = (datetime.now() - t).total_seconds() <= KEY_REOPEN_WINDOW_SECONDS
+                    else:
+                        allow = (datetime.now(timezone.utc) - t.astimezone(timezone.utc)).total_seconds() <= KEY_REOPEN_WINDOW_SECONDS
+                except Exception:
+                    allow = True
+                if not allow:
+                    raise HttpError(HTTPStatus.BAD_REQUEST, "Undo ambil sudah melewati batas waktu")
+            conflict = conn.execute(
+                "SELECT id FROM key_transactions WHERE status='open' AND key_name_norm=? AND id<>? LIMIT 1",
+                (row["key_name_norm"], record_id),
+            ).fetchone()
+            if conflict:
+                raise HttpError(HTTPStatus.CONFLICT, "Tidak bisa undo ambil: ada transaksi open lain untuk kunci yang sama")
+            before = dict(row)
+            now = utc_now_iso()
+            conn.execute(
+                """
+                UPDATE key_transactions
+                SET status='open', checkin_at=NULL, closed_by=NULL, closed_shift=NULL, closed_post=NULL, updated_at=?
+                WHERE id = ?
+                """,
+                (now, record_id),
+            )
+            after = dict(conn.execute("SELECT * FROM key_transactions WHERE id = ?", (record_id,)).fetchone())
+            self._audit(conn, sess, "key_transactions", record_id, "reopen", before, after)
             conn.commit()
             self._send_json(HTTPStatus.OK, {"ok": True})
             return
