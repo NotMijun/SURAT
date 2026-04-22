@@ -11,6 +11,7 @@ export default function TasksPage({ me }: { me: Me }) {
   const draftKey = useMemo(() => `draft:tasks:${me.user.id}`, [me.user.id])
   const [q, setQ] = useState('')
   const [date, setDate] = useState(today)
+  const [formDate, setFormDate] = useState(today)
   const [sort, setSort] = useState<'occurred_desc' | 'occurred_asc'>('occurred_desc')
   const [limit, setLimit] = useState(200)
   const [items, setItems] = useState<TaskEntry[]>([])
@@ -321,7 +322,7 @@ export default function TasksPage({ me }: { me: Me }) {
     setBusy(true)
     try {
       setFormError('')
-      const occurredAt = toIsoLocal(today, time)
+      const occurredAt = toIsoLocal(formDate, time)
       let finalKind = kind
       let finalDestination = destination
       let extra: any | undefined
@@ -332,7 +333,7 @@ export default function TasksPage({ me }: { me: Me }) {
         const bc = Number.parseInt(boxCount || '', 10)
         if (!vendorVal) throw new Error('Vendor pom wajib diisi')
         if (!Number.isFinite(bc) || bc < 0) throw new Error('Jumlah box wajib diisi')
-        const arrivedAt = pomArrivedTime ? toIsoLocal(today, pomArrivedTime) : null
+        const arrivedAt = pomArrivedTime ? toIsoLocal(formDate, pomArrivedTime) : null
         extra = {
           vendor: vendorVal,
           pom_status: pomStatus,
@@ -556,9 +557,10 @@ export default function TasksPage({ me }: { me: Me }) {
             )}
             <div className="field field-time">
               <label className="label" htmlFor="taskTime">
-                Jam
+                Waktu
               </label>
               <div className="time-row">
+                <input className="input" type="date" value={formDate} onChange={(e) => setFormDate(e.target.value)} style={{ width: 'auto' }} />
                 <input className="input" id="taskTime" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
                 <div className="chips">
                   <button className="chip" type="button" onClick={() => setTime(shiftHm(time, -5))}>
@@ -572,7 +574,7 @@ export default function TasksPage({ me }: { me: Me }) {
                   </button>
                 </div>
               </div>
-              <div className="muted">Akan tersimpan: {fmtDateTime(toIsoLocal(today, time))}</div>
+              <div className="muted">Akan tersimpan: {fmtDateTime(toIsoLocal(formDate, time))}</div>
             </div>
             {tab === 'umum' && (
               <div className="field">

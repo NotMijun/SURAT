@@ -12,6 +12,7 @@ export default function GuestsPage({ me }: { me: Me }) {
   const [q, setQ] = useState('')
   const [postFilter, setPostFilter] = useState<'IGD' | 'Pintu Utama'>(() => (/^igd$/i.test((me.post || '').trim()) ? 'IGD' : 'Pintu Utama'))
   const [date, setDate] = useState(today)
+  const [formDate, setFormDate] = useState(today)
   const [sort, setSort] = useState<'checkin_desc' | 'checkin_asc'>('checkin_desc')
   const [limit, setLimit] = useState(200)
   const [loading, setLoading] = useState(true)
@@ -113,7 +114,7 @@ export default function GuestsPage({ me }: { me: Me }) {
     setBusy(true)
     try {
       setFormError('')
-      const payload = { name, instansi, purpose, meet_person: meet, checkin_at: toIsoLocal(today, time), notes, post: postFilter }
+      const payload = { name, instansi, purpose, meet_person: meet, checkin_at: toIsoLocal(formDate, time), notes, post: postFilter }
       try {
         if (photo) {
           const form = new FormData()
@@ -323,9 +324,10 @@ export default function GuestsPage({ me }: { me: Me }) {
             </div>
             <div className="field field-time">
               <label className="label" htmlFor="guestTime">
-                Jam masuk
+                Waktu masuk
               </label>
               <div className="time-row">
+                <input className="input" type="date" value={formDate} onChange={(e) => setFormDate(e.target.value)} style={{ width: 'auto' }} />
                 <input className="input" id="guestTime" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
                 <div className="chips">
                   <button className="chip" type="button" onClick={() => setTime(shiftHm(time, -5))}>
@@ -339,7 +341,7 @@ export default function GuestsPage({ me }: { me: Me }) {
                   </button>
                 </div>
               </div>
-              <div className="muted">Akan tersimpan: {fmtDateTime(toIsoLocal(today, time))}</div>
+              <div className="muted">Akan tersimpan: {fmtDateTime(toIsoLocal(formDate, time))}</div>
             </div>
             <div className="field grid-span-4">
               <label className="label" htmlFor="guestMeet">

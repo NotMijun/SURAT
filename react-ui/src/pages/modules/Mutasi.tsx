@@ -19,6 +19,7 @@ export default function MutasiPage({ me }: { me: Me }) {
   const [filterKategori, setFilterKategori] = useState('')
   const [filterSub, setFilterSub] = useState('')
   const [date, setDate] = useState(today)
+  const [formDate, setFormDate] = useState(today)
   const [sort, setSort] = useState<'occurred_desc' | 'occurred_asc'>('occurred_desc')
   const [limit, setLimit] = useState(200)
   const [items, setItems] = useState<MutasiEntry[]>([])
@@ -110,7 +111,7 @@ export default function MutasiPage({ me }: { me: Me }) {
     const combinedKind = subKategori && subKategori !== 'Lainnya' ? `${kategori} - ${subKategori}` : kategori;
     try {
       setFormError('')
-      const payload = { kind: combinedKind, occurred_at: toIsoLocal(today, time), description: desc }
+      const payload = { kind: combinedKind, occurred_at: toIsoLocal(formDate, time), description: desc }
       try {
         if (photo) {
           const form = new FormData()
@@ -289,9 +290,10 @@ export default function MutasiPage({ me }: { me: Me }) {
             )}
             <div className="field field-time">
               <label className="label" htmlFor="mutasiTime">
-                Jam
+                Waktu Kejadian
               </label>
               <div className="time-row">
+                <input className="input" type="date" value={formDate} onChange={(e) => setFormDate(e.target.value)} style={{ width: 'auto' }} />
                 <input className="input" id="mutasiTime" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
                 <div className="chips">
                   <button className="chip" type="button" onClick={() => setTime(shiftHm(time, -5))}>
@@ -305,7 +307,7 @@ export default function MutasiPage({ me }: { me: Me }) {
                   </button>
                 </div>
               </div>
-              <div className="muted">Akan tersimpan: {fmtDateTime(toIsoLocal(today, time))}</div>
+              <div className="muted">Akan tersimpan: {fmtDateTime(toIsoLocal(formDate, time))}</div>
             </div>
             <div className="field grid-span-4">
               <label className="label" htmlFor="mutasiDesc">
