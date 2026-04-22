@@ -897,6 +897,7 @@ class PomCateringRowBody(BaseModel):
 class SavePomCateringSheetBody(BaseModel):
     staff_name: str | None = None
     rows: list[PomCateringRowBody] | None = None
+    total_boxes_in: int | None = None
 
 
 class CreateTaskBody(BaseModel):
@@ -1161,6 +1162,16 @@ def _pom_rows_normalized(rows: list[PomCateringRowBody] | None) -> list[dict[str
     return result
 
 
+def _pom_total_boxes_in(value: Any) -> int:
+    if value is None:
+        return 0
+    try:
+        n = int(value)
+    except Exception:
+        n = 0
+    return max(0, min(50_000, n))
+
+
 @app.get("/api/pom_catering/sheet")
 def get_pom_catering_sheet(request: Request, date: str = ""):
     with db_connect() as conn:
@@ -1180,9 +1191,22 @@ def get_pom_catering_sheet(request: Request, date: str = ""):
             rows = parsed.get("rows")
             if not isinstance(rows, list):
                 rows = None
+            total_boxes_in = _pom_total_boxes_in(parsed.get("total_boxes_in"))
             staff_name = (row.get("staff_name") or "").strip() or str(sess.get("display_name") or "")
-            return {"date": d, "staff_name": staff_name, "rows": rows or _pom_rows_normalized(None), "updated_at": row.get("updated_at") or ""}
-        return {"date": d, "staff_name": str(sess.get("display_name") or ""), "rows": _pom_rows_normalized(None), "updated_at": ""}
+            return {
+                "date": d,
+                "staff_name": staff_name,
+                "rows": rows or _pom_rows_normalized(None),
+                "total_boxes_in": total_boxes_in,
+                "updated_at": row.get("updated_at") or "",
+            }
+        return {
+            "date": d,
+            "staff_name": str(sess.get("display_name") or ""),
+            "rows": _pom_rows_normalized(None),
+            "total_boxes_in": 0,
+            "updated_at": "",
+        }
 
 
 @app.post("/api/pom_catering/sheet")
@@ -1194,8 +1218,9 @@ def save_pom_catering_sheet(body: SavePomCateringSheetBody, request: Request, da
         rows_norm = _pom_rows_normalized(body.rows)
         if len(rows_norm) > 120:
             raise HTTPException(status_code=400, detail="Terlalu banyak baris unit")
+        total_boxes_in = _pom_total_boxes_in(body.total_boxes_in)
         now = utc_now_iso()
-        data_json = json.dumps({"rows": rows_norm}, ensure_ascii=False, separators=(",", ":"))
+        data_json = json.dumps({"rows": rows_norm, "total_boxes_in": total_boxes_in}, ensure_ascii=False, separators=(",", ":"))
         with conn.cursor() as cur:
             cur.execute(
                 """

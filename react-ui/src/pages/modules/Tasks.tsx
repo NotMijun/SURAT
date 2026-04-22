@@ -58,9 +58,10 @@ export default function TasksPage({ me }: { me: Me }) {
   type PomShiftKey = 'siang' | 'sore' | 'malam'
   type PomCell = { qty: number; signed: boolean; note: string }
   type PomRow = { unit: string; siang: PomCell; sore: PomCell; malam: PomCell }
-  type PomSheetRes = { date: string; staff_name: string; rows: PomRow[]; updated_at: string }
+  type PomSheetRes = { date: string; staff_name: string; rows: PomRow[]; total_boxes_in: number; updated_at: string }
   const [pomStaffName, setPomStaffName] = useState(me.user.display_name)
   const [pomRows, setPomRows] = useState<PomRow[]>([])
+  const [pomTotalBoxesIn, setPomTotalBoxesIn] = useState(0)
   const [pomUpdatedAt, setPomUpdatedAt] = useState('')
   const [pomLoading, setPomLoading] = useState(false)
   const [pomSaving, setPomSaving] = useState(false)
@@ -117,6 +118,7 @@ export default function TasksPage({ me }: { me: Me }) {
       const res = await apiGet<PomSheetRes>(`/api/pom_catering/sheet?date=${encodeURIComponent(d)}`)
       setPomStaffName(String(res.staff_name || '').trim() || me.user.display_name)
       setPomRows(pomNormalizeRows(res.rows))
+      setPomTotalBoxesIn(Math.max(0, parseInt(String((res as any)?.total_boxes_in ?? 0), 10) || 0))
       setPomUpdatedAt(String(res.updated_at || ''))
       setPomError('')
     } catch (err: any) {
@@ -154,12 +156,16 @@ export default function TasksPage({ me }: { me: Me }) {
     return { siang, sore, malam }
   }, [pomRows])
 
+  const pomUsedTotal = useMemo(() => pomTotals.siang + pomTotals.sore + pomTotals.malam, [pomTotals.malam, pomTotals.siang, pomTotals.sore])
+
+  const pomRemaining = useMemo(() => pomTotalBoxesIn - pomUsedTotal, [pomTotalBoxesIn, pomUsedTotal])
+
   const savePomSheet = useCallback(async () => {
     if (pomSaving) return
     setPomSaving(true)
     try {
       const d = date || today
-      const payload = { staff_name: pomStaffName, rows: pomRows, date: d }
+      const payload = { staff_name: pomStaffName, rows: pomRows, total_boxes_in: pomTotalBoxesIn, date: d }
       const res = await apiPost<{ ok: boolean; updated_at: string }>(`/api/pom_catering/sheet?date=${encodeURIComponent(d)}`, payload)
       setPomUpdatedAt(String(res.updated_at || ''))
       toast.push('Sheet POM tersimpan', 'success')
@@ -171,7 +177,7 @@ export default function TasksPage({ me }: { me: Me }) {
     } finally {
       setPomSaving(false)
     }
-  }, [date, pomRows, pomSaving, pomStaffName, toast, today])
+  }, [date, pomRows, pomSaving, pomStaffName, pomTotalBoxesIn, toast, today])
 
   useEffect(() => {
     const raw = localStorage.getItem(draftKey)
@@ -583,6 +589,37 @@ export default function TasksPage({ me }: { me: Me }) {
                   Tanggal
                 </label>
                 <input className="input" id="pomDate" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              </div>
+            </div>
+            <div className="grid grid-2" style={{ gap: 12, marginBottom: 12 }}>
+              <div className="field">
+                <label className="label" htmlFor="pomTotalIn">
+                  Total box datang (hari ini)
+                </label>
+                <input
+                  className="input"
+                  id="pomTotalIn"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={pomTotalBoxesIn}
+                  onChange={(e) => setPomTotalBoxesIn(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                />
+              </div>
+              <div className="card" style={{ padding: 12, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--soft-bg)' }}>
+                <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Summary</div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Total datang</div>
+                  <div style={{ fontWeight: 800 }}>{pomTotalBoxesIn}</div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Total terpakai</div>
+                  <div style={{ fontWeight: 800 }}>{pomUsedTotal}</div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>{pomRemaining >= 0 ? 'Sisa box' : 'Kurang box'}</div>
+                  <div style={{ fontWeight: 800 }}>{pomRemaining >= 0 ? pomRemaining : Math.abs(pomRemaining)}</div>
+                </div>
               </div>
             </div>
             <div className="table-wrap">
