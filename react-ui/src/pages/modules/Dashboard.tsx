@@ -117,6 +117,20 @@ export default function DashboardPage({ me }: { me: Me }) {
       lines.push(`- ${x.name} · ${x.instansi} · ${fmtTime(x.checkin_at)} · ${x.purpose} · ${x.meet_person}`)
     }
     if ((h?.guests_in || []).length > 10) lines.push('- …')
+    if (r?.mutasi && r.mutasi.length > 0) {
+      lines.push('')
+      lines.push('Mutasi/Kejadian:')
+      for (const m of r.mutasi) {
+        lines.push(`- [${fmtTime(m.occurred_at)}] ${m.kind}: ${m.description}`)
+      }
+    }
+    if (r?.tasks && r.tasks.length > 0) {
+      lines.push('')
+      lines.push('Tugas/Operasional:')
+      for (const t of r.tasks) {
+        lines.push(`- ${t.kind}: ${t.destination} (${t.status})`)
+      }
+    }
     const text = lines.join('\n')
     try {
       await navigator.clipboard.writeText(text)

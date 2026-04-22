@@ -576,8 +576,8 @@ export default function KeysPage({ me }: { me: Me }) {
                       </td>
                       <td data-label="Aksi">
                         <div className="row" style={{ flexWrap: 'wrap' }}>
-                          <button className="button button-sm" type="button" onClick={() => doReturn(r)}>
-                            ✓ Ambil
+                          <button className="button button-sm button-primary" type="button" onClick={() => doReturn(r)}>
+                            ↗ Ambil
                           </button>
                           {canCorrect(r) ? (
                             <button className="button button-sm button-secondary" type="button" onClick={() => openEdit(r)}>
@@ -586,7 +586,7 @@ export default function KeysPage({ me }: { me: Me }) {
                           ) : null}
                           {canCorrect(r) ? (
                             <button className="button button-sm button-danger" type="button" onClick={() => doUndo(r.id)}>
-                              ⨯ Void
+                              ✕ Void
                             </button>
                           ) : null}
                         </div>

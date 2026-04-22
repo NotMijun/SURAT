@@ -407,6 +407,64 @@ html[data-focus="keyboard"] .button:focus-visible,html[data-focus="keyboard"] .t
   background:rgba(255,91,122,.08);
 }
 
+.time-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.number-stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.number-stepper .input {
+  width: 70px;
+  text-align: center;
+}
+.stepper-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--button-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 18px;
+  transition: all 0.2s;
+}
+.stepper-btn:hover {
+  background: var(--button-hover);
+}
+.stepper-btn:active {
+  transform: scale(0.95);
+}
+
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.card-actions .button {
+  flex: 1;
+  min-height: 44px; /* Larger touch target for mobile */
+  justify-content: center;
+  font-weight: 600;
+}
+.button-void {
+  background: rgba(255, 91, 122, 0.1) !important;
+  color: #ff5b7a !important;
+  border-color: rgba(255, 91, 122, 0.3) !important;
+}
+.button-void:hover {
+  background: rgba(255, 91, 122, 0.2) !important;
+}
+
 .table-footer-filters {
   display: flex;
   flex-wrap: wrap;

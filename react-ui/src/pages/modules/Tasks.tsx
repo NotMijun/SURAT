@@ -506,7 +506,11 @@ export default function TasksPage({ me }: { me: Me }) {
                   <label className="label" htmlFor="taskPomBox">
                     Jumlah box
                   </label>
-                  <input className="input" id="taskPomBox" type="number" min={0} step={1} value={boxCount} onChange={(e) => setBoxCount(e.target.value)} placeholder="0" />
+                  <div className="number-stepper">
+                    <button className="stepper-btn" type="button" onClick={() => setBoxCount(String(Math.max(0, (parseInt(boxCount, 10) || 0) - 1)))}>-</button>
+                    <input className="input" id="taskPomBox" type="number" min={0} step={1} value={boxCount} onChange={(e) => setBoxCount(e.target.value)} placeholder="0" />
+                    <button className="stepper-btn" type="button" onClick={() => setBoxCount(String((parseInt(boxCount, 10) || 0) + 1))}>+</button>
+                  </div>
                 </div>
                 <div className="field">
                   <label className="label" htmlFor="taskPomStatus">
@@ -533,19 +537,31 @@ export default function TasksPage({ me }: { me: Me }) {
                   <label className="label" htmlFor="taskGalonUsed">
                     Galon dipakai
                   </label>
-                  <input className="input" id="taskGalonUsed" type="number" min={0} step={1} value={galonUsed} onChange={(e) => setGalonUsed(e.target.value)} placeholder="0" />
+                  <div className="number-stepper">
+                    <button className="stepper-btn" type="button" onClick={() => setGalonUsed(String(Math.max(0, (parseInt(galonUsed, 10) || 0) - 1)))}>-</button>
+                    <input className="input" id="taskGalonUsed" type="number" min={0} step={1} value={galonUsed} onChange={(e) => setGalonUsed(e.target.value)} placeholder="0" />
+                    <button className="stepper-btn" type="button" onClick={() => setGalonUsed(String((parseInt(galonUsed, 10) || 0) + 1))}>+</button>
+                  </div>
                 </div>
                 <div className="field">
                   <label className="label" htmlFor="taskGalonUnused">
                     Galon tidak dipakai
                   </label>
-                  <input className="input" id="taskGalonUnused" type="number" min={0} step={1} value={galonUnused} onChange={(e) => setGalonUnused(e.target.value)} placeholder="0" />
+                  <div className="number-stepper">
+                    <button className="stepper-btn" type="button" onClick={() => setGalonUnused(String(Math.max(0, (parseInt(galonUnused, 10) || 0) - 1)))}>-</button>
+                    <input className="input" id="taskGalonUnused" type="number" min={0} step={1} value={galonUnused} onChange={(e) => setGalonUnused(e.target.value)} placeholder="0" />
+                    <button className="stepper-btn" type="button" onClick={() => setGalonUnused(String((parseInt(galonUnused, 10) || 0) + 1))}>+</button>
+                  </div>
                 </div>
                 <div className="field">
                   <label className="label" htmlFor="taskGalonReturned">
                     Galon dikembalikan
                   </label>
-                  <input className="input" id="taskGalonReturned" type="number" min={0} step={1} value={galonReturned} onChange={(e) => setGalonReturned(e.target.value)} placeholder="0" />
+                  <div className="number-stepper">
+                    <button className="stepper-btn" type="button" onClick={() => setGalonReturned(String(Math.max(0, (parseInt(galonReturned, 10) || 0) - 1)))}>-</button>
+                    <input className="input" id="taskGalonReturned" type="number" min={0} step={1} value={galonReturned} onChange={(e) => setGalonReturned(e.target.value)} placeholder="0" />
+                    <button className="stepper-btn" type="button" onClick={() => setGalonReturned(String((parseInt(galonReturned, 10) || 0) + 1))}>+</button>
+                  </div>
                 </div>
                 <div className="field">
                   <label className="label" htmlFor="taskGalonTo">
@@ -710,18 +726,19 @@ export default function TasksPage({ me }: { me: Me }) {
                     <td data-label="Petugas">{r.created_by_name || '-'}</td>
                     {canAdmin && (
                       <td data-label="Aksi">
-                        {r.status === 'void' ? (
-                          <span className="muted">—</span>
-                        ) : (
-                          <div className="row">
-                            <button className="button button-sm" type="button" onClick={() => doEdit(r)}>
-                              ✎ Edit
-                            </button>
-                            <button className="button button-sm button-danger" type="button" onClick={() => doVoid(r)}>
-                              ⨯ Void
-                            </button>
-                          </div>
-                        )}
+                        <div className="card-actions">
+                          {r.status !== 'void' && (
+                            <>
+                              <button className="button button-sm button-secondary" type="button" onClick={() => doEdit(r)}>
+                                ✎ Edit
+                              </button>
+                              <button className="button button-sm button-void" type="button" onClick={() => doVoid(r)}>
+                                ✕ Void
+                              </button>
+                            </>
+                          )}
+                          {r.status === 'void' && <span className="muted">—</span>}
+                        </div>
                       </td>
                     )}
                   </tr>

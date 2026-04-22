@@ -418,18 +418,18 @@ export default function MutasiPage({ me }: { me: Me }) {
                     <td data-label="Petugas">{r.created_by_name || '-'}</td>
                     {canAdmin && (
                       <td data-label="Aksi">
-                        {r.status === 'void' ? (
-                          <span className="muted">—</span>
-                        ) : (
-                          <div className="row">
-                            <button className="button button-sm" type="button" onClick={() => doEdit(r)}>
+                        <div className="card-actions">
+                          {canAdmin && r.status !== 'void' && (
+                            <button className="button button-sm button-secondary" type="button" onClick={() => doEdit(r)}>
                               ✎ Edit
                             </button>
-                            <button className="button button-sm button-danger" type="button" onClick={() => doVoid(r)}>
-                              ⨯ Void
+                          )}
+                          {canAdmin && r.status !== 'void' && (
+                            <button className="button button-sm button-void" type="button" onClick={() => doVoid(r)}>
+                              ✕ Void
                             </button>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </td>
                     )}
                   </tr>

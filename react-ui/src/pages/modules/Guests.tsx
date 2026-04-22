@@ -477,9 +477,9 @@ export default function GuestsPage({ me }: { me: Me }) {
                       {r.status === 'void' ? (
                         <span className="muted">Void{r.void_reason ? `: ${r.void_reason}` : ''}</span>
                       ) : (
-                        <div className="row" style={{ flexWrap: 'wrap' }}>
+                        <div className="card-actions">
                           {r.status === 'in' ? (
-                            <button className="button button-sm" type="button" onClick={() => checkout(r)}>
+                            <button className="button button-sm button-primary" type="button" onClick={() => checkout(r)}>
                               ↗ Keluar
                             </button>
                           ) : canCorrect(r) ? (
@@ -493,8 +493,8 @@ export default function GuestsPage({ me }: { me: Me }) {
                             </button>
                           ) : null}
                           {canCorrect(r) ? (
-                            <button className="button button-sm button-danger" type="button" onClick={() => voidGuest(r)}>
-                              ⨯ Void
+                            <button className="button button-sm button-void" type="button" onClick={() => voidGuest(r)}>
+                              ✕ Void
                             </button>
                           ) : null}
                         </div>
