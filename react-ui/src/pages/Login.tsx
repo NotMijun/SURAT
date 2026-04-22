@@ -47,7 +47,9 @@ export default function LoginPage() {
       <main className="card card-lg">
         <header className="card-header">
           <div className="brand">
-            <div className="brand-mark">LB</div>
+            <div className="brand-mark">
+              <img src="/api/brand/logo.png" alt="BSH" />
+            </div>
             <div className="brand-title">Logbook Security RS</div>
           </div>
         </header>
@@ -92,4 +94,3 @@ export default function LoginPage() {
     </div>
   )
 }
-

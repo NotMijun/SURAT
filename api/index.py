@@ -79,6 +79,14 @@ def root_styles():
     return _serve_root_file("styles.css", "text/css; charset=utf-8")
 
 
+@app.get("/api/brand/logo.png")
+def brand_logo():
+    file_path = ROOT_DIR / "bsh.png"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Logo tidak ditemukan")
+    return FileResponse(path=str(file_path), media_type="image/png")
+
+
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 

@@ -12,7 +12,7 @@ import MutasiPage from './modules/Mutasi'
 import AdminPage from './modules/Admin'
 
 const tabClass = ({ isActive }: { isActive: boolean }) => `tab${isActive ? ' tab-active' : ''}`
-const accents = ['gold', 'blue', 'green', 'mono'] as const
+const accents = ['bsh', 'gold', 'blue', 'green', 'mono'] as const
 type Accent = (typeof accents)[number]
 
 export default function Shell() {
@@ -25,7 +25,7 @@ export default function Shell() {
   const [navCounts, setNavCounts] = useState<{ keysOpen: number | null; guestsIn: number | null }>({ keysOpen: null, guestsIn: null })
   const [theme, setTheme] = useState<'light' | 'dark'>(localStorage.getItem(themeKey) === 'light' ? 'light' : 'dark')
   const [compact] = useState(localStorage.getItem(compactKey) === 'true')
-  const [accent, setAccent] = useState<Accent>((localStorage.getItem(accentKey) as Accent) || 'gold')
+  const [accent, setAccent] = useState<Accent>((localStorage.getItem(accentKey) as Accent) || 'bsh')
   const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => {
@@ -185,7 +185,9 @@ export default function Shell() {
       <div className="topbar">
         <div className="topbar-left">
           <div className="brand">
-            <div className="brand-mark">LB</div>
+            <div className="brand-mark">
+              <img src="/api/brand/logo.png" alt="BSH" />
+            </div>
             <div className="topbar-title">
               <div className="title">Logbook Security RS</div>
             </div>
