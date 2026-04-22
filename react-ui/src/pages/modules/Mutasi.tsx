@@ -26,6 +26,13 @@ export default function MutasiPage({ me }: { me: Me }) {
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string>('')
 
+  const [editRow, setEditRow] = useState<MutasiEntry | null>(null)
+  const [editKategori, setEditKategori] = useState('')
+  const [editSubKategori, setEditSubKategori] = useState('')
+  const [editTime, setEditTime] = useState('')
+  const [editDate, setEditDate] = useState('')
+  const [editDesc, setEditDesc] = useState('')
+
   const [kategori, setKategori] = useState('Kejadian Operasional')
   const [subKategori, setSubKategori] = useState('Catering')
   const [time, setTime] = useState(nowHm())
@@ -158,25 +165,58 @@ export default function MutasiPage({ me }: { me: Me }) {
     setPhotoView(null)
   }
 
-  const doEdit = async (r: MutasiEntry) => {
+  const doEdit = (r: MutasiEntry) => {
     if (!canAdmin) return
     if (r.status === 'void') return
-    const next = await confirm.prompt({
-      title: 'Edit Mutasi',
-      message: 'Ubah deskripsi mutasi:',
-      initialValue: r.description || '',
-      confirmText: 'Simpan',
-      cancelText: 'Batal',
-    })
-    if (next == null) return
-    const value = next.trim()
-    if (!value) return
+    
+    setEditRow(r)
+    setEditDesc(r.description || '')
+    
+    const kind = r.kind || ''
+    let foundK = 'Kejadian Operasional'
+    let foundS = 'Lainnya'
+    
+    for (const k of Object.keys(KATEGORI_OPTS)) {
+      if (kind.startsWith(k)) {
+        foundK = k
+        const sub = kind.substring(k.length).replace(/^ - /, '').trim()
+        if (KATEGORI_OPTS[k].includes(sub)) {
+          foundS = sub
+        }
+        break
+      }
+    }
+    
+    setEditKategori(foundK)
+    setEditSubKategori(foundS)
+    
+    if (r.occurred_at) {
+      const d = new Date(r.occurred_at)
+      setEditDate(toYmd(d))
+      setEditTime(fmtTime(r.occurred_at))
+    } else {
+      setEditDate(today)
+      setEditTime(nowHm())
+    }
+  }
+
+  const saveEdit = async () => {
+    if (!editRow || busy) return
+    setBusy(true)
+    const combinedKind = editSubKategori && editSubKategori !== 'Lainnya' ? `${editKategori} - ${editSubKategori}` : editKategori;
     try {
-      await apiPatch(`/api/mutasi/${r.id}`, { description: value })
+      await apiPatch(`/api/mutasi/${editRow.id}`, {
+        kind: combinedKind,
+        occurred_at: toIsoLocal(editDate, editTime),
+        description: editDesc
+      })
       toast.push('Mutasi diperbarui', 'success')
+      setEditRow(null)
       await refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal mengubah'), 'error')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -211,50 +251,6 @@ export default function MutasiPage({ me }: { me: Me }) {
       <div className="section-header">
         <h2 className="h2">Buku Mutasi</h2>
         <div className="section-actions">
-          <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari kejadian..." />
-          <select className="select select-sm" value={filterKategori} onChange={(e) => { setFilterKategori(e.target.value); setFilterSub('') }}>
-            <option value="">Semua Kategori</option>
-            {Object.keys(KATEGORI_OPTS).map(k => <option key={k} value={k}>{k}</option>)}
-          </select>
-          {filterKategori && filterKategori !== 'Lainnya' && (
-            <select className="select select-sm" value={filterSub} onChange={(e) => setFilterSub(e.target.value)}>
-              <option value="">Semua Sub</option>
-              {KATEGORI_OPTS[filterKategori].map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          )}
-          <input className="input input-sm" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          <select className="select select-sm" value={sort} onChange={(e) => setSort(e.target.value as any)}>
-            <option value="occurred_desc">Terbaru</option>
-            <option value="occurred_asc">Terlama</option>
-          </select>
-          <select className="select select-sm" value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))}>
-            <option value={50}>50</option>
-            <option value={200}>200</option>
-            <option value={500}>500</option>
-          </select>
-          <button className="button button-secondary button-sm" type="button" onClick={() => setDate(today)}>
-            Hari ini
-          </button>
-          <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
-            Semua
-          </button>
-          <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub })}>
-            Refresh
-          </button>
-          <button
-            className="button button-secondary button-sm"
-            type="button"
-            onClick={() =>
-              downloadCsv(
-                `mutasi-${date || 'semua'}.csv`,
-                [['Jam', 'Jenis', 'Deskripsi', 'Foto', 'Petugas', 'Shift', 'Pos']].concat(
-                  items.map((r) => [fmtWhen(r.occurred_at), r.kind, r.description, r.has_photo ? 'Ya' : 'Tidak', r.created_by_name || '-', r.shift || '-', r.post || '-']),
-                ),
-              )
-            }
-          >
-            Export CSV
-          </button>
           <button className="button button-secondary button-sm" type="button" onClick={() => window.print()}>
             Cetak
           </button>
@@ -400,7 +396,7 @@ export default function MutasiPage({ me }: { me: Me }) {
               </thead>
               <tbody>
                 {items.map((r) => (
-                  <tr key={r.id}>
+                  <tr key={r.id} className={r.status === 'void' ? 'table-row-void' : undefined}>
                     <td data-label="Jam">{fmtWhen(r.occurred_at)}</td>
                     <td data-label="Jenis">{r.kind}</td>
                     <td data-label="Deskripsi">
@@ -425,10 +421,10 @@ export default function MutasiPage({ me }: { me: Me }) {
                         ) : (
                           <div className="row">
                             <button className="button button-sm" type="button" onClick={() => doEdit(r)}>
-                              Edit
+                              ✎ Edit
                             </button>
                             <button className="button button-sm button-danger" type="button" onClick={() => doVoid(r)}>
-                              Void
+                              ⨯ Void
                             </button>
                           </div>
                         )}
@@ -446,6 +442,73 @@ export default function MutasiPage({ me }: { me: Me }) {
               </tbody>
             </table>
           </div>
+
+          <div className="table-footer-filters">
+            <div className="filter-group">
+              <label className="label-sm">Cari</label>
+              <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari kejadian..." />
+            </div>
+            <div className="filter-group">
+              <label className="label-sm">Kategori</label>
+              <select className="select select-sm" value={filterKategori} onChange={(e) => { setFilterKategori(e.target.value); setFilterSub('') }}>
+                <option value="">Semua Kategori</option>
+                {Object.keys(KATEGORI_OPTS).map(k => <option key={k} value={k}>{k}</option>)}
+              </select>
+            </div>
+            {filterKategori && filterKategori !== 'Lainnya' && (
+              <div className="filter-group">
+                <label className="label-sm">Sub-Kategori</label>
+                <select className="select select-sm" value={filterSub} onChange={(e) => setFilterSub(e.target.value)}>
+                  <option value="">Semua Sub</option>
+                  {KATEGORI_OPTS[filterKategori].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            )}
+            <div className="filter-group">
+              <label className="label-sm">Tanggal</label>
+              <input className="input input-sm" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            </div>
+            <div className="filter-group">
+              <label className="label-sm">Urutan</label>
+              <select className="select select-sm" value={sort} onChange={(e) => setSort(e.target.value as any)}>
+                <option value="occurred_desc">Terbaru</option>
+                <option value="occurred_asc">Terlama</option>
+              </select>
+            </div>
+            <div className="filter-group">
+              <label className="label-sm">Limit</label>
+              <select className="select select-sm" value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))}>
+                <option value={50}>50</option>
+                <option value={200}>200</option>
+                <option value={500}>500</option>
+              </select>
+            </div>
+            <div className="filter-actions">
+              <button className="button button-secondary button-sm" type="button" onClick={() => setDate(today)}>
+                Hari ini
+              </button>
+              <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
+                Semua
+              </button>
+              <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub })}>
+                Refresh
+              </button>
+              <button
+                className="button button-secondary button-sm"
+                type="button"
+                onClick={() =>
+                  downloadCsv(
+                    `mutasi-${date || 'semua'}.csv`,
+                    [['Jam', 'Jenis', 'Deskripsi', 'Foto', 'Petugas', 'Shift', 'Pos']].concat(
+                      items.map((r) => [fmtWhen(r.occurred_at), r.kind, r.description, r.has_photo ? 'Ya' : 'Tidak', r.created_by_name || '-', r.shift || '-', r.post || '-']),
+                    ),
+                  )
+                }
+              >
+                Export CSV
+              </button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -460,6 +523,53 @@ export default function MutasiPage({ me }: { me: Me }) {
             </div>
             <div className="modal-body">
               <img className="modal-photo" src={photoView} alt="Foto" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editRow && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Edit mutasi" onClick={(e) => e.currentTarget === e.target && setEditRow(null)}>
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-title">Edit Mutasi</div>
+              <button className="button button-secondary button-sm" type="button" onClick={() => setEditRow(null)}>
+                Tutup
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="form grid grid-2">
+                <div className="field">
+                  <label className="label">Kategori</label>
+                  <select className="select" value={editKategori} onChange={(e) => { setEditKategori(e.target.value); setEditSubKategori(KATEGORI_OPTS[e.target.value][0] || '') }}>
+                    {Object.keys(KATEGORI_OPTS).map(k => <option key={k} value={k}>{k}</option>)}
+                  </select>
+                </div>
+                {editKategori !== 'Lainnya' && (
+                  <div className="field">
+                    <label className="label">Sub-kategori</label>
+                    <select className="select" value={editSubKategori} onChange={(e) => setEditSubKategori(e.target.value)}>
+                      {KATEGORI_OPTS[editKategori].map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                )}
+                <div className="field">
+                  <label className="label">Tanggal</label>
+                  <input className="input" type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label className="label">Jam</label>
+                  <input className="input" type="time" value={editTime} onChange={(e) => setEditTime(e.target.value)} />
+                </div>
+                <div className="field grid-span-2">
+                  <label className="label">Deskripsi</label>
+                  <input className="input" value={editDesc} onChange={(e) => setEditDesc(e.target.value)} required />
+                </div>
+              </div>
+              <div className="row row-right" style={{ marginTop: 20 }}>
+                <button className="button button-secondary" type="button" onClick={() => setEditRow(null)} disabled={busy}>Batal</button>
+                <button className="button button-primary" type="button" onClick={saveEdit} disabled={busy}>{busy ? 'Menyimpan...' : 'Simpan Perubahan'}</button>
+              </div>
             </div>
           </div>
         </div>

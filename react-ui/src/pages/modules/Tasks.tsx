@@ -15,8 +15,26 @@ export default function TasksPage({ me }: { me: Me }) {
   const [limit, setLimit] = useState(200)
   const [items, setItems] = useState<TaskEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const [filtersOpen, setFiltersOpen] = useState(() => (typeof window !== 'undefined' ? !window.matchMedia('(max-width: 560px)').matches : true))
+  const [offset, setOffset] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string>('')
+
+  const [editRow, setEditRow] = useState<TaskEntry | null>(null)
+  const [editKind, setEditKind] = useState('')
+  const [editTime, setEditTime] = useState('')
+  const [editDate, setEditDate] = useState('')
+  const [editDestination, setEditDestination] = useState('')
+  const [editNotes, setEditNotes] = useState('')
+  const [editVendor, setEditVendor] = useState('')
+  const [editPomStatus, setEditPomStatus] = useState('')
+  const [editBoxCount, setEditBoxCount] = useState('')
+  const [editGalonUsed, setEditGalonUsed] = useState('')
+  const [editGalonUnused, setEditGalonUnused] = useState('')
+  const [editGalonReturned, setEditGalonReturned] = useState('')
+  const [editGalonTo, setEditGalonTo] = useState('')
 
   type TaskTab = 'umum' | 'pom' | 'galon'
   const [tab, setTab] = useState<TaskTab>('umum')
@@ -38,18 +56,30 @@ export default function TasksPage({ me }: { me: Me }) {
   const [photoKey, setPhotoKey] = useState(0)
   const [photoView, setPhotoView] = useState<string | null>(null)
 
-  const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number }) => {
+  const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number; offset?: number; append?: boolean }) => {
     const { q, date, sort, limit } = opts
-    setLoading(true)
+    const nextOffset = Math.max(0, opts.offset || 0)
+    const append = Boolean(opts.append)
+    if (append) setLoadingMore(true)
+    else setLoading(true)
     try {
       const res = await apiGet<{ items: TaskEntry[] }>(
-        `/api/tasks?q=${encodeURIComponent(q.trim())}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&status=all`,
+        `/api/tasks?q=${encodeURIComponent(q.trim())}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&status=all&offset=${encodeURIComponent(String(nextOffset))}`,
       )
-      setItems(res.items || [])
+      const nextItems = res.items || []
+      setHasMore(nextItems.length >= limit)
+      if (append) {
+        setItems((prev) => prev.concat(nextItems))
+        setOffset((prev) => prev + nextItems.length)
+      } else {
+        setItems(nextItems)
+        setOffset(nextItems.length)
+      }
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal memuat tugas'), 'error')
     } finally {
       setLoading(false)
+      setLoadingMore(false)
     }
   }, [toast])
 
@@ -60,7 +90,7 @@ export default function TasksPage({ me }: { me: Me }) {
   }, [])
 
   useEffect(() => {
-    const t = window.setTimeout(() => refresh({ q, date, sort, limit }).catch(() => {}), 250)
+    const t = window.setTimeout(() => refresh({ q, date, sort, limit, offset: 0, append: false }).catch(() => {}), 250)
     return () => window.clearTimeout(t)
   }, [date, limit, q, refresh, sort])
 
@@ -194,25 +224,66 @@ export default function TasksPage({ me }: { me: Me }) {
     return { kind: 'umum' as const }
   }, [tab, viewItems])
 
-  const doEdit = async (r: TaskEntry) => {
+  const doEdit = (r: TaskEntry) => {
     if (!canAdmin) return
     if (r.status === 'void') return
-    const next = await confirm.prompt({
-      title: 'Edit Catatan',
-      message: 'Ubah catatan tugas:',
-      initialValue: r.notes || '',
-      confirmText: 'Simpan',
-      cancelText: 'Batal',
-      required: false,
-    })
-    if (next == null) return
-    const value = next.trim()
+    
+    setEditRow(r)
+    setEditKind(r.kind || '')
+    setEditDestination(r.destination || '')
+    setEditNotes(r.notes || '')
+    
+    if (r.occurred_at) {
+      const d = new Date(r.occurred_at)
+      setEditDate(toYmd(d))
+      setEditTime(fmtTime(r.occurred_at))
+    }
+    
+    const e = r.extra || {}
+    setEditVendor(String(e.vendor || ''))
+    setEditPomStatus(String(e.pom_status || 'Datang'))
+    setEditBoxCount(String(e.box_count ?? ''))
+    setEditGalonUsed(String(e.galon_used ?? ''))
+    setEditGalonUnused(String(e.galon_unused ?? ''))
+    setEditGalonReturned(String(e.galon_returned ?? ''))
+    setEditGalonTo(String(e.galon_to || ''))
+  }
+
+  const saveEdit = async () => {
+    if (!editRow || busy) return
+    setBusy(true)
     try {
-      await apiPatch(`/api/tasks/${r.id}`, { notes: value })
+      let extra: any = null
+      if (isPom(editKind)) {
+        extra = {
+          vendor: editVendor,
+          pom_status: editPomStatus,
+          box_count: parseInt(editBoxCount, 10) || 0
+        }
+      } else if (isGalon(editKind)) {
+        extra = {
+          galon_used: parseInt(editGalonUsed, 10) || 0,
+          galon_unused: parseInt(editGalonUnused, 10) || 0,
+          galon_returned: parseInt(editGalonReturned, 10) || 0,
+          galon_to: editGalonTo
+        }
+      }
+      
+      await apiPatch(`/api/tasks/${editRow.id}`, {
+        kind: editKind,
+        destination: editDestination,
+        notes: editNotes,
+        occurred_at: toIsoLocal(editDate, editTime),
+        extra: extra
+      })
+      
       toast.push('Tugas diperbarui', 'success')
+      setEditRow(null)
       await refresh({ q, date, sort, limit })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal mengubah'), 'error')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -380,50 +451,6 @@ export default function TasksPage({ me }: { me: Me }) {
       <div className="section-header">
         <h2 className="h2">Tugas Operasional Security</h2>
         <div className="section-actions">
-          <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari tugas..." />
-          <input className="input input-sm" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          <select className="select select-sm" value={sort} onChange={(e) => setSort(e.target.value as any)}>
-            <option value="occurred_desc">Terbaru</option>
-            <option value="occurred_asc">Terlama</option>
-          </select>
-          <select className="select select-sm" value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))}>
-            <option value={50}>50</option>
-            <option value={200}>200</option>
-            <option value={500}>500</option>
-          </select>
-          <button className="button button-secondary button-sm" type="button" onClick={() => setDate(today)}>
-            Hari ini
-          </button>
-          <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
-            Semua
-          </button>
-          <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ q, date, sort, limit })}>
-            Refresh
-          </button>
-          <button
-            className="button button-secondary button-sm"
-            type="button"
-            onClick={() =>
-              downloadCsv(
-                `tugas-${tab}-${date || 'semua'}.csv`,
-                [['Waktu', 'Jenis', 'Tujuan', 'Detail', 'Catatan', 'Foto', 'Petugas', 'Shift', 'Pos']].concat(
-                  viewItems.map((r) => [
-                    fmtDateTime(r.occurred_at),
-                    r.kind,
-                    r.destination,
-                    renderDetails(r),
-                    r.notes || '',
-                    r.has_photo ? 'Ya' : 'Tidak',
-                    r.created_by_name || '-',
-                    r.shift || '-',
-                    r.post || '-',
-                  ]),
-                ),
-              )
-            }
-          >
-            Export CSV
-          </button>
           <button className="button button-secondary button-sm" type="button" onClick={() => window.print()}>
             Cetak
           </button>
@@ -659,7 +686,7 @@ export default function TasksPage({ me }: { me: Me }) {
               </thead>
               <tbody>
                 {viewItems.map((r) => (
-                  <tr key={r.id}>
+                  <tr key={r.id} className={r.status === 'void' ? 'table-row-void' : undefined}>
                     <td data-label="Waktu">{fmtDateTime(r.occurred_at)}</td>
                     <td data-label="Jenis">{r.kind}</td>
                     <td data-label="Tujuan">{r.destination}</td>
@@ -686,10 +713,10 @@ export default function TasksPage({ me }: { me: Me }) {
                         ) : (
                           <div className="row">
                             <button className="button button-sm" type="button" onClick={() => doEdit(r)}>
-                              Edit
+                              ✎ Edit
                             </button>
                             <button className="button button-sm button-danger" type="button" onClick={() => doVoid(r)}>
-                              Void
+                              ⨯ Void
                             </button>
                           </div>
                         )}
@@ -707,6 +734,67 @@ export default function TasksPage({ me }: { me: Me }) {
               </tbody>
             </table>
           </div>
+
+          <div className="table-footer-filters">
+            <div className="filter-group">
+              <label className="label-sm">Cari</label>
+              <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari tugas..." />
+            </div>
+            <div className="filter-group">
+              <label className="label-sm">Tanggal</label>
+              <input className="input input-sm" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            </div>
+            <div className="filter-group">
+              <label className="label-sm">Urutan</label>
+              <select className="select select-sm" value={sort} onChange={(e) => setSort(e.target.value as any)}>
+                <option value="occurred_desc">Terbaru</option>
+                <option value="occurred_asc">Terlama</option>
+              </select>
+            </div>
+            <div className="filter-group">
+              <label className="label-sm">Limit</label>
+              <select className="select select-sm" value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))}>
+                <option value={50}>50</option>
+                <option value={200}>200</option>
+                <option value={500}>500</option>
+              </select>
+            </div>
+            <div className="filter-actions">
+              <button className="button button-secondary button-sm" type="button" onClick={() => setDate(today)}>
+                Hari ini
+              </button>
+              <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
+                Semua
+              </button>
+              <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ q, date, sort, limit, offset: 0, append: false })}>
+                Refresh
+              </button>
+              <button
+                className="button button-secondary button-sm"
+                type="button"
+                onClick={() =>
+                  downloadCsv(
+                    `tugas-${tab}-${date || 'semua'}.csv`,
+                    [['Waktu', 'Jenis', 'Tujuan', 'Detail', 'Catatan', 'Foto', 'Petugas', 'Shift', 'Pos']].concat(
+                      viewItems.map((r) => [
+                        fmtDateTime(r.occurred_at),
+                        r.kind,
+                        r.destination,
+                        renderDetails(r),
+                        r.notes || '',
+                        r.has_photo ? 'Ya' : 'Tidak',
+                        r.created_by_name || '-',
+                        r.shift || '-',
+                        r.post || '-',
+                      ]),
+                    ),
+                  )
+                }
+              >
+                Export CSV
+              </button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -721,6 +809,90 @@ export default function TasksPage({ me }: { me: Me }) {
             </div>
             <div className="modal-body">
               <img className="modal-photo" src={photoView} alt="Foto" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editRow && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Edit tugas" onClick={(e) => e.currentTarget === e.target && setEditRow(null)}>
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-title">Edit Tugas</div>
+              <button className="button button-secondary button-sm" type="button" onClick={() => setEditRow(null)}>
+                Tutup
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="form grid grid-2">
+                <div className="field">
+                  <label className="label">Jenis</label>
+                  <input className="input" value={editKind} disabled />
+                </div>
+                <div className="field">
+                  <label className="label">Tanggal</label>
+                  <input className="input" type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label className="label">Jam</label>
+                  <input className="input" type="time" value={editTime} onChange={(e) => setEditTime(e.target.value)} />
+                </div>
+                {isPom(editKind) && (
+                  <>
+                    <div className="field">
+                      <label className="label">Vendor</label>
+                      <input className="input" value={editVendor} onChange={(e) => setEditVendor(e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="label">Box</label>
+                      <input className="input" type="number" value={editBoxCount} onChange={(e) => setEditBoxCount(e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="label">Status POM</label>
+                      <select className="select" value={editPomStatus} onChange={(e) => setEditPomStatus(e.target.value)}>
+                        <option value="Dijadwalkan">Dijadwalkan</option>
+                        <option value="Datang">Datang</option>
+                        <option value="Selesai">Selesai</option>
+                        <option value="Bermasalah">Bermasalah</option>
+                      </select>
+                    </div>
+                  </>
+                )}
+                {isGalon(editKind) && (
+                  <>
+                    <div className="field">
+                      <label className="label">Dipakai</label>
+                      <input className="input" type="number" value={editGalonUsed} onChange={(e) => setEditGalonUsed(e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="label">Tidak Dipakai</label>
+                      <input className="input" type="number" value={editGalonUnused} onChange={(e) => setEditGalonUnused(e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="label">Dikembalikan</label>
+                      <input className="input" type="number" value={editGalonReturned} onChange={(e) => setEditGalonReturned(e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="label">Ke</label>
+                      <input className="input" value={editGalonTo} onChange={(e) => setEditGalonTo(e.target.value)} />
+                    </div>
+                  </>
+                )}
+                {!isPom(editKind) && !isGalon(editKind) && (
+                  <div className="field">
+                    <label className="label">Tujuan</label>
+                    <input className="input" value={editDestination} onChange={(e) => setEditDestination(e.target.value)} />
+                  </div>
+                )}
+                <div className="field grid-span-2">
+                  <label className="label">Catatan</label>
+                  <input className="input" value={editNotes} onChange={(e) => setEditNotes(e.target.value)} />
+                </div>
+              </div>
+              <div className="row row-right" style={{ marginTop: 20 }}>
+                <button className="button button-secondary" type="button" onClick={() => setEditRow(null)} disabled={busy}>Batal</button>
+                <button className="button button-primary" type="button" onClick={saveEdit} disabled={busy}>{busy ? 'Menyimpan...' : 'Simpan Perubahan'}</button>
+              </div>
             </div>
           </div>
         </div>

@@ -15,6 +15,7 @@ export default function DashboardPage({ me }: { me: Me }) {
   const toast = useToast()
   const confirm = useConfirm()
   const today = useMemo(() => toYmd(new Date()), [])
+  const [reportDate, setReportDate] = useState(today)
   const [report, setReport] = useState<ShiftReport | null>(null)
   const [keysOpen, setKeysOpen] = useState<KeyTx[]>([])
   const [handover, setHandover] = useState<HandoverRes | null>(null)
@@ -29,7 +30,7 @@ export default function DashboardPage({ me }: { me: Me }) {
     let cancelled = false
     setLoadingMeta(true)
     Promise.all([
-      apiGet<ShiftReport>(`/api/report/shift?date=${encodeURIComponent(today)}&shift=${encodeURIComponent(me.shift)}&post=${encodeURIComponent(me.post)}`),
+      apiGet<ShiftReport>(`/api/report/shift?date=${encodeURIComponent(reportDate)}&shift=${encodeURIComponent(me.shift)}&post=${encodeURIComponent(me.post)}`),
       apiGet<HandoverRes>('/api/handover'),
     ])
       .then(([r, h]) => {
@@ -48,7 +49,7 @@ export default function DashboardPage({ me }: { me: Me }) {
     return () => {
       cancelled = true
     }
-  }, [me.post, me.shift, toast, today])
+  }, [me.post, me.shift, toast, reportDate])
 
   useEffect(() => {
     let cancelled = false
@@ -129,7 +130,11 @@ export default function DashboardPage({ me }: { me: Me }) {
     <section className="section">
       <div className="section-header">
         <h1 className="h1">Dashboard</h1>
-        <div className="section-actions">
+        <div className="section-actions section-filters">
+          <div className="filter-group" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <label className="label-sm" style={{ margin: 0 }}>Filter Tanggal</label>
+            <input className="input input-sm" type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} />
+          </div>
           <div className="search">
             <span className="search-icon" aria-hidden="true">
               ⌕
@@ -183,7 +188,7 @@ export default function DashboardPage({ me }: { me: Me }) {
                 </thead>
                 <tbody>
                   {keysOpen.slice(0, 10).map((r) => (
-                    <tr key={r.id}>
+                    <tr key={r.id} className="table-row-active">
                       <td data-label="Nama">{r.borrower_name}</td>
                       <td data-label="Ruangan/Kunci">{r.key_name}</td>
                       <td data-label="Jam titip">{fmtTime(r.checkout_at)}</td>

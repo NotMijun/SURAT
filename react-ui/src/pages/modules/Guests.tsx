@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { apiGet, apiGetBlob, apiPost, apiPostForm } from '../../lib/api'
+import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { GuestEntry, Me } from '../../types'
 import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useConfirm, useToast } from '../../components/ToastHost'
@@ -16,6 +16,16 @@ export default function GuestsPage({ me }: { me: Me }) {
   const [limit, setLimit] = useState(200)
   const [loading, setLoading] = useState(true)
   const [items, setItems] = useState<GuestEntry[]>([])
+  const [filtersOpen, setFiltersOpen] = useState(() => (typeof window !== 'undefined' ? !window.matchMedia('(max-width: 560px)').matches : true))
+  const [offset, setOffset] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [editRow, setEditRow] = useState<GuestEntry | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editInstansi, setEditInstansi] = useState('')
+  const [editPurpose, setEditPurpose] = useState('')
+  const [editMeet, setEditMeet] = useState('')
+  const [editNotes, setEditNotes] = useState('')
 
   const [name, setName] = useState('')
   const [instansi, setInstansi] = useState('')
@@ -29,23 +39,35 @@ export default function GuestsPage({ me }: { me: Me }) {
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string>('')
 
-  const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number; post: string }) => {
+  const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number; post: string; offset?: number; append?: boolean }) => {
     const { q, date, sort, limit, post } = opts
-    setLoading(true)
+    const nextOffset = Math.max(0, opts.offset || 0)
+    const append = Boolean(opts.append)
+    if (append) setLoadingMore(true)
+    else setLoading(true)
     try {
       const res = await apiGet<{ items: GuestEntry[] }>(
-        `/api/guests?status=all&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&post=${encodeURIComponent(post)}`,
+        `/api/guests?status=all&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&post=${encodeURIComponent(post)}&offset=${encodeURIComponent(String(nextOffset))}`,
       )
-      setItems(res.items || [])
+      const nextItems = res.items || []
+      setHasMore(nextItems.length >= limit)
+      if (append) {
+        setItems((prev) => prev.concat(nextItems))
+        setOffset((prev) => prev + nextItems.length)
+      } else {
+        setItems(nextItems)
+        setOffset(nextItems.length)
+      }
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal memuat tamu'), 'error')
     } finally {
       setLoading(false)
+      setLoadingMore(false)
     }
   }, [toast])
 
   useEffect(() => {
-    const t = window.setTimeout(() => refresh({ q, date, sort, limit, post: postFilter }).catch(() => {}), 250)
+    const t = window.setTimeout(() => refresh({ q, date, sort, limit, post: postFilter, offset: 0, append: false }).catch(() => {}), 250)
     return () => window.clearTimeout(t)
   }, [date, limit, q, refresh, sort, postFilter])
 
@@ -153,6 +175,72 @@ export default function GuestsPage({ me }: { me: Me }) {
     }
   }
 
+  const canCorrect = (r: GuestEntry) => me.user.role === 'admin' || me.user.role === 'supervisor' || (typeof r.created_by === 'number' && r.created_by === me.user.id)
+
+  const openEdit = (r: GuestEntry) => {
+    setEditRow(r)
+    setEditName(r.name || '')
+    setEditInstansi(r.instansi || '')
+    setEditPurpose(r.purpose || '')
+    setEditMeet(r.meet_person || '')
+    setEditNotes(r.notes || '')
+  }
+
+  const saveEdit = async () => {
+    if (!editRow) return
+    try {
+      await apiPatch(`/api/guests/${editRow.id}`, {
+        name: editName,
+        instansi: editInstansi,
+        purpose: editPurpose,
+        meet_person: editMeet,
+        notes: editNotes,
+      })
+      toast.push('Tamu diperbarui', 'success')
+      setItems((prev) =>
+        prev.map((x) =>
+          x.id === editRow.id
+            ? { ...x, name: editName, instansi: editInstansi, purpose: editPurpose, meet_person: editMeet, notes: editNotes }
+            : x,
+        ),
+      )
+      setEditRow(null)
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal edit tamu'), 'error')
+    }
+  }
+
+  const voidGuest = async (r: GuestEntry) => {
+    const reason = await confirm.prompt({ title: 'Void Tamu', message: 'Alasan void:', initialValue: '', confirmText: 'Void', cancelText: 'Batal', required: true })
+    if (!reason) return
+    try {
+      await apiPost(`/api/guests/${r.id}/void`, { reason })
+      toast.push('Tamu di-void', 'success')
+      setItems((prev) => prev.map((x) => (x.id === r.id ? { ...x, status: 'void', void_reason: reason } : x)))
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal void tamu'), 'error')
+    }
+  }
+
+  const undoCheckout = async (r: GuestEntry) => {
+    const reason = await confirm.prompt({
+      title: 'Batal Checkout',
+      message: 'Alasan batal checkout:',
+      initialValue: '',
+      confirmText: 'Batal Checkout',
+      cancelText: 'Kembali',
+      required: true,
+    })
+    if (!reason) return
+    try {
+      await apiPost(`/api/guests/${r.id}/undo_checkout`, { reason })
+      toast.push('Checkout dibatalkan', 'success')
+      setItems((prev) => prev.map((x) => (x.id === r.id ? { ...x, status: 'in', checkout_at: null } : x)))
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal membatalkan checkout'), 'error')
+    }
+  }
+
   const checkout = async (r: GuestEntry) => {
     const ok = await confirm.confirm({
       title: 'Checkout Tamu',
@@ -197,51 +285,6 @@ export default function GuestsPage({ me }: { me: Me }) {
       <div className="section-header">
         <h2 className="h2">Buku Tamu ({postFilter})</h2>
         <div className="section-actions">
-          <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari tamu / instansi..." />
-          <input className="input input-sm" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          <select className="select select-sm" value={sort} onChange={(e) => setSort(e.target.value as any)}>
-            <option value="checkin_desc">Masuk terbaru</option>
-            <option value="checkin_asc">Masuk terlama</option>
-          </select>
-          <select className="select select-sm" value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))}>
-            <option value={50}>50</option>
-            <option value={200}>200</option>
-            <option value={500}>500</option>
-          </select>
-          <button className="button button-secondary button-sm" type="button" onClick={() => setDate(today)}>
-            Hari ini
-          </button>
-          <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
-            Semua
-          </button>
-          <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ q, date, sort, limit, post: postFilter })}>
-            Refresh
-          </button>
-          <button
-            className="button button-secondary button-sm"
-            type="button"
-            onClick={() =>
-              downloadCsv(
-                `tamu-${postFilter}-${date || 'semua'}.csv`,
-                [['Nama', 'Instansi', 'Divisi Tujuan', 'Ditemui', 'Masuk', 'Keluar', 'Keperluan', 'Foto', 'Petugas', 'Status']].concat(
-                  items.map((r) => [
-                    r.name,
-                    r.instansi,
-                    r.purpose,
-                    r.meet_person,
-                    fmtDateTime(r.checkin_at),
-                    fmtDateTime(r.checkout_at),
-                    r.notes || '',
-                    r.has_photo ? 'Ya' : 'Tidak',
-                    r.created_by_name || '-',
-                    r.status,
-                  ]),
-                ),
-              )
-            }
-          >
-            Export CSV
-          </button>
           <button className="button button-secondary button-sm" type="button" onClick={() => window.print()}>
             Cetak
           </button>
@@ -412,7 +455,7 @@ export default function GuestsPage({ me }: { me: Me }) {
               </thead>
               <tbody>
                 {items.map((r) => (
-                  <tr key={r.id}>
+                  <tr key={r.id} className={r.status === 'in' ? 'table-row-active' : r.status === 'void' ? 'table-row-void' : undefined}>
                     <td data-label="Nama">{r.name}</td>
                     <td data-label="Instansi">{r.instansi}</td>
                     <td data-label="Divisi Tujuan">{r.purpose}</td>
@@ -429,12 +472,30 @@ export default function GuestsPage({ me }: { me: Me }) {
                       )}
                     </td>
                     <td data-label="Aksi">
-                      {r.status === 'in' ? (
-                        <button className="button button-sm" type="button" onClick={() => checkout(r)}>
-                          Keluar
-                        </button>
+                      {r.status === 'void' ? (
+                        <span className="muted">Void{r.void_reason ? `: ${r.void_reason}` : ''}</span>
                       ) : (
-                        <span className="muted">—</span>
+                        <div className="row" style={{ flexWrap: 'wrap' }}>
+                          {r.status === 'in' ? (
+                            <button className="button button-sm" type="button" onClick={() => checkout(r)}>
+                              ↗ Keluar
+                            </button>
+                          ) : canCorrect(r) ? (
+                            <button className="button button-sm button-secondary" type="button" onClick={() => undoCheckout(r)}>
+                              ↩ Batal checkout
+                            </button>
+                          ) : null}
+                          {canCorrect(r) ? (
+                            <button className="button button-sm button-secondary" type="button" onClick={() => openEdit(r)}>
+                              ✎ Edit
+                            </button>
+                          ) : null}
+                          {canCorrect(r) ? (
+                            <button className="button button-sm button-danger" type="button" onClick={() => voidGuest(r)}>
+                              ⨯ Void
+                            </button>
+                          ) : null}
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -449,6 +510,82 @@ export default function GuestsPage({ me }: { me: Me }) {
               </tbody>
             </table>
           </div>
+
+          <div className="table-footer-filters">
+            <div className="filter-group">
+              <label className="label-sm">Cari</label>
+              <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari tamu / instansi..." />
+            </div>
+            <div className="filter-group">
+              <label className="label-sm">Tanggal</label>
+              <input className="input input-sm" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            </div>
+            <div className="filter-group">
+              <label className="label-sm">Urutan</label>
+              <select className="select select-sm" value={sort} onChange={(e) => setSort(e.target.value as any)}>
+                <option value="checkin_desc">Masuk terbaru</option>
+                <option value="checkin_asc">Masuk terlama</option>
+              </select>
+            </div>
+            <div className="filter-group">
+              <label className="label-sm">Limit</label>
+              <select className="select select-sm" value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))}>
+                <option value={50}>50</option>
+                <option value={200}>200</option>
+                <option value={500}>500</option>
+              </select>
+            </div>
+            <div className="filter-actions">
+              <button className="button button-secondary button-sm" type="button" onClick={() => setDate(today)}>
+                Hari ini
+              </button>
+              <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
+                Semua
+              </button>
+              <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ q, date, sort, limit, post: postFilter, offset: 0, append: false })}>
+                Refresh
+              </button>
+              <button
+                className="button button-secondary button-sm"
+                type="button"
+                onClick={() =>
+                  downloadCsv(
+                    `tamu-${postFilter}-${date || 'semua'}.csv`,
+                    [['Nama', 'Instansi', 'Divisi Tujuan', 'Ditemui', 'Masuk', 'Keluar', 'Keperluan', 'Foto', 'Petugas', 'Status', 'Alasan void']].concat(
+                      items.map((r) => [
+                        r.name,
+                        r.instansi,
+                        r.purpose,
+                        r.meet_person,
+                        fmtDateTime(r.checkin_at),
+                        fmtDateTime(r.checkout_at),
+                        r.notes || '',
+                        r.has_photo ? 'Ya' : 'Tidak',
+                        r.created_by_name || '-',
+                        r.status,
+                        r.void_reason || '',
+                      ]),
+                    ),
+                  )
+                }
+              >
+                Export CSV
+              </button>
+            </div>
+          </div>
+
+          {hasMore && (
+            <div className="row" style={{ justifyContent: 'center', marginTop: 12 }}>
+              <button
+                className="button button-secondary"
+                type="button"
+                disabled={loading || loadingMore}
+                onClick={() => refresh({ q, date, sort, limit, post: postFilter, offset, append: true })}
+              >
+                {loadingMore ? 'Memuat...' : 'Muat lebih banyak'}
+              </button>
+            </div>
+          )}
         </div>
       </section>
 
@@ -463,6 +600,36 @@ export default function GuestsPage({ me }: { me: Me }) {
             </div>
             <div className="modal-body">
               <img className="modal-photo" src={photoView} alt="Foto" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editRow && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Edit tamu" onClick={(e) => (e.currentTarget === e.target ? setEditRow(null) : null)}>
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-title">Edit Tamu</div>
+              <button className="button button-secondary button-sm" type="button" onClick={() => setEditRow(null)}>
+                Tutup
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="grid" style={{ gap: 10 }}>
+                <input className="input" value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Nama" />
+                <input className="input" value={editInstansi} onChange={(e) => setEditInstansi(e.target.value)} placeholder="Instansi" />
+                <input className="input" value={editPurpose} onChange={(e) => setEditPurpose(e.target.value)} placeholder="Divisi tujuan" />
+                <input className="input" value={editMeet} onChange={(e) => setEditMeet(e.target.value)} placeholder="Ditemui" />
+                <textarea className="textarea" value={editNotes} onChange={(e) => setEditNotes(e.target.value)} placeholder="Keperluan" />
+              </div>
+              <div className="row row-right" style={{ marginTop: 14 }}>
+                <button className="button button-secondary" type="button" onClick={() => setEditRow(null)}>
+                  Batal
+                </button>
+                <button className="button button-primary" type="button" onClick={saveEdit}>
+                  Simpan
+                </button>
+              </div>
             </div>
           </div>
         </div>

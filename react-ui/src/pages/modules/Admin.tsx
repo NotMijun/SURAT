@@ -266,7 +266,7 @@ export default function AdminPage({ me }: { me: Me }) {
     <section className="section">
       <div className="section-header">
         <h2 className="h2">Admin</h2>
-        <div className="section-actions">
+        <div className="section-actions section-filters">
           <input className="input input-sm" value={userQ} onChange={(e) => setUserQ(e.target.value)} placeholder="Cari user..." />
           <input className="input input-sm" value={auditQ} onChange={(e) => setAuditQ(e.target.value)} placeholder="Cari audit..." />
           <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ userQ, auditQ })}>

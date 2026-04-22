@@ -26,6 +26,7 @@ export default function Shell() {
   const [theme, setTheme] = useState<'light' | 'dark'>(localStorage.getItem(themeKey) === 'light' ? 'light' : 'dark')
   const [compact] = useState(localStorage.getItem(compactKey) === 'true')
   const [accent, setAccent] = useState<Accent>((localStorage.getItem(accentKey) as Accent) || 'gold')
+  const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => {
     const root = document.documentElement
@@ -198,6 +199,9 @@ export default function Shell() {
               Sesi: {sessionLabel}
             </div>
           )}
+          <button className="button button-secondary button-sm topbar-menu" type="button" onClick={() => setMenuOpen(true)}>
+            ⋯
+          </button>
           <button className="button button-secondary button-sm topbar-action" type="button" onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}>
             {theme === 'light' ? 'Mode: Terang' : 'Mode: Gelap'}
           </button>
@@ -213,14 +217,53 @@ export default function Shell() {
           >
             Tema: {accent}
           </button>
-          <button className="button button-ghost" type="button" onClick={logoutAll}>
+          <button className="button button-ghost topbar-logout" type="button" onClick={logoutAll}>
             Keluar Semua
           </button>
-          <button className="button button-ghost" type="button" onClick={logout}>
+          <button className="button button-ghost topbar-logout" type="button" onClick={logout}>
             Keluar
           </button>
         </div>
       </div>
+      {menuOpen && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Menu" onClick={(e) => (e.currentTarget === e.target ? setMenuOpen(false) : null)}>
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-title">Menu</div>
+              <button className="button button-secondary button-sm" type="button" onClick={() => setMenuOpen(false)}>
+                Tutup
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="row" style={{ flexWrap: 'wrap' }}>
+                <button className="button button-secondary" type="button" onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}>
+                  {theme === 'light' ? 'Mode: Terang' : 'Mode: Gelap'}
+                </button>
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  onClick={() =>
+                    setAccent((a) => {
+                      const idx = accents.indexOf(a)
+                      return accents[(idx + 1) % accents.length]
+                    })
+                  }
+                >
+                  Tema: {accent}
+                </button>
+              </div>
+              <div className="row" style={{ marginTop: 10, flexWrap: 'wrap' }}>
+                <button className="button button-secondary" type="button" onClick={() => logoutAll().finally(() => setMenuOpen(false))}>
+                  Keluar Semua
+                </button>
+                <button className="button button-danger" type="button" onClick={() => logout().finally(() => setMenuOpen(false))}>
+                  Keluar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="tabsbar">
         <div className="tabs">

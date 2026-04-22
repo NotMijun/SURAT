@@ -31,6 +31,9 @@ export type KeyTx = {
   checkin_at?: string | null
   notes?: string
   status: 'open' | 'closed' | 'void'
+  void_reason?: string | null
+  created_by?: number
+  created_at?: string
   created_by_name?: string
   has_photo?: boolean
   photo_url?: string
@@ -45,7 +48,10 @@ export type GuestEntry = {
   checkin_at: string
   checkout_at?: string | null
   notes?: string
-  status: 'in' | 'out'
+  status: 'in' | 'out' | 'void'
+  void_reason?: string | null
+  created_by?: number
+  created_at?: string
   created_by_name?: string
   shift?: string
   post?: string

@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { apiGet, apiGetBlob, apiPost, apiPostForm } from '../../lib/api'
+import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { KeyMasterItem, KeyTx, Me } from '../../types'
 import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useConfirm, useToast } from '../../components/ToastHost'
@@ -17,11 +17,24 @@ export default function KeysPage({ me }: { me: Me }) {
   const draftKey = useMemo(() => `draft:keys:${me.user.id}`, [me.user.id])
   const [q, setQ] = useState('')
   const [date, setDate] = useState(today)
+  const [formDate, setFormDate] = useState(today)
   const [sort, setSort] = useState<'checkout_desc' | 'checkout_asc' | 'checkin_desc' | 'checkin_asc'>('checkout_desc')
   const [limit, setLimit] = useState(200)
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState<KeyTx[]>([])
   const [closed, setClosed] = useState<KeyTx[]>([])
+  const [filtersOpen, setFiltersOpen] = useState(() => (typeof window !== 'undefined' ? !window.matchMedia('(max-width: 560px)').matches : true))
+  const [openOffset, setOpenOffset] = useState(0)
+  const [closedOffset, setClosedOffset] = useState(0)
+  const [openHasMore, setOpenHasMore] = useState(false)
+  const [closedHasMore, setClosedHasMore] = useState(false)
+  const [loadingMoreOpen, setLoadingMoreOpen] = useState(false)
+  const [loadingMoreClosed, setLoadingMoreClosed] = useState(false)
+  const [editRow, setEditRow] = useState<KeyTx | null>(null)
+  const [editBorrower, setEditBorrower] = useState('')
+  const [editUnit, setEditUnit] = useState('')
+  const [editKeyName, setEditKeyName] = useState('')
+  const [editNotes, setEditNotes] = useState('')
   const [filterBy, setFilterBy] = useState<'titip' | 'ambil'>('titip')
   const [fromHm, setFromHm] = useState('')
   const [toHm, setToHm] = useState('')
@@ -59,20 +72,60 @@ export default function KeysPage({ me }: { me: Me }) {
     try {
       const [a, b] = await Promise.all([
         apiGet<{ items: KeyTx[] }>(
-          `/api/keys?status=open&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&date_field=checkout&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}`,
+          `/api/keys?status=open&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&date_field=checkout&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&offset=0`,
         ),
         apiGet<{ items: KeyTx[] }>(
-          `/api/keys?status=closed&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&date_field=${encodeURIComponent(closedDateField)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}`,
+          `/api/keys?status=closed&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&date_field=${encodeURIComponent(closedDateField)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&offset=0`,
         ),
       ])
-      setOpen(a.items || [])
-      setClosed(b.items || [])
+      const openItems = a.items || []
+      const closedItems = b.items || []
+      setOpen(openItems)
+      setClosed(closedItems)
+      setOpenOffset(openItems.length)
+      setClosedOffset(closedItems.length)
+      setOpenHasMore(openItems.length >= limit)
+      setClosedHasMore(closedItems.length >= limit)
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal memuat data kunci'), 'error')
     } finally {
       setLoading(false)
     }
   }, [toast])
+
+  const loadMoreOpen = useCallback(async () => {
+    setLoadingMoreOpen(true)
+    try {
+      const res = await apiGet<{ items: KeyTx[] }>(
+        `/api/keys?status=open&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&date_field=checkout&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&offset=${encodeURIComponent(String(openOffset))}`,
+      )
+      const next = res.items || []
+      setOpenHasMore(next.length >= limit)
+      setOpen((prev) => prev.concat(next))
+      setOpenOffset((prev) => prev + next.length)
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal memuat data kunci'), 'error')
+    } finally {
+      setLoadingMoreOpen(false)
+    }
+  }, [date, limit, openOffset, q, sort, toast])
+
+  const loadMoreClosed = useCallback(async (closedDateField: 'checkout' | 'checkin') => {
+    setLoadingMoreClosed(true)
+    try {
+      const res = await apiGet<{ items: KeyTx[] }>(
+        `/api/keys?status=closed&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&date_field=${encodeURIComponent(closedDateField)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&offset=${encodeURIComponent(String(closedOffset))}`,
+      )
+      const next = res.items || []
+      setClosedHasMore(next.length >= limit)
+      setClosed((prev) => prev.concat(next))
+      setClosedOffset((prev) => prev + next.length)
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal memuat data kunci'), 'error')
+    } finally {
+      setLoadingMoreClosed(false)
+    }
+  }, [closedOffset, date, limit, q, sort, toast])
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -160,7 +213,7 @@ export default function KeysPage({ me }: { me: Me }) {
         borrower_name: borrower,
         unit,
         key_name: keyName,
-        checkout_at: toIsoLocal(today, time),
+        checkout_at: toIsoLocal(formDate, time),
         notes,
         petugas_id: parseInt(petugasId, 10),
       }
@@ -234,11 +287,11 @@ export default function KeysPage({ me }: { me: Me }) {
   }
 
   const doUndo = async (id: number) => {
-    const ok = await confirm.confirm({ title: 'Undo Penitipan', message: 'Batalkan penitipan kunci ini?', confirmText: 'Batalkan' })
-    if (!ok) return
+    const reason = await confirm.prompt({ title: 'Void Penitipan', message: 'Alasan void:', initialValue: '', confirmText: 'Void', cancelText: 'Batal', required: true })
+    if (!reason) return
     try {
-      await apiPost(`/api/keys/${id}/undo`, {})
-      toast.push('Penitipan kunci dibatalkan', 'success')
+      await apiPost(`/api/keys/${id}/undo`, { reason })
+      toast.push('Penitipan kunci di-void', 'success')
       const closedDateField = date === today && filterBy === 'ambil' ? 'checkin' : 'checkout'
       await refresh({ q, date, sort, limit, closedDateField })
     } catch (err: any) {
@@ -246,11 +299,47 @@ export default function KeysPage({ me }: { me: Me }) {
     }
   }
 
+  const doVoid = async (r: KeyTx) => {
+    const reason = await confirm.prompt({ title: 'Void Transaksi', message: 'Alasan void:', initialValue: '', confirmText: 'Void', cancelText: 'Batal', required: true })
+    if (!reason) return
+    try {
+      await apiPost(`/api/keys/${r.id}/void`, { reason })
+      toast.push('Transaksi di-void', 'success')
+      const closedDateField = date === today && filterBy === 'ambil' ? 'checkin' : 'checkout'
+      await refresh({ q, date, sort, limit, closedDateField })
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal void transaksi'), 'error')
+    }
+  }
+
+  const canCorrect = (r: KeyTx) => me.user.role === 'admin' || me.user.role === 'supervisor' || (typeof r.created_by === 'number' && r.created_by === me.user.id)
+
+  const openEdit = (r: KeyTx) => {
+    setEditRow(r)
+    setEditBorrower(r.borrower_name || '')
+    setEditUnit(r.unit || '')
+    setEditKeyName(r.key_name || '')
+    setEditNotes(r.notes || '')
+  }
+
+  const saveEdit = async () => {
+    if (!editRow) return
+    try {
+      await apiPatch(`/api/keys/${editRow.id}`, { borrower_name: editBorrower, unit: editUnit, key_name: editKeyName, notes: editNotes })
+      toast.push('Transaksi diperbarui', 'success')
+      const closedDateField = date === today && filterBy === 'ambil' ? 'checkin' : 'checkout'
+      await refresh({ q, date, sort, limit, closedDateField })
+      setEditRow(null)
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal edit transaksi'), 'error')
+    }
+  }
+
   const doReopen = async (r: KeyTx) => {
     const ok = await confirm.confirm({
-      title: 'Undo Ambil',
-      message: `Undo ambil kunci ini (kembali status dipinjam)?\n\n${r.key_name} · ${r.borrower_name}\nTitip: ${fmtDateTime(r.checkout_at)}\nAmbil: ${fmtDateTime(r.checkin_at || '')}\n\nLanjutkan?`,
-      confirmText: 'Undo Ambil',
+      title: 'Batal Ambil',
+      message: `Batal ambil kunci ini (kembali status dipinjam)?\n\n${r.key_name} · ${r.borrower_name}\nTitip: ${fmtDateTime(r.checkout_at)}\nAmbil: ${fmtDateTime(r.checkin_at || '')}\n\nLanjutkan?`,
+      confirmText: 'Batal Ambil',
     })
     if (!ok) return
     try {
@@ -259,7 +348,7 @@ export default function KeysPage({ me }: { me: Me }) {
       const closedDateField = date === today && filterBy === 'ambil' ? 'checkin' : 'checkout'
       await refresh({ q, date, sort, limit, closedDateField })
     } catch (err: any) {
-      toast.push(String(err?.message || err || 'Gagal undo ambil'), 'error')
+      toast.push(String(err?.message || err || 'Gagal membatalkan ambil'), 'error')
     }
   }
 
@@ -283,70 +372,6 @@ export default function KeysPage({ me }: { me: Me }) {
       <div className="section-header">
         <h2 className="h2">Penitipan Kunci</h2>
         <div className="section-actions">
-          <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nama, kunci, jam..." />
-          <input className="input input-sm" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          <select className="select select-sm" value={sort} onChange={(e) => setSort(e.target.value as any)}>
-            <option value="checkout_desc">Titip terbaru</option>
-            <option value="checkout_asc">Titip terlama</option>
-            <option value="checkin_desc">Ambil terbaru</option>
-            <option value="checkin_asc">Ambil terlama</option>
-          </select>
-          <select className="select select-sm" value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))}>
-            <option value={50}>50</option>
-            <option value={200}>200</option>
-            <option value={500}>500</option>
-          </select>
-          {date === today && (
-            <>
-              <select className="select select-sm" value={filterBy} onChange={(e) => setFilterBy(e.target.value as any)}>
-                <option value="titip">Filter: Jam titip</option>
-                <option value="ambil">Filter: Jam ambil</option>
-              </select>
-              <input className="input input-sm" type="time" value={fromHm} onChange={(e) => setFromHm(e.target.value)} title="Dari jam" />
-              <input className="input input-sm" type="time" value={toHm} onChange={(e) => setToHm(e.target.value)} title="Sampai jam" />
-            </>
-          )}
-          <button className="button button-secondary button-sm" type="button" onClick={() => setDate(today)}>
-            Hari ini
-          </button>
-          <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
-            Semua
-          </button>
-          <button
-            className="button button-secondary button-sm"
-            type="button"
-            onClick={() => {
-              const closedDateField = date === today && filterBy === 'ambil' ? 'checkin' : 'checkout'
-              refresh({ q, date, sort, limit, closedDateField })
-            }}
-          >
-            Refresh
-          </button>
-          <button
-            className="button button-secondary button-sm"
-            type="button"
-            onClick={() => {
-              const allRows = [...openView, ...closedView].sort((a, b) => Date.parse(b.checkout_at || '') - Date.parse(a.checkout_at || ''))
-              downloadCsv(
-                `kunci-${date || 'semua'}.csv`,
-                [['Nama', 'Unit', 'Ruangan/Kunci', 'Jam titip', 'Jam ambil', 'Catatan', 'Foto', 'Petugas', 'Status']].concat(
-                  allRows.map((r) => [
-                    String(r.borrower_name || ''),
-                    String(r.unit || ''),
-                    String(r.key_name || ''),
-                    String(fmtDateTime(r.checkout_at)),
-                    String(fmtDateTime(r.checkin_at || '')),
-                    String(r.notes || ''),
-                    r.has_photo ? 'Ya' : 'Tidak',
-                    petugasName(r),
-                    String(r.status || ''),
-                  ]),
-                ),
-              )
-            }}
-          >
-            Export CSV
-          </button>
           <button className="button button-secondary button-sm" type="button" onClick={() => window.print()}>
             Cetak
           </button>
@@ -379,9 +404,9 @@ export default function KeysPage({ me }: { me: Me }) {
             )}
             <div className="field">
               <label className="label" htmlFor="keyBorrower">
-                Nama penitip
+                Instansi
               </label>
-              <input className="input" id="keyBorrower" value={borrower} onChange={(e) => setBorrower(e.target.value)} placeholder="Nama penitip" />
+              <input className="input" id="keyBorrower" value={borrower} onChange={(e) => setBorrower(e.target.value)} placeholder="Instansi / Nama penitip" />
             </div>
             <div className="field">
               <label className="label" htmlFor="keyUnit">
@@ -404,9 +429,10 @@ export default function KeysPage({ me }: { me: Me }) {
             </div>
             <div className="field field-time">
               <label className="label" htmlFor="keyTime">
-                Jam titip
+                Waktu Titip
               </label>
               <div className="time-row">
+                <input className="input" type="date" value={formDate} onChange={(e) => setFormDate(e.target.value)} style={{ width: 'auto' }} />
                 <input className="input" id="keyTime" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
                 <div className="chips">
                   <button className="chip" type="button" onClick={() => setTime(shiftHm(time, -5))}>
@@ -420,7 +446,7 @@ export default function KeysPage({ me }: { me: Me }) {
                   </button>
                 </div>
               </div>
-              <div className="muted">Akan tersimpan: {fmtDateTime(toIsoLocal(today, time))}</div>
+              <div className="muted">Akan tersimpan: {fmtDateTime(toIsoLocal(formDate, time))}</div>
             </div>
             <div className="field grid-span-4">
               <label className="label" htmlFor="keyNotes">
@@ -533,7 +559,7 @@ export default function KeysPage({ me }: { me: Me }) {
                 </thead>
                 <tbody>
                   {openView.map((r) => (
-                    <tr key={r.id}>
+                    <tr key={r.id} className="table-row-active">
                       <td data-label="Nama">{r.borrower_name}</td>
                       <td data-label="Ruangan">{r.key_name}</td>
                       <td data-label="Titip">{fmtDateTime(r.checkout_at)}</td>
@@ -549,12 +575,21 @@ export default function KeysPage({ me }: { me: Me }) {
                         )}
                       </td>
                       <td data-label="Aksi">
-                        <button className="button button-sm" type="button" onClick={() => doReturn(r)} style={{ marginRight: 8 }}>
-                          Ambil
-                        </button>
-                        <button className="button button-sm button-danger" type="button" onClick={() => doUndo(r.id)}>
-                          Undo
-                        </button>
+                        <div className="row" style={{ flexWrap: 'wrap' }}>
+                          <button className="button button-sm" type="button" onClick={() => doReturn(r)}>
+                            ✓ Ambil
+                          </button>
+                          {canCorrect(r) ? (
+                            <button className="button button-sm button-secondary" type="button" onClick={() => openEdit(r)}>
+                              ✎ Edit
+                            </button>
+                          ) : null}
+                          {canCorrect(r) ? (
+                            <button className="button button-sm button-danger" type="button" onClick={() => doUndo(r.id)}>
+                              ⨯ Void
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -568,6 +603,13 @@ export default function KeysPage({ me }: { me: Me }) {
                 </tbody>
               </table>
             </div>
+            {openHasMore && (
+              <div className="row" style={{ justifyContent: 'center', marginTop: 12 }}>
+                <button className="button button-secondary" type="button" disabled={loading || loadingMoreOpen} onClick={loadMoreOpen}>
+                  {loadingMoreOpen ? 'Memuat...' : 'Muat lebih banyak'}
+                </button>
+              </div>
+            )}
           </div>
         </section>
 
@@ -592,12 +634,15 @@ export default function KeysPage({ me }: { me: Me }) {
                 </thead>
                 <tbody>
                   {closedView.map((r) => (
-                    <tr key={r.id}>
+                    <tr key={r.id} className={r.status === 'void' ? 'table-row-void' : undefined}>
                       <td data-label="Nama">{r.borrower_name}</td>
                       <td data-label="Ruangan">{r.key_name}</td>
                       <td data-label="Titip">{fmtDateTime(r.checkout_at)}</td>
                       <td data-label="Ambil">{fmtDateTime(r.checkin_at || '')}</td>
-                      <td data-label="Status">{badge(r.status)}</td>
+                      <td data-label="Status">
+                        {badge(r.status)}
+                        {r.status === 'void' && r.void_reason ? <div className="muted">Void: {r.void_reason}</div> : null}
+                      </td>
                       <td data-label="Foto">
                         {r.has_photo && r.photo_url ? (
                           <button className="button button-sm button-secondary" type="button" onClick={() => openPhoto(r.photo_url!)}>
@@ -608,12 +653,26 @@ export default function KeysPage({ me }: { me: Me }) {
                         )}
                       </td>
                       <td data-label="Aksi">
-                        {r.status === 'closed' ? (
-                          <button className="button button-sm button-secondary" type="button" onClick={() => doReopen(r)}>
-                            Undo ambil
-                          </button>
-                        ) : (
+                        {r.status === 'void' ? (
                           <span className="muted">—</span>
+                        ) : (
+                          <div className="row" style={{ flexWrap: 'wrap' }}>
+                            {r.status === 'closed' ? (
+                            <button className="button button-sm button-secondary" type="button" onClick={() => doReopen(r)}>
+                              ↩ Batal ambil
+                            </button>
+                          ) : null}
+                            {canCorrect(r) ? (
+                              <button className="button button-sm button-secondary" type="button" onClick={() => openEdit(r)}>
+                                ✎ Edit
+                              </button>
+                            ) : null}
+                            {canCorrect(r) ? (
+                              <button className="button button-sm button-danger" type="button" onClick={() => doVoid(r)}>
+                                ⨯ Void
+                              </button>
+                            ) : null}
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -627,6 +686,109 @@ export default function KeysPage({ me }: { me: Me }) {
                   )}
                 </tbody>
               </table>
+            </div>
+            {closedHasMore && (
+              <div className="row" style={{ justifyContent: 'center', marginTop: 12 }}>
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  disabled={loading || loadingMoreClosed}
+                  onClick={() => loadMoreClosed(date === today && filterBy === 'ambil' ? 'checkin' : 'checkout')}
+                >
+                  {loadingMoreClosed ? 'Memuat...' : 'Muat lebih banyak'}
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="table-footer-filters">
+            <div className="filter-group">
+              <label className="label-sm">Cari</label>
+              <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nama, kunci, jam..." />
+            </div>
+            <div className="filter-group">
+              <label className="label-sm">Tanggal</label>
+              <input className="input input-sm" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            </div>
+            <div className="filter-group">
+              <label className="label-sm">Urutan</label>
+              <select className="select select-sm" value={sort} onChange={(e) => setSort(e.target.value as any)}>
+                <option value="checkout_desc">Titip terbaru</option>
+                <option value="checkout_asc">Titip terlama</option>
+                <option value="checkin_desc">Ambil terbaru</option>
+                <option value="checkin_asc">Ambil terlama</option>
+              </select>
+            </div>
+            <div className="filter-group">
+              <label className="label-sm">Limit</label>
+              <select className="select select-sm" value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))}>
+                <option value={50}>50</option>
+                <option value={200}>200</option>
+                <option value={500}>500</option>
+              </select>
+            </div>
+            {date === today && (
+              <>
+                <div className="filter-group">
+                  <label className="label-sm">Filter Jam</label>
+                  <select className="select select-sm" value={filterBy} onChange={(e) => setFilterBy(e.target.value as any)}>
+                    <option value="titip">Jam titip</option>
+                    <option value="ambil">Jam ambil</option>
+                  </select>
+                </div>
+                <div className="filter-group">
+                  <label className="label-sm">Dari</label>
+                  <input className="input input-sm" type="time" value={fromHm} onChange={(e) => setFromHm(e.target.value)} />
+                </div>
+                <div className="filter-group">
+                  <label className="label-sm">Sampai</label>
+                  <input className="input input-sm" type="time" value={toHm} onChange={(e) => setToHm(e.target.value)} />
+                </div>
+              </>
+            )}
+            <div className="filter-actions">
+              <button className="button button-secondary button-sm" type="button" onClick={() => setDate(today)}>
+                Hari ini
+              </button>
+              <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
+                Semua
+              </button>
+              <button
+                className="button button-secondary button-sm"
+                type="button"
+                onClick={() => {
+                  const closedDateField = date === today && filterBy === 'ambil' ? 'checkin' : 'checkout'
+                  refresh({ q, date, sort, limit, closedDateField })
+                }}
+              >
+                Refresh
+              </button>
+              <button
+                className="button button-secondary button-sm"
+                type="button"
+                onClick={() => {
+                  const allRows = [...openView, ...closedView].sort((a, b) => Date.parse(b.checkout_at || '') - Date.parse(a.checkout_at || ''))
+                  downloadCsv(
+                    `kunci-${date || 'semua'}.csv`,
+                    [['Instansi', 'Unit', 'Ruangan/Kunci', 'Jam titip', 'Jam ambil', 'Catatan', 'Foto', 'Petugas', 'Status', 'Alasan void']].concat(
+                      allRows.map((r) => [
+                        String(r.borrower_name || ''),
+                        String(r.unit || ''),
+                        String(r.key_name || ''),
+                        String(fmtDateTime(r.checkout_at)),
+                        String(fmtDateTime(r.checkin_at || '')),
+                        String(r.notes || ''),
+                        r.has_photo ? 'Ya' : 'Tidak',
+                        petugasName(r),
+                        String(r.status || ''),
+                        String(r.void_reason || ''),
+                      ]),
+                    ),
+                  )
+                }}
+              >
+                Export CSV
+              </button>
             </div>
           </div>
         </section>
@@ -643,6 +805,35 @@ export default function KeysPage({ me }: { me: Me }) {
             </div>
             <div className="modal-body">
               <img className="modal-photo" src={photoView} alt="Foto" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editRow && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Edit transaksi kunci" onClick={(e) => (e.currentTarget === e.target ? setEditRow(null) : null)}>
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-title">Edit Transaksi</div>
+              <button className="button button-secondary button-sm" type="button" onClick={() => setEditRow(null)}>
+                Tutup
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="grid" style={{ gap: 10 }}>
+                <input className="input" value={editBorrower} onChange={(e) => setEditBorrower(e.target.value)} placeholder="Nama penitip" />
+                <input className="input" value={editUnit} onChange={(e) => setEditUnit(e.target.value)} placeholder="Unit/Divisi" />
+                <input className="input" value={editKeyName} onChange={(e) => setEditKeyName(e.target.value)} placeholder="Ruangan/Kunci" />
+                <input className="input" value={editNotes} onChange={(e) => setEditNotes(e.target.value)} placeholder="Catatan" />
+              </div>
+              <div className="row row-right" style={{ marginTop: 14 }}>
+                <button className="button button-secondary" type="button" onClick={() => setEditRow(null)}>
+                  Batal
+                </button>
+                <button className="button button-primary" type="button" onClick={saveEdit}>
+                  Simpan
+                </button>
+              </div>
             </div>
           </div>
         </div>

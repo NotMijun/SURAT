@@ -389,10 +389,13 @@ def _ensure_schema(conn) -> None:
                   checkin_at TEXT NOT NULL,
                   checkout_at TEXT,
                   notes TEXT NOT NULL,
-                  status TEXT NOT NULL CHECK (status IN ('in','out')),
+                  status TEXT NOT NULL CHECK (status IN ('in','out','void')),
                   created_by BIGINT NOT NULL REFERENCES users(id),
                   shift TEXT NOT NULL,
                   post TEXT NOT NULL,
+                  void_reason TEXT,
+                  voided_by BIGINT REFERENCES users(id),
+                  voided_at TEXT,
                   photo_b64 TEXT,
                   photo_mime TEXT,
                   photo_name TEXT,
@@ -406,6 +409,11 @@ def _ensure_schema(conn) -> None:
             cur.execute("ALTER TABLE guest_entries ADD COLUMN IF NOT EXISTS photo_mime TEXT")
             cur.execute("ALTER TABLE guest_entries ADD COLUMN IF NOT EXISTS photo_name TEXT")
             cur.execute("ALTER TABLE guest_entries ADD COLUMN IF NOT EXISTS photo_uploaded_at TEXT")
+            cur.execute("ALTER TABLE guest_entries ADD COLUMN IF NOT EXISTS void_reason TEXT")
+            cur.execute("ALTER TABLE guest_entries ADD COLUMN IF NOT EXISTS voided_by BIGINT REFERENCES users(id)")
+            cur.execute("ALTER TABLE guest_entries ADD COLUMN IF NOT EXISTS voided_at TEXT")
+            cur.execute("ALTER TABLE guest_entries DROP CONSTRAINT IF EXISTS guest_entries_status_check")
+            cur.execute("ALTER TABLE guest_entries ADD CONSTRAINT guest_entries_status_check CHECK (status IN ('in','out','void'))")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_guest_status ON guest_entries(status)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_guest_checkin ON guest_entries(checkin_at)")
             cur.execute(
@@ -712,6 +720,16 @@ class PatchKeyBody(BaseModel):
     notes: str | None = None
 
 
+class PatchGuestBody(BaseModel):
+    name: str | None = None
+    instansi: str | None = None
+    purpose: str | None = None
+    meet_person: str | None = None
+    checkin_at: str | None = None
+    checkout_at: str | None = None
+    notes: str | None = None
+
+
 class CreateMutasiBody(BaseModel):
     kind: str
     occurred_at: str
@@ -746,6 +764,10 @@ class PatchCateringVendorBody(BaseModel):
 
 class VoidBody(BaseModel):
     reason: str
+
+
+class OptionalVoidBody(BaseModel):
+    reason: str | None = None
 
 class PatchTaskBody(BaseModel):
     destination: str | None = None
@@ -965,6 +987,7 @@ def list_keys(
     date_field: str = "checkout",
     sort: str = "checkout_desc",
     limit: int = 200,
+    offset: int = 0,
 ):
     with db_connect() as conn:
         _require_session(conn, request)
@@ -978,6 +1001,7 @@ def list_keys(
             date_field = "checkout"
         sort = (sort or "checkout_desc").strip()
         limit = max(1, min(500, int(limit or 200)))
+        offset = max(0, min(100_000, int(offset or 0)))
         where = []
         params: list[Any] = []
         if status in ("open", "closed", "void"):
@@ -998,8 +1022,9 @@ def list_keys(
         elif sort == "checkin_asc":
             order = "kt.checkin_at ASC NULLS LAST"
         sql = """
-          SELECT kt.id, kt.borrower_name, kt.unit, kt.key_name, kt.checkout_at, kt.checkin_at, kt.notes, kt.status,
+          SELECT kt.id, kt.borrower_name, kt.unit, kt.key_name, kt.checkout_at, kt.checkin_at, kt.notes, kt.status, kt.void_reason,
                  CASE WHEN kt.photo_b64 IS NULL OR kt.photo_b64='' THEN 0 ELSE 1 END AS has_photo,
+                 kt.created_by, kt.created_at,
                  u.display_name AS created_by_name,
                  u2.display_name AS closed_by_name,
                  kt.created_shift, kt.created_post, kt.closed_shift, kt.closed_post
@@ -1009,8 +1034,9 @@ def list_keys(
         """
         if where:
             sql += " WHERE " + " AND ".join(where)
-        sql += f" ORDER BY {order} LIMIT %s"
+        sql += f" ORDER BY {order} LIMIT %s OFFSET %s"
         params.append(limit)
+        params.append(offset)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
@@ -1233,7 +1259,7 @@ def return_key(key_id: str, request: Request):
 
 
 @app.post("/api/keys/{key_id}/undo")
-def undo_key(key_id: str, request: Request):
+def undo_key(key_id: str, request: Request, body: OptionalVoidBody | None = None):
     with db_connect() as conn:
         sess = _require_session(conn, request)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -1247,11 +1273,38 @@ def undo_key(key_id: str, request: Request):
                 raise HTTPException(status_code=403, detail="Tidak punya akses undo")
             before = dict(row)
             now = utc_now_iso()
-            reason = f"undo oleh {int(sess['user_id'])}"
+            reason = _text_field((body.reason if body else None), field="Alasan", max_len=120, default="")
+            if not reason:
+                reason = f"undo oleh {int(sess['user_id'])}"
             cur.execute("UPDATE key_transactions SET status='void', void_reason=%s, updated_at=%s WHERE id=%s", (reason, now, key_id))
             cur.execute("SELECT * FROM key_transactions WHERE id=%s", (key_id,))
             after = dict(cur.fetchone())
             _audit(conn, sess, "key_transactions", str(key_id), "undo", before, after)
+        conn.commit()
+        return {"ok": True}
+
+@app.post("/api/keys/{key_id}/void")
+def void_key(key_id: str, body: VoidBody, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        reason = _text_field(body.reason, field="Alasan", max_len=120)
+        if not reason:
+            raise HTTPException(status_code=400, detail="Alasan wajib diisi")
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM key_transactions WHERE id=%s", (key_id,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Data tidak ditemukan")
+            if row["status"] == "void":
+                return {"ok": True}
+            if not _can_quick_modify(sess, created_by=int(row["created_by"]), created_at_iso=str(row.get("created_at") or "")):
+                raise HTTPException(status_code=403, detail="Tidak punya akses void")
+            before = dict(row)
+            now = utc_now_iso()
+            cur.execute("UPDATE key_transactions SET status='void', void_reason=%s, updated_at=%s WHERE id=%s", (reason, now, key_id))
+            cur.execute("SELECT * FROM key_transactions WHERE id=%s", (key_id,))
+            after = dict(cur.fetchone())
+            _audit(conn, sess, "key_transactions", str(key_id), "void", before, after)
         conn.commit()
         return {"ok": True}
 
@@ -1321,6 +1374,10 @@ def patch_key(key_id: str, body: PatchKeyBody, request: Request):
             row = cur.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Data tidak ditemukan")
+            if row["status"] == "void":
+                raise HTTPException(status_code=400, detail="Data sudah void")
+            if not _can_quick_modify(sess, created_by=int(row["created_by"]), created_at_iso=str(row.get("created_at") or "")):
+                raise HTTPException(status_code=403, detail="Tidak punya akses edit")
             before = dict(row)
             updates: dict[str, Any] = {}
             if body.borrower_name is not None:
@@ -1356,7 +1413,7 @@ def patch_key(key_id: str, body: PatchKeyBody, request: Request):
 
 
 @app.get("/api/mutasi")
-def list_mutasi(request: Request, q: str = "", kategori: str = "", sub: str = "", date: str = "", sort: str = "occurred_desc", limit: int = 200, status: str = "active"):
+def list_mutasi(request: Request, q: str = "", kategori: str = "", sub: str = "", date: str = "", sort: str = "occurred_desc", limit: int = 200, status: str = "active", offset: int = 0):
     with db_connect() as conn:
         _require_session(conn, request)
         qn = normalize_text(q)
@@ -1365,6 +1422,7 @@ def list_mutasi(request: Request, q: str = "", kategori: str = "", sub: str = ""
         bounds = _day_bounds(date)
         sort = (sort or "occurred_desc").strip()
         limit = max(1, min(500, int(limit or 200)))
+        offset = max(0, min(100_000, int(offset or 0)))
         status = (status or "active").strip().lower()
         where = []
         params: list[Any] = []
@@ -1409,8 +1467,9 @@ def list_mutasi(request: Request, q: str = "", kategori: str = "", sub: str = ""
         """
         if where:
             sql += " WHERE " + " AND ".join(where)
-        sql += f" ORDER BY {order} LIMIT %s"
+        sql += f" ORDER BY {order} LIMIT %s OFFSET %s"
         params.append(limit)
+        params.append(offset)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
@@ -1589,7 +1648,7 @@ def void_mutasi(mutasi_id: int, body: VoidBody, request: Request):
 
 
 @app.get("/api/guests")
-def list_guests(request: Request, status: str = "in", q: str = "", date: str = "", sort: str = "checkin_desc", limit: int = 200, post: str = ""):
+def list_guests(request: Request, status: str = "in", q: str = "", date: str = "", sort: str = "checkin_desc", limit: int = 200, post: str = "", offset: int = 0):
     with db_connect() as conn:
         _require_session(conn, request)
         status = (status or "in").strip()
@@ -1598,11 +1657,14 @@ def list_guests(request: Request, status: str = "in", q: str = "", date: str = "
         bounds = _day_bounds(date)
         sort = (sort or "checkin_desc").strip()
         limit = max(1, min(500, int(limit or 200)))
+        offset = max(0, min(100_000, int(offset or 0)))
         where = []
         params: list[Any] = []
-        if status in ("in", "out"):
+        if status in ("in", "out", "void"):
             where.append("g.status = %s")
             params.append(status)
+        elif status != "all":
+            where.append("g.status <> 'void'")
         if post_val:
             if post_val == "Pintu Utama":
                 where.append("(g.post = %s OR g.post = %s)")
@@ -1623,16 +1685,18 @@ def list_guests(request: Request, status: str = "in", q: str = "", date: str = "
         if sort == "checkin_asc":
             order = "g.checkin_at ASC"
         sql = """
-          SELECT g.id, g.name, g.instansi, g.purpose, g.meet_person, g.checkin_at, g.checkout_at, g.notes, g.status,
+          SELECT g.id, g.name, g.instansi, g.purpose, g.meet_person, g.checkin_at, g.checkout_at, g.notes, g.status, g.void_reason,
                  CASE WHEN g.photo_b64 IS NULL OR g.photo_b64='' THEN 0 ELSE 1 END AS has_photo,
+                 g.created_by, g.created_at,
                  u.display_name AS created_by_name, g.shift, g.post
           FROM guest_entries g
           JOIN users u ON u.id = g.created_by
         """
         if where:
             sql += " WHERE " + " AND ".join(where)
-        sql += f" ORDER BY {order} LIMIT %s"
+        sql += f" ORDER BY {order} LIMIT %s OFFSET %s"
         params.append(limit)
+        params.append(offset)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
@@ -1799,14 +1863,115 @@ def checkout_guest(guest_id: str, request: Request):
         return {"ok": True}
 
 
+@app.post("/api/guests/{guest_id}/undo_checkout")
+def undo_checkout_guest(guest_id: str, body: VoidBody, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        reason = _text_field(body.reason, field="Alasan", max_len=120)
+        if not reason:
+            raise HTTPException(status_code=400, detail="Alasan wajib diisi")
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM guest_entries WHERE id=%s", (guest_id,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Data tidak ditemukan")
+            if row["status"] != "out":
+                raise HTTPException(status_code=400, detail="Hanya tamu yang sudah checkout yang bisa di-undo")
+            if not _can_quick_modify(sess, created_by=int(row["created_by"]), created_at_iso=str(row.get("created_at") or "")):
+                raise HTTPException(status_code=403, detail="Tidak punya akses undo checkout")
+            before = dict(row)
+            now = utc_now_iso()
+            cur.execute("UPDATE guest_entries SET status='in', checkout_at=NULL, updated_at=%s WHERE id=%s", (now, guest_id))
+            cur.execute("SELECT * FROM guest_entries WHERE id=%s", (guest_id,))
+            after = dict(cur.fetchone())
+            _audit(conn, sess, "guest_entries", str(guest_id), "undo_checkout", before, {**after, "undo_reason": reason})
+        conn.commit()
+        return {"ok": True}
+
+
+@app.post("/api/guests/{guest_id}/void")
+def void_guest(guest_id: str, body: VoidBody, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        reason = _text_field(body.reason, field="Alasan", max_len=120)
+        if not reason:
+            raise HTTPException(status_code=400, detail="Alasan wajib diisi")
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM guest_entries WHERE id=%s", (guest_id,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Data tidak ditemukan")
+            if row["status"] == "void":
+                return {"ok": True}
+            if not _can_quick_modify(sess, created_by=int(row["created_by"]), created_at_iso=str(row.get("created_at") or "")):
+                raise HTTPException(status_code=403, detail="Tidak punya akses void")
+            before = dict(row)
+            now = utc_now_iso()
+            cur.execute(
+                "UPDATE guest_entries SET status='void', void_reason=%s, voided_by=%s, voided_at=%s, updated_at=%s WHERE id=%s",
+                (reason, int(sess["user_id"]), now, now, guest_id),
+            )
+            cur.execute("SELECT * FROM guest_entries WHERE id=%s", (guest_id,))
+            after = dict(cur.fetchone())
+            _audit(conn, sess, "guest_entries", str(guest_id), "void", before, after)
+        conn.commit()
+        return {"ok": True}
+
+
+@app.patch("/api/guests/{guest_id}")
+def patch_guest(guest_id: str, body: PatchGuestBody, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM guest_entries WHERE id=%s", (guest_id,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Data tidak ditemukan")
+            if row["status"] == "void":
+                raise HTTPException(status_code=400, detail="Data sudah void")
+            if not _can_quick_modify(sess, created_by=int(row["created_by"]), created_at_iso=str(row.get("created_at") or "")):
+                raise HTTPException(status_code=403, detail="Tidak punya akses edit")
+            before = dict(row)
+            updates: dict[str, Any] = {}
+            if body.name is not None:
+                updates["name"] = _text_field(body.name, field="Nama", max_len=80, default="Tidak diketahui") or "Tidak diketahui"
+            if body.instansi is not None:
+                updates["instansi"] = _text_field(body.instansi, field="Instansi", max_len=80, default="-") or "-"
+            if body.purpose is not None:
+                updates["purpose"] = _text_field(body.purpose, field="Divisi tujuan", max_len=80, default="-") or "-"
+            if body.meet_person is not None:
+                updates["meet_person"] = _text_field(body.meet_person, field="Orang yang ditemui", max_len=80, default="-") or "-"
+            if body.notes is not None:
+                updates["notes"] = _text_field(body.notes, field="Keperluan", max_len=240, default="")
+            if body.checkin_at is not None:
+                updates["checkin_at"] = _iso_field(body.checkin_at, field="Waktu masuk") or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            if body.checkout_at is not None:
+                if (body.checkout_at or "").strip():
+                    updates["checkout_at"] = _iso_field(body.checkout_at, field="Waktu keluar")
+                else:
+                    updates["checkout_at"] = None
+            if not updates:
+                return {"ok": True}
+            updates["updated_at"] = utc_now_iso()
+            cols = ", ".join([f"{k}=%s" for k in updates.keys()])
+            params = list(updates.values()) + [guest_id]
+            cur.execute(f"UPDATE guest_entries SET {cols} WHERE id=%s", tuple(params))
+            cur.execute("SELECT * FROM guest_entries WHERE id=%s", (guest_id,))
+            after = dict(cur.fetchone())
+            _audit(conn, sess, "guest_entries", str(guest_id), "update", before, after)
+        conn.commit()
+        return {"ok": True}
+
+
 @app.get("/api/tasks")
-def list_tasks(request: Request, q: str = "", date: str = "", sort: str = "occurred_desc", limit: int = 200, status: str = "active"):
+def list_tasks(request: Request, q: str = "", date: str = "", sort: str = "occurred_desc", limit: int = 200, status: str = "active", offset: int = 0):
     with db_connect() as conn:
         _require_session(conn, request)
         qn = normalize_text(q)
         bounds = _day_bounds(date)
         sort = (sort or "occurred_desc").strip()
         limit = max(1, min(500, int(limit or 200)))
+        offset = max(0, min(100_000, int(offset or 0)))
         status = (status or "active").strip().lower()
         where = []
         params: list[Any] = []
@@ -1835,8 +2000,9 @@ def list_tasks(request: Request, q: str = "", date: str = "", sort: str = "occur
         """
         if where:
             sql += " WHERE " + " AND ".join(where)
-        sql += f" ORDER BY {order} LIMIT %s"
+        sql += f" ORDER BY {order} LIMIT %s OFFSET %s"
         params.append(limit)
+        params.append(offset)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
