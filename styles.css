@@ -199,24 +199,13 @@ a{color:inherit}
 .card-body{padding:18px}
 .card-title{font-weight:800;letter-spacing:.02em}
 .table-empty{
-  padding:40px 16px;
+  padding:48px 16px;
   text-align:center;
-}
-.brand-mark-sm{
-  width:42px;
-  height:42px;
-  border-radius:14px;
-  background:var(--soft-bg-2);
   display:flex;
+  flex-direction:column;
   align-items:center;
   justify-content:center;
-  border:1px solid rgba(var(--primary-rgb),.35);
-  margin-inline:auto;
-}
-.brand-mark-sm img{
-  max-width:70%;
-  max-height:70%;
-  display:block;
+  min-height:260px;
 }
 
 .global-loading-overlay{
@@ -240,9 +229,9 @@ a{color:inherit}
   box-shadow:0 18px 60px rgba(0,0,0,.7);
 }
 .brand-mark-lg{
-  width:72px;
-  height:72px;
-  border-radius:20px;
+  width:128px;
+  height:128px;
+  border-radius:28px;
   background:var(--soft-bg-2);
   display:flex;
   align-items:center;
@@ -250,8 +239,8 @@ a{color:inherit}
   border:1px solid rgba(var(--primary-rgb),.35);
 }
 .brand-mark-lg img{
-  max-width:70%;
-  max-height:70%;
+  max-width:78%;
+  max-height:78%;
   display:block;
 }
 

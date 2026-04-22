@@ -607,10 +607,10 @@ export default function KeysPage({ me }: { me: Me }) {
           <div className="card-body">
             {loading && (
               <div className="table-empty">
-                <div className="brand-mark brand-mark-sm">
+                <div className="brand-mark brand-mark-lg">
                   <img src="/api/brand/logo.png" alt="BSH" />
                 </div>
-                <div className="muted" style={{ marginTop: 8 }}>Memuat data kunci...</div>
+                <div className="muted" style={{ marginTop: 10, fontWeight: 700 }}>Loading..</div>
               </div>
             )}
             <div className="table-wrap" aria-hidden={loading}>
@@ -690,10 +690,10 @@ export default function KeysPage({ me }: { me: Me }) {
           <div className="card-body">
             {loading && (
               <div className="table-empty">
-                <div className="brand-mark brand-mark-sm">
+                <div className="brand-mark brand-mark-lg">
                   <img src="/api/brand/logo.png" alt="BSH" />
                 </div>
-                <div className="muted" style={{ marginTop: 8 }}>Memuat riwayat kunci...</div>
+                <div className="muted" style={{ marginTop: 10, fontWeight: 700 }}>Loading..</div>
               </div>
             )}
             <div className="table-wrap" aria-hidden={loading}>

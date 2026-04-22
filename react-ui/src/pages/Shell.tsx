@@ -188,7 +188,7 @@ export default function Shell() {
             <div className="brand-mark brand-mark-lg">
               <img src="/api/brand/logo.png" alt="BSH" />
             </div>
-            <div className="muted" style={{ marginTop: 8 }}>Memuat data...</div>
+            <div className="muted" style={{ marginTop: 10, fontWeight: 700 }}>Loading..</div>
           </div>
         </div>
       )}
