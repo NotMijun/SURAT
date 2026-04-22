@@ -4,6 +4,7 @@ import type { AttachmentItem, KeyMasterItem, KeyTx, Me } from '../../types'
 import { compressImageFile } from '../../lib/image'
 import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useConfirm, useToast } from '../../components/ToastHost'
+import LoadingScreen from '../../components/LoadingScreen'
 
 const badge = (s: KeyTx['status']) => {
   if (s === 'closed') return <span className="badge badge-ok">Diambil</span>
@@ -605,14 +606,7 @@ export default function KeysPage({ me }: { me: Me }) {
             <div className="muted">{loading ? 'Memuat...' : `${openView.length} entri`}</div>
           </header>
           <div className="card-body">
-            {loading && (
-              <div className="table-empty">
-                <div className="brand-mark brand-mark-lg">
-                  <img src="/api/brand/logo.png" alt="BSH" />
-                </div>
-                <div className="muted" style={{ marginTop: 10, fontWeight: 700 }}>Loading..</div>
-              </div>
-            )}
+            {loading && <LoadingScreen mode="inline" label="Loading..." minHeight={280} />}
             <div className="table-wrap" aria-hidden={loading}>
               <table className="table table-mobile-cards">
                 <thead>
@@ -688,14 +682,7 @@ export default function KeysPage({ me }: { me: Me }) {
             <div className="muted">{loading ? 'Memuat...' : `${closedView.length} entri`}</div>
           </header>
           <div className="card-body">
-            {loading && (
-              <div className="table-empty">
-                <div className="brand-mark brand-mark-lg">
-                  <img src="/api/brand/logo.png" alt="BSH" />
-                </div>
-                <div className="muted" style={{ marginTop: 10, fontWeight: 700 }}>Loading..</div>
-              </div>
-            )}
+            {loading && <LoadingScreen mode="inline" label="Loading..." minHeight={280} />}
             <div className="table-wrap" aria-hidden={loading}>
               <table className="table table-mobile-cards">
                 <thead>

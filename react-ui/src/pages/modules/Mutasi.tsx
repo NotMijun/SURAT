@@ -4,6 +4,7 @@ import type { AttachmentItem, Me, MutasiEntry } from '../../types'
 import { compressImageFile } from '../../lib/image'
 import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useConfirm, useToast } from '../../components/ToastHost'
+import LoadingScreen from '../../components/LoadingScreen'
 
 const KATEGORI_OPTS: Record<string, string[]> = {
   'Kejadian Operasional': ['Catering', 'Galon', 'Patroli/Ronda', 'Pemeliharaan', 'Lainnya'],
@@ -451,14 +452,7 @@ export default function MutasiPage({ me }: { me: Me }) {
           <div className="muted">{loading ? 'Memuat...' : `${items.length} entri`}</div>
         </header>
         <div className="card-body">
-          {loading && (
-            <div className="table-empty">
-              <div className="brand-mark brand-mark-lg">
-                <img src="/api/brand/logo.png" alt="BSH" />
-              </div>
-              <div className="muted" style={{ marginTop: 10, fontWeight: 700 }}>Loading..</div>
-            </div>
-          )}
+          {loading && <LoadingScreen mode="inline" label="Loading..." minHeight={320} />}
           <div className="table-wrap" aria-hidden={loading}>
             <table className="table table-mobile-cards">
               <thead>

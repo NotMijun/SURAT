@@ -4,6 +4,7 @@ import type { AttachmentItem, Me, TaskEntry } from '../../types'
 import { compressImageFile } from '../../lib/image'
 import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useConfirm, useToast } from '../../components/ToastHost'
+import LoadingScreen from '../../components/LoadingScreen'
 
 export default function TasksPage({ me }: { me: Me }) {
   const toast = useToast()
@@ -935,14 +936,7 @@ export default function TasksPage({ me }: { me: Me }) {
           </div>
         </header>
         <div className="card-body">
-          {loading && (
-            <div className="table-empty">
-              <div className="brand-mark brand-mark-lg">
-                <img src="/api/brand/logo.png" alt="BSH" />
-              </div>
-              <div className="muted" style={{ marginTop: 10, fontWeight: 700 }}>Loading..</div>
-            </div>
-          )}
+          {loading && <LoadingScreen mode="inline" label="Loading..." minHeight={320} />}
           <div className="table-wrap" aria-hidden={loading}>
             <table className="table table-mobile-cards">
               <thead>
