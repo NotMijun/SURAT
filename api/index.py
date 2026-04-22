@@ -181,6 +181,58 @@ def _read_photo_upload(photo: UploadFile | None) -> tuple[str | None, str | None
     return (b64, ctype, name, utc_now_iso())
 
 
+_ATTACH_ALLOWED_TABLES = {"key_transactions", "guest_entries", "mutasi_entries", "task_entries"}
+
+
+def _attach_table_name(value: str) -> str:
+    t = normalize_text(value)
+    if t not in _ATTACH_ALLOWED_TABLES:
+        raise HTTPException(status_code=400, detail="Target tidak valid")
+    return t
+
+
+def _attach_kind(value: Any) -> str:
+    s = ("" if value is None else str(value)).strip()
+    if not s:
+        return "Foto"
+    if len(s) > 40:
+        raise HTTPException(status_code=400, detail="Jenis lampiran terlalu panjang")
+    return s
+
+
+def _attach_record_exists(conn, table: str, record_id: int) -> None:
+    with conn.cursor() as cur:
+        cur.execute(f"SELECT 1 FROM {table} WHERE id=%s", (record_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Data tidak ditemukan")
+
+
+def _add_attachments(conn, sess: dict[str, Any], table: str, record_id: int, photos: list[UploadFile], kinds: list[str]) -> int:
+    if not photos:
+        return 0
+    if len(photos) > 6:
+        raise HTTPException(status_code=413, detail="Maksimal 6 foto per entri")
+    kind_list = [(_attach_kind(k) if k is not None else "Foto") for k in (kinds or [])]
+    while len(kind_list) < len(photos):
+        kind_list.append("Foto")
+    now = utc_now_iso()
+    inserted = 0
+    with conn.cursor() as cur:
+        for i, p in enumerate(photos):
+            (b64, mime, name, uploaded_at) = _read_photo_upload(p)
+            if not b64 or not mime or not name or not uploaded_at:
+                continue
+            cur.execute(
+                """
+                INSERT INTO media_attachments(target_table, target_id, kind, photo_b64, photo_mime, photo_name, photo_uploaded_at, created_by, created_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """,
+                (table, record_id, kind_list[i], b64, mime, name, uploaded_at, int(sess["user_id"]), now),
+            )
+            inserted += 1
+    return inserted
+
+
 def _database_url() -> str:
     pooler = (os.getenv("DATABASE_URL_POOLER") or "").strip()
     if pooler:
@@ -472,6 +524,23 @@ def _ensure_schema(conn) -> None:
                 """
             )
             cur.execute("CREATE INDEX IF NOT EXISTS idx_catering_vendors_norm ON catering_vendors(name_norm)")
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS media_attachments (
+                  id BIGSERIAL PRIMARY KEY,
+                  target_table TEXT NOT NULL,
+                  target_id BIGINT NOT NULL,
+                  kind TEXT NOT NULL,
+                  photo_b64 TEXT NOT NULL,
+                  photo_mime TEXT NOT NULL,
+                  photo_name TEXT NOT NULL,
+                  photo_uploaded_at TEXT NOT NULL,
+                  created_by BIGINT NOT NULL REFERENCES users(id),
+                  created_at TEXT NOT NULL
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_media_attachments_target ON media_attachments(target_table, target_id, id)")
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS audit_log (
@@ -1023,7 +1092,7 @@ def list_keys(
             order = "kt.checkin_at ASC NULLS LAST"
         sql = """
           SELECT kt.id, kt.borrower_name, kt.unit, kt.key_name, kt.checkout_at, kt.checkin_at, kt.notes, kt.status, kt.void_reason,
-                 CASE WHEN kt.photo_b64 IS NULL OR kt.photo_b64='' THEN 0 ELSE 1 END AS has_photo,
+                 (CASE WHEN kt.photo_b64 IS NULL OR kt.photo_b64='' THEN 0 ELSE 1 END + COALESCE(att.c,0))::int AS photo_count,
                  kt.created_by, kt.created_at,
                  u.display_name AS created_by_name,
                  u2.display_name AS closed_by_name,
@@ -1031,6 +1100,11 @@ def list_keys(
           FROM key_transactions kt
           JOIN users u ON u.id = kt.created_by
           LEFT JOIN users u2 ON u2.id = kt.closed_by
+          LEFT JOIN LATERAL (
+            SELECT COUNT(*)::int AS c
+            FROM media_attachments ma
+            WHERE ma.target_table='key_transactions' AND ma.target_id=kt.id
+          ) att ON true
         """
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -1041,7 +1115,8 @@ def list_keys(
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         for r in rows:
-            r["has_photo"] = bool(int(r.get("has_photo") or 0))
+            r["photo_count"] = int(r.get("photo_count") or 0)
+            r["has_photo"] = r["photo_count"] > 0
             if r["has_photo"]:
                 r["photo_url"] = f"/api/keys/{int(r['id'])}/photo"
         return {"items": rows}
@@ -1054,6 +1129,72 @@ def get_key_photo(key_id: str, request: Request):
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT photo_b64, photo_mime, photo_name FROM key_transactions WHERE id=%s", (key_id,))
             row = cur.fetchone()
+            if row and (row.get("photo_b64") or ""):
+                data = base64.b64decode((row["photo_b64"] or "").encode("ascii"))
+                mime = (row.get("photo_mime") or "application/octet-stream").strip()
+                name = (row.get("photo_name") or "photo").strip()
+                headers = {"Content-Disposition": f'inline; filename="{name}"'}
+                return Response(content=data, media_type=mime, headers=headers)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT photo_b64, photo_mime, photo_name FROM media_attachments WHERE target_table='key_transactions' AND target_id=%s ORDER BY id ASC LIMIT 1",
+                (key_id,),
+            )
+            a = cur.fetchone()
+            if not a or not (a.get("photo_b64") or ""):
+                raise HTTPException(status_code=404, detail="Foto tidak ditemukan")
+            data = base64.b64decode((a["photo_b64"] or "").encode("ascii"))
+            mime = (a.get("photo_mime") or "application/octet-stream").strip()
+            name = (a.get("photo_name") or "photo").strip()
+            headers = {"Content-Disposition": f'inline; filename="{name}"'}
+            return Response(content=data, media_type=mime, headers=headers)
+
+
+@app.get("/api/attachments/{table_name}/{record_id}")
+def list_attachments(table_name: str, record_id: str, request: Request):
+    with db_connect() as conn:
+        _require_session(conn, request)
+        t = _attach_table_name(table_name)
+        try:
+            rid = int(record_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="record_id tidak valid")
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT id, kind, photo_name, photo_uploaded_at, created_at
+                FROM media_attachments
+                WHERE target_table=%s AND target_id=%s
+                ORDER BY id ASC
+                """,
+                (t, rid),
+            )
+            rows = cur.fetchall() or []
+        items = []
+        for r in rows:
+            items.append(
+                {
+                    "id": int(r["id"]),
+                    "kind": r.get("kind") or "Foto",
+                    "photo_name": r.get("photo_name") or "photo",
+                    "uploaded_at": r.get("photo_uploaded_at") or r.get("created_at") or "",
+                    "url": f"/api/attachments/{int(r['id'])}/blob",
+                }
+            )
+        return {"items": items}
+
+
+@app.get("/api/attachments/{attachment_id}/blob")
+def get_attachment_blob(attachment_id: str, request: Request):
+    with db_connect() as conn:
+        _require_session(conn, request)
+        try:
+            aid = int(attachment_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="attachment_id tidak valid")
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT photo_b64, photo_mime, photo_name FROM media_attachments WHERE id=%s", (aid,))
+            row = cur.fetchone()
             if not row or not (row.get("photo_b64") or ""):
                 raise HTTPException(status_code=404, detail="Foto tidak ditemukan")
             data = base64.b64decode((row["photo_b64"] or "").encode("ascii"))
@@ -1061,6 +1202,27 @@ def get_key_photo(key_id: str, request: Request):
             name = (row.get("photo_name") or "photo").strip()
             headers = {"Content-Disposition": f'inline; filename="{name}"'}
             return Response(content=data, media_type=mime, headers=headers)
+
+
+@app.post("/api/attachments/{table_name}/{record_id}")
+def add_attachments(
+    table_name: str,
+    record_id: str,
+    request: Request,
+    kind: list[str] = Form([]),
+    photos: list[UploadFile] = File(...),
+):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        t = _attach_table_name(table_name)
+        try:
+            rid = int(record_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="record_id tidak valid")
+        _attach_record_exists(conn, t, rid)
+        inserted = _add_attachments(conn, sess, t, rid, photos, kind)
+        conn.commit()
+        return {"ok": True, "inserted": inserted}
 
 
 def _create_key_tx(
@@ -1460,10 +1622,15 @@ def list_mutasi(request: Request, q: str = "", kategori: str = "", sub: str = ""
           SELECT m.id, m.occurred_at, m.kind, m.description,
                  COALESCE(m.status,'active') AS status,
                  m.void_reason,
-                 CASE WHEN m.photo_b64 IS NULL OR m.photo_b64='' THEN 0 ELSE 1 END AS has_photo,
+                 (CASE WHEN m.photo_b64 IS NULL OR m.photo_b64='' THEN 0 ELSE 1 END + COALESCE(att.c,0))::int AS photo_count,
                  u.display_name AS created_by_name, m.shift, m.post
           FROM mutasi_entries m
           JOIN users u ON u.id = m.created_by
+          LEFT JOIN LATERAL (
+            SELECT COUNT(*)::int AS c
+            FROM media_attachments ma
+            WHERE ma.target_table='mutasi_entries' AND ma.target_id=m.id
+          ) att ON true
         """
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -1474,7 +1641,8 @@ def list_mutasi(request: Request, q: str = "", kategori: str = "", sub: str = ""
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         for r in rows:
-            r["has_photo"] = bool(int(r.get("has_photo") or 0))
+            r["photo_count"] = int(r.get("photo_count") or 0)
+            r["has_photo"] = r["photo_count"] > 0
             if r["has_photo"]:
                 r["photo_url"] = f"/api/mutasi/{int(r['id'])}/photo"
         return {"items": rows}
@@ -1487,11 +1655,23 @@ def get_mutasi_photo(mutasi_id: str, request: Request):
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT photo_b64, photo_mime, photo_name FROM mutasi_entries WHERE id=%s", (mutasi_id,))
             row = cur.fetchone()
-            if not row or not (row.get("photo_b64") or ""):
+            if row and (row.get("photo_b64") or ""):
+                data = base64.b64decode((row["photo_b64"] or "").encode("ascii"))
+                mime = (row.get("photo_mime") or "application/octet-stream").strip()
+                name = (row.get("photo_name") or "photo").strip()
+                headers = {"Content-Disposition": f'inline; filename="{name}"'}
+                return Response(content=data, media_type=mime, headers=headers)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT photo_b64, photo_mime, photo_name FROM media_attachments WHERE target_table='mutasi_entries' AND target_id=%s ORDER BY id ASC LIMIT 1",
+                (mutasi_id,),
+            )
+            a = cur.fetchone()
+            if not a or not (a.get("photo_b64") or ""):
                 raise HTTPException(status_code=404, detail="Foto tidak ditemukan")
-            data = base64.b64decode((row["photo_b64"] or "").encode("ascii"))
-            mime = (row.get("photo_mime") or "application/octet-stream").strip()
-            name = (row.get("photo_name") or "photo").strip()
+            data = base64.b64decode((a["photo_b64"] or "").encode("ascii"))
+            mime = (a.get("photo_mime") or "application/octet-stream").strip()
+            name = (a.get("photo_name") or "photo").strip()
             headers = {"Content-Disposition": f'inline; filename="{name}"'}
             return Response(content=data, media_type=mime, headers=headers)
 
@@ -1686,11 +1866,16 @@ def list_guests(request: Request, status: str = "in", q: str = "", date: str = "
             order = "g.checkin_at ASC"
         sql = """
           SELECT g.id, g.name, g.instansi, g.purpose, g.meet_person, g.checkin_at, g.checkout_at, g.notes, g.status, g.void_reason,
-                 CASE WHEN g.photo_b64 IS NULL OR g.photo_b64='' THEN 0 ELSE 1 END AS has_photo,
+                 (CASE WHEN g.photo_b64 IS NULL OR g.photo_b64='' THEN 0 ELSE 1 END + COALESCE(att.c,0))::int AS photo_count,
                  g.created_by, g.created_at,
                  u.display_name AS created_by_name, g.shift, g.post
           FROM guest_entries g
           JOIN users u ON u.id = g.created_by
+          LEFT JOIN LATERAL (
+            SELECT COUNT(*)::int AS c
+            FROM media_attachments ma
+            WHERE ma.target_table='guest_entries' AND ma.target_id=g.id
+          ) att ON true
         """
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -1701,7 +1886,8 @@ def list_guests(request: Request, status: str = "in", q: str = "", date: str = "
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         for r in rows:
-            r["has_photo"] = bool(int(r.get("has_photo") or 0))
+            r["photo_count"] = int(r.get("photo_count") or 0)
+            r["has_photo"] = r["photo_count"] > 0
             if r["has_photo"]:
                 r["photo_url"] = f"/api/guests/{int(r['id'])}/photo"
         return {"items": rows}
@@ -1714,11 +1900,23 @@ def get_guest_photo(guest_id: str, request: Request):
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT photo_b64, photo_mime, photo_name FROM guest_entries WHERE id=%s", (guest_id,))
             row = cur.fetchone()
-            if not row or not (row.get("photo_b64") or ""):
+            if row and (row.get("photo_b64") or ""):
+                data = base64.b64decode((row["photo_b64"] or "").encode("ascii"))
+                mime = (row.get("photo_mime") or "application/octet-stream").strip()
+                name = (row.get("photo_name") or "photo").strip()
+                headers = {"Content-Disposition": f'inline; filename="{name}"'}
+                return Response(content=data, media_type=mime, headers=headers)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT photo_b64, photo_mime, photo_name FROM media_attachments WHERE target_table='guest_entries' AND target_id=%s ORDER BY id ASC LIMIT 1",
+                (guest_id,),
+            )
+            a = cur.fetchone()
+            if not a or not (a.get("photo_b64") or ""):
                 raise HTTPException(status_code=404, detail="Foto tidak ditemukan")
-            data = base64.b64decode((row["photo_b64"] or "").encode("ascii"))
-            mime = (row.get("photo_mime") or "application/octet-stream").strip()
-            name = (row.get("photo_name") or "photo").strip()
+            data = base64.b64decode((a["photo_b64"] or "").encode("ascii"))
+            mime = (a.get("photo_mime") or "application/octet-stream").strip()
+            name = (a.get("photo_name") or "photo").strip()
             headers = {"Content-Disposition": f'inline; filename="{name}"'}
             return Response(content=data, media_type=mime, headers=headers)
 
@@ -1993,10 +2191,15 @@ def list_tasks(request: Request, q: str = "", date: str = "", sort: str = "occur
           SELECT t.id, t.kind, t.occurred_at, t.destination, t.notes, t.extra_json,
                  COALESCE(t.status,'active') AS status,
                  t.void_reason,
-                 CASE WHEN t.photo_b64 IS NULL OR t.photo_b64='' THEN 0 ELSE 1 END AS has_photo,
+                 (CASE WHEN t.photo_b64 IS NULL OR t.photo_b64='' THEN 0 ELSE 1 END + COALESCE(att.c,0))::int AS photo_count,
                  u.display_name AS created_by_name, t.shift, t.post
           FROM task_entries t
           JOIN users u ON u.id = t.created_by
+          LEFT JOIN LATERAL (
+            SELECT COUNT(*)::int AS c
+            FROM media_attachments ma
+            WHERE ma.target_table='task_entries' AND ma.target_id=t.id
+          ) att ON true
         """
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -2007,7 +2210,8 @@ def list_tasks(request: Request, q: str = "", date: str = "", sort: str = "occur
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         for r in rows:
-            r["has_photo"] = bool(int(r.get("has_photo") or 0))
+            r["photo_count"] = int(r.get("photo_count") or 0)
+            r["has_photo"] = r["photo_count"] > 0
             if r["has_photo"]:
                 r["photo_url"] = f"/api/tasks/{int(r['id'])}/photo"
             extra_raw = (r.get("extra_json") or "").strip()
@@ -2027,11 +2231,23 @@ def get_task_photo(task_id: str, request: Request):
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT photo_b64, photo_mime, photo_name FROM task_entries WHERE id=%s", (task_id,))
             row = cur.fetchone()
-            if not row or not (row.get("photo_b64") or ""):
+            if row and (row.get("photo_b64") or ""):
+                data = base64.b64decode((row["photo_b64"] or "").encode("ascii"))
+                mime = (row.get("photo_mime") or "application/octet-stream").strip()
+                name = (row.get("photo_name") or "photo").strip()
+                headers = {"Content-Disposition": f'inline; filename="{name}"'}
+                return Response(content=data, media_type=mime, headers=headers)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT photo_b64, photo_mime, photo_name FROM media_attachments WHERE target_table='task_entries' AND target_id=%s ORDER BY id ASC LIMIT 1",
+                (task_id,),
+            )
+            a = cur.fetchone()
+            if not a or not (a.get("photo_b64") or ""):
                 raise HTTPException(status_code=404, detail="Foto tidak ditemukan")
-            data = base64.b64decode((row["photo_b64"] or "").encode("ascii"))
-            mime = (row.get("photo_mime") or "application/octet-stream").strip()
-            name = (row.get("photo_name") or "photo").strip()
+            data = base64.b64decode((a["photo_b64"] or "").encode("ascii"))
+            mime = (a.get("photo_mime") or "application/octet-stream").strip()
+            name = (a.get("photo_name") or "photo").strip()
             headers = {"Content-Disposition": f'inline; filename="{name}"'}
             return Response(content=data, media_type=mime, headers=headers)
 

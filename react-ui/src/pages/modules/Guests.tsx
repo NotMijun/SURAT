@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
-import type { GuestEntry, Me } from '../../types'
+import type { AttachmentItem, GuestEntry, Me } from '../../types'
+import { compressImageFile } from '../../lib/image'
 import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useConfirm, useToast } from '../../components/ToastHost'
 
@@ -33,8 +34,10 @@ export default function GuestsPage({ me }: { me: Me }) {
   const [meet, setMeet] = useState('')
   const [time, setTime] = useState(nowHm())
   const [notes, setNotes] = useState('')
-  const [photo, setPhoto] = useState<File | null>(null)
+  const [photos, setPhotos] = useState<Array<{ file: File; kind: string; previewUrl: string }>>([])
   const [photoKey, setPhotoKey] = useState(0)
+  const [attachments, setAttachments] = useState<AttachmentItem[]>([])
+  const [activeAttachment, setActiveAttachment] = useState<AttachmentItem | null>(null)
   const [photoView, setPhotoView] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string>('')
@@ -114,21 +117,10 @@ export default function GuestsPage({ me }: { me: Me }) {
     try {
       setFormError('')
       const payload = { name, instansi, purpose, meet_person: meet, checkin_at: toIsoLocal(formDate, time), notes, post: postFilter }
+      let createdId: number | null = null
       try {
-        if (photo) {
-          const form = new FormData()
-          form.set('name', payload.name)
-          form.set('instansi', payload.instansi)
-          form.set('purpose', payload.purpose)
-          form.set('meet_person', payload.meet_person)
-          form.set('checkin_at', payload.checkin_at)
-          form.set('notes', payload.notes)
-          form.set('post', payload.post)
-          form.set('photo', photo)
-          await apiPostForm('/api/guests_with_photo', form)
-        } else {
-          await apiPost('/api/guests', payload)
-        }
+        const res = await apiPost<{ ok: boolean; id: number }>('/api/guests', payload)
+        createdId = res.id
       } catch (err: any) {
         if (err?.status === 409) {
           const ok = await confirm.confirm({
@@ -137,23 +129,22 @@ export default function GuestsPage({ me }: { me: Me }) {
             confirmText: 'Tetap Simpan',
           })
           if (!ok) throw err
-          if (photo) {
-            const form = new FormData()
-            form.set('name', payload.name)
-            form.set('instansi', payload.instansi)
-            form.set('purpose', payload.purpose)
-            form.set('meet_person', payload.meet_person)
-            form.set('checkin_at', payload.checkin_at)
-            form.set('notes', payload.notes)
-            form.set('post', payload.post)
-            form.set('force', 'true')
-            form.set('photo', photo)
-            await apiPostForm('/api/guests_with_photo', form)
-          } else {
-            await apiPost('/api/guests', { ...payload, force: true })
-          }
+          const res = await apiPost<{ ok: boolean; id: number }>('/api/guests', { ...payload, force: true })
+          createdId = res.id
         } else {
           throw err
+        }
+      }
+      if (createdId && photos.length > 0) {
+        try {
+          const form = new FormData()
+          for (const p of photos) {
+            form.append('photos', p.file, p.file.name)
+            form.append('kind', p.kind)
+          }
+          await apiPostForm(`/api/attachments/guest_entries/${createdId}`, form)
+        } catch (err: any) {
+          toast.push(`Data tersimpan, tapi upload foto gagal: ${String(err?.message || err || '')}`, 'error')
         }
       }
       setName('')
@@ -161,7 +152,8 @@ export default function GuestsPage({ me }: { me: Me }) {
       setPurpose('')
       setMeet('')
       setNotes('')
-      setPhoto(null)
+      for (const p of photos) URL.revokeObjectURL(p.previewUrl)
+      setPhotos([])
       setPhotoKey((x) => x + 1)
       localStorage.removeItem(draftKey)
       toast.push('Tamu masuk dicatat', 'success')
@@ -262,17 +254,62 @@ export default function GuestsPage({ me }: { me: Me }) {
   const closePhoto = () => {
     if (photoView) URL.revokeObjectURL(photoView)
     setPhotoView(null)
+    setAttachments([])
+    setActiveAttachment(null)
   }
 
-  const openPhoto = async (url: string) => {
+  const loadPhotoUrl = useCallback(async (url: string) => {
+    const blob = await apiGetBlob(url)
+    if (photoView) URL.revokeObjectURL(photoView)
+    setPhotoView(URL.createObjectURL(blob))
+  }, [photoView])
+
+  const openGuestPhotos = useCallback(async (r: GuestEntry) => {
     try {
-      const blob = await apiGetBlob(url)
-      if (photoView) URL.revokeObjectURL(photoView)
-      setPhotoView(URL.createObjectURL(blob))
+      const res = await apiGet<{ items: AttachmentItem[] }>(`/api/attachments/guest_entries/${r.id}`)
+      const list = res.items || []
+      if (list.length > 0) {
+        setAttachments(list)
+        setActiveAttachment(list[0])
+        await loadPhotoUrl(list[0].url)
+        return
+      }
+      if (r.photo_url) {
+        await loadPhotoUrl(r.photo_url)
+        return
+      }
+      toast.push('Foto tidak ditemukan', 'error')
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal memuat foto'), 'error')
     }
-  }
+  }, [loadPhotoUrl, toast])
+
+  const attachmentKinds = useMemo(() => ['Foto', 'Surat Jalan', 'Kondisi Barang', 'Lokasi'], [])
+
+  const addSelectedPhotos = useCallback(
+    async (fileList: FileList | null) => {
+      const files = Array.from(fileList || [])
+      if (files.length === 0) return
+      const remaining = Math.max(0, 6 - photos.length)
+      const picked = files.slice(0, remaining)
+      if (picked.length < files.length) toast.push('Maksimal 6 foto per entri', 'error')
+      const next: Array<{ file: File; kind: string; previewUrl: string }> = []
+      for (const f of picked) {
+        if (!String(f.type || '').toLowerCase().startsWith('image/')) {
+          toast.push('File foto harus gambar', 'error')
+          continue
+        }
+        const cf = await compressImageFile(f).catch(() => f)
+        if (cf.size > 3 * 1024 * 1024) {
+          toast.push('Ukuran foto setelah kompres masih terlalu besar (maks 3MB)', 'error')
+          continue
+        }
+        next.push({ file: cf, kind: 'Foto', previewUrl: URL.createObjectURL(cf) })
+      }
+      if (next.length > 0) setPhotos((prev) => prev.concat(next))
+    },
+    [photos.length, toast],
+  )
 
   return (
     <section className="section">
@@ -356,7 +393,7 @@ export default function GuestsPage({ me }: { me: Me }) {
             </div>
             <div className="field grid-span-2">
               <label className="label" htmlFor="guestPhoto">
-                Foto (opsional)
+                Lampiran foto (opsional)
               </label>
               <input
                 key={photoKey}
@@ -364,25 +401,47 @@ export default function GuestsPage({ me }: { me: Me }) {
                 id="guestPhoto"
                 type="file"
                 accept="image/*"
+                multiple
                 capture="environment"
                 onChange={(e) => {
-                  const f = e.target.files?.[0] || null
-                  if (f && !String(f.type || '').toLowerCase().startsWith('image/')) {
-                    toast.push('File foto harus gambar', 'error')
-                    setPhoto(null)
+                  ;(async () => {
+                    await addSelectedPhotos(e.target.files)
                     setPhotoKey((x) => x + 1)
-                    return
-                  }
-                  if (f && f.size > 3 * 1024 * 1024) {
-                    toast.push('Ukuran foto maksimal 3MB', 'error')
-                    setPhoto(null)
-                    setPhotoKey((x) => x + 1)
-                    return
-                  }
-                  setPhoto(f)
+                  })().catch(() => {})
                 }}
               />
-              <div className="muted">{photo ? `Dipilih: ${photo.name}` : 'Tidak ada foto'}</div>
+              <div className="attachments-grid">
+                {photos.map((p, idx) => (
+                  <div className="attachment-item" key={p.previewUrl}>
+                    <img className="attachment-thumb" src={p.previewUrl} alt={p.kind} />
+                    <div className="attachment-meta">
+                      <select
+                        className="select select-sm"
+                        value={p.kind}
+                        onChange={(e) => setPhotos((prev) => prev.map((x, i) => (i === idx ? { ...x, kind: e.target.value } : x)))}
+                      >
+                        {attachmentKinds.map((k) => (
+                          <option key={k} value={k}>
+                            {k}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className="button button-sm button-secondary"
+                        type="button"
+                        onClick={() => {
+                          URL.revokeObjectURL(p.previewUrl)
+                          setPhotos((prev) => prev.filter((_, i) => i !== idx))
+                        }}
+                      >
+                        Hapus
+                      </button>
+                    </div>
+                    <div className="muted">{p.file.name}</div>
+                  </div>
+                ))}
+                {photos.length === 0 && <div className="muted">Tidak ada foto</div>}
+              </div>
             </div>
             <div className="sticky-actions grid-span-2">
               <div className="row row-right">
@@ -401,7 +460,8 @@ export default function GuestsPage({ me }: { me: Me }) {
                       setNotes('')
                       setTime(nowHm())
                       setFormError('')
-                      setPhoto(null)
+                      for (const p of photos) URL.revokeObjectURL(p.previewUrl)
+                      setPhotos([])
                       setPhotoKey((x) => x + 1)
                     })().catch(() => {})
                   }}
@@ -465,8 +525,8 @@ export default function GuestsPage({ me }: { me: Me }) {
                     <td data-label="Keluar">{fmtTime(r.checkout_at)}</td>
                     <td data-label="Foto">
                       {r.has_photo && r.photo_url ? (
-                        <button className="button button-sm button-secondary" type="button" onClick={() => openPhoto(r.photo_url!)}>
-                          Foto
+                        <button className="button button-sm button-secondary" type="button" onClick={() => openGuestPhotos(r)}>
+                          {typeof r.photo_count === 'number' && r.photo_count > 1 ? `Foto (${r.photo_count})` : 'Foto'}
                         </button>
                       ) : (
                         <span className="muted">-</span>
@@ -594,12 +654,31 @@ export default function GuestsPage({ me }: { me: Me }) {
         <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Foto" onClick={(e) => e.currentTarget === e.target && closePhoto()}>
           <div className="modal">
             <div className="modal-header">
-              <div className="modal-title">Foto</div>
+              <div className="modal-title">{activeAttachment?.kind ? `Foto · ${activeAttachment.kind}` : 'Foto'}</div>
               <button className="button button-secondary button-sm" type="button" onClick={closePhoto}>
                 Tutup
               </button>
             </div>
             <div className="modal-body">
+              {attachments.length > 1 && (
+                <div className="attachment-strip">
+                  {attachments.map((a) => (
+                    <button
+                      key={a.id}
+                      className={`button button-sm button-secondary${activeAttachment?.id === a.id ? ' button-active' : ''}`}
+                      type="button"
+                      onClick={() => {
+                        ;(async () => {
+                          setActiveAttachment(a)
+                          await loadPhotoUrl(a.url)
+                        })().catch(() => {})
+                      }}
+                    >
+                      {a.kind}
+                    </button>
+                  ))}
+                </div>
+              )}
               <img className="modal-photo" src={photoView} alt="Foto" />
             </div>
           </div>

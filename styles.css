@@ -546,6 +546,45 @@ html[data-focus="keyboard"] .button:focus-visible,html[data-focus="keyboard"] .t
   margin-top: 4px;
 }
 
+.attachments-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(180px, 1fr));
+  gap:12px;
+  margin-top:10px;
+}
+.attachment-item{
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  background:var(--soft-bg);
+  padding:10px;
+  display:grid;
+  gap:8px;
+}
+.attachment-thumb{
+  width:100%;
+  height:120px;
+  object-fit:cover;
+  border-radius:var(--radius-sm);
+  border:1px solid var(--border);
+  background:var(--field-bg-2);
+}
+.attachment-meta{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  justify-content:space-between;
+}
+.attachment-strip{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-bottom:12px;
+}
+.button-active{
+  border-color:rgba(212,175,55,.55) !important;
+  box-shadow:0 0 0 3px rgba(212,175,55,.14);
+}
+
 .list{display:grid;gap:10px}
 .list-item{
   padding:12px;

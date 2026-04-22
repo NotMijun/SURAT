@@ -38,6 +38,7 @@ export type KeyTx = {
   created_at?: string
   created_by_name?: string
   has_photo?: boolean
+  photo_count?: number
   photo_url?: string
 }
 
@@ -58,6 +59,7 @@ export type GuestEntry = {
   shift?: string
   post?: string
   has_photo?: boolean
+  photo_count?: number
   photo_url?: string
 }
 
@@ -74,6 +76,7 @@ export type TaskEntry = {
   shift?: string
   post?: string
   has_photo?: boolean
+  photo_count?: number
   photo_url?: string
 }
 
@@ -88,7 +91,16 @@ export type MutasiEntry = {
   shift?: string
   post?: string
   has_photo?: boolean
+  photo_count?: number
   photo_url?: string
+}
+
+export type AttachmentItem = {
+  id: number
+  kind: string
+  photo_name: string
+  uploaded_at: string
+  url: string
 }
 
 export type KeyMasterItem = {
