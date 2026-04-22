@@ -183,12 +183,38 @@ def _read_photo_upload(photo: UploadFile | None) -> tuple[str | None, str | None
 
 _ATTACH_ALLOWED_TABLES = {"key_transactions", "guest_entries", "mutasi_entries", "task_entries"}
 
+_ATTACH_TABLE_ALIASES = {
+    "key_transaction": "key_transactions",
+    "keys": "key_transactions",
+    "kunci": "key_transactions",
+    "guest": "guest_entries",
+    "guests": "guest_entries",
+    "tamu": "guest_entries",
+    "mutasi": "mutasi_entries",
+    "task": "task_entries",
+    "tasks": "task_entries",
+}
+
+
+def _normalize_table_token(value: str) -> str:
+    s = (value or "").strip().lower()
+    if not s:
+        return ""
+    s = s.replace("-", "_")
+    s = "_".join(s.split())
+    while "__" in s:
+        s = s.replace("__", "_")
+    return s
+
 
 def _attach_table_name(value: str) -> str:
-    t = normalize_text(value)
-    if t not in _ATTACH_ALLOWED_TABLES:
-        raise HTTPException(status_code=400, detail="Target tidak valid")
-    return t
+    t = _normalize_table_token(value)
+    if t in _ATTACH_ALLOWED_TABLES:
+        return t
+    mapped = _ATTACH_TABLE_ALIASES.get(t)
+    if mapped and mapped in _ATTACH_ALLOWED_TABLES:
+        return mapped
+    raise HTTPException(status_code=400, detail="Target tidak valid")
 
 
 def _attach_kind(value: Any) -> str:
@@ -464,6 +490,9 @@ def _ensure_schema(conn) -> None:
             cur.execute("ALTER TABLE guest_entries ADD COLUMN IF NOT EXISTS void_reason TEXT")
             cur.execute("ALTER TABLE guest_entries ADD COLUMN IF NOT EXISTS voided_by BIGINT REFERENCES users(id)")
             cur.execute("ALTER TABLE guest_entries ADD COLUMN IF NOT EXISTS voided_at TEXT")
+            cur.execute("ALTER TABLE guest_entries ADD COLUMN IF NOT EXISTS destination_room TEXT")
+            cur.execute("ALTER TABLE guest_entries ADD COLUMN IF NOT EXISTS visitor_card_no TEXT")
+            cur.execute("ALTER TABLE guest_entries ADD COLUMN IF NOT EXISTS ktp_exchanged BOOLEAN")
             cur.execute("ALTER TABLE guest_entries DROP CONSTRAINT IF EXISTS guest_entries_status_check")
             cur.execute("ALTER TABLE guest_entries ADD CONSTRAINT guest_entries_status_check CHECK (status IN ('in','out','void'))")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_guest_status ON guest_entries(status)")
@@ -797,6 +826,9 @@ class PatchGuestBody(BaseModel):
     checkin_at: str | None = None
     checkout_at: str | None = None
     notes: str | None = None
+    destination_room: str | None = None
+    visitor_card_no: str | None = None
+    ktp_exchanged: bool | None = None
 
 
 class CreateMutasiBody(BaseModel):
@@ -809,12 +841,15 @@ class CreateMutasiBody(BaseModel):
 class CreateGuestBody(BaseModel):
     name: str
     instansi: str
-    purpose: str
-    meet_person: str
-    checkin_at: str
+    purpose: str | None = None
+    meet_person: str | None = None
+    checkin_at: str | None = None
     notes: str | None = None
     post: str | None = None
     force: bool | None = None
+    destination_room: str | None = None
+    visitor_card_no: str | None = None
+    ktp_exchanged: bool | None = None
 
 
 class CreateTaskBody(BaseModel):
@@ -1856,8 +1891,10 @@ def list_guests(request: Request, status: str = "in", q: str = "", date: str = "
                 where.append("g.post = %s")
                 params.append(post_val)
         if qn:
-            where.append("(lower(g.name) LIKE %s OR lower(g.instansi) LIKE %s OR lower(g.purpose) LIKE %s)")
-            params.extend([f"%{qn}%", f"%{qn}%", f"%{qn}%"])
+            where.append(
+                "(lower(g.name) LIKE %s OR lower(g.instansi) LIKE %s OR lower(g.purpose) LIKE %s OR lower(COALESCE(g.destination_room,'')) LIKE %s OR lower(COALESCE(g.visitor_card_no,'')) LIKE %s)"
+            )
+            params.extend([f"%{qn}%", f"%{qn}%", f"%{qn}%", f"%{qn}%", f"%{qn}%"])
         if bounds:
             where.append("g.checkin_at BETWEEN %s AND %s")
             params.extend([bounds[0], bounds[1]])
@@ -1866,6 +1903,7 @@ def list_guests(request: Request, status: str = "in", q: str = "", date: str = "
             order = "g.checkin_at ASC"
         sql = """
           SELECT g.id, g.name, g.instansi, g.purpose, g.meet_person, g.checkin_at, g.checkout_at, g.notes, g.status, g.void_reason,
+                 g.destination_room, g.visitor_card_no, g.ktp_exchanged,
                  (CASE WHEN g.photo_b64 IS NULL OR g.photo_b64='' THEN 0 ELSE 1 END + COALESCE(att.c,0))::int AS photo_count,
                  g.created_by, g.created_at,
                  u.display_name AS created_by_name, g.shift, g.post
@@ -1932,6 +1970,9 @@ def _create_guest(
     notes: str | None,
     post_override: str | None,
     force: bool,
+    destination_room: str | None,
+    visitor_card_no: str | None,
+    ktp_exchanged: bool | None,
     photo_b64: str | None,
     photo_mime: str | None,
     photo_name: str | None,
@@ -1948,6 +1989,15 @@ def _create_guest(
         if pv not in ("IGD", "Pintu Utama", "Lobby"):
             raise HTTPException(status_code=400, detail="Pos tidak valid")
         post_val = pv
+    dest_room = _text_field(destination_room, field="Ruang tujuan", max_len=80, default="")
+    card_no = _text_field(visitor_card_no, field="Kartu penunggu", max_len=40, default="")
+    exchanged = bool(ktp_exchanged) if ktp_exchanged is not None else False
+    if post_val == "Pintu Utama":
+        if not dest_room:
+            raise HTTPException(status_code=400, detail="Ruang tujuan wajib diisi (Pintu Utama)")
+        if not card_no:
+            raise HTTPException(status_code=400, detail="Nomor kartu penunggu wajib diisi (Pintu Utama)")
+        exchanged = True
     checkin_at = _iso_field(checkin_at, field="Waktu masuk") or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     now = utc_now_iso()
     with conn.cursor() as cur:
@@ -1962,12 +2012,14 @@ def _create_guest(
                   AND lower(instansi)=lower(%s)
                   AND lower(purpose)=lower(%s)
                   AND lower(meet_person)=lower(%s)
+                  AND COALESCE(lower(destination_room),'')=COALESCE(lower(%s),'')
+                  AND COALESCE(lower(visitor_card_no),'')=COALESCE(lower(%s),'')
                   AND post=%s
                   AND created_at > %s
                 ORDER BY created_at DESC
                 LIMIT 1
                 """,
-                (name, instansi, purpose, meet, post_val, cutoff),
+                (name, instansi, purpose, meet, dest_room, card_no, post_val, cutoff),
             )
             dup = cur.fetchone()
             if dup:
@@ -1976,12 +2028,34 @@ def _create_guest(
             """
             INSERT INTO guest_entries(
               name, instansi, purpose, meet_person, checkin_at, checkout_at, notes, status, created_by, shift, post,
+              destination_room, visitor_card_no, ktp_exchanged,
               photo_b64, photo_mime, photo_name, photo_uploaded_at, created_at, updated_at
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING id
             """,
-            (name, instansi, purpose, meet, checkin_at, None, notes, "in", sess["user_id"], sess["shift"], post_val, photo_b64, photo_mime, photo_name, photo_uploaded_at, now, now),
+            (
+                name,
+                instansi,
+                purpose,
+                meet,
+                checkin_at,
+                None,
+                notes,
+                "in",
+                sess["user_id"],
+                sess["shift"],
+                post_val,
+                dest_room or None,
+                card_no or None,
+                True if exchanged else False,
+                photo_b64,
+                photo_mime,
+                photo_name,
+                photo_uploaded_at,
+                now,
+                now,
+            ),
         )
         gid = int(cur.fetchone()[0])
         _audit(
@@ -1999,6 +2073,9 @@ def _create_guest(
                 "checkin_at": checkin_at,
                 "notes": notes,
                 "status": "in",
+                "destination_room": dest_room or None,
+                "visitor_card_no": card_no or None,
+                "ktp_exchanged": True if exchanged else False,
                 "has_photo": bool(photo_b64),
                 "photo_name": photo_name if photo_b64 else None,
             },
@@ -2011,7 +2088,25 @@ def _create_guest(
 def create_guest(body: CreateGuestBody, request: Request):
     with db_connect() as conn:
         sess = _require_session(conn, request)
-        gid = _create_guest(conn, sess, body.name, body.instansi, body.purpose, body.meet_person, body.checkin_at, body.notes, body.post, bool(body.force), None, None, None, None)
+        gid = _create_guest(
+            conn,
+            sess,
+            body.name,
+            body.instansi,
+            body.purpose,
+            body.meet_person,
+            body.checkin_at,
+            body.notes,
+            body.post,
+            bool(body.force),
+            body.destination_room,
+            body.visitor_card_no,
+            body.ktp_exchanged,
+            None,
+            None,
+            None,
+            None,
+        )
         conn.commit()
         return {"ok": True, "id": gid}
 
@@ -2025,13 +2120,34 @@ def create_guest_with_photo(
     checkin_at: str | None = Form(None),
     notes: str | None = Form(None),
     post: str | None = Form(None),
+    destination_room: str | None = Form(None),
+    visitor_card_no: str | None = Form(None),
+    ktp_exchanged: str | None = Form(None),
     force: str | None = Form(None),
     photo: UploadFile | None = File(None),
 ):
     with db_connect() as conn:
         sess = _require_session(conn, request)
         (photo_b64, photo_mime, photo_name, photo_uploaded_at) = _read_photo_upload(photo)
-        gid = _create_guest(conn, sess, name, instansi, purpose, meet_person, checkin_at, notes, post, _parse_truthy(force), photo_b64, photo_mime, photo_name, photo_uploaded_at)
+        gid = _create_guest(
+            conn,
+            sess,
+            name,
+            instansi,
+            purpose,
+            meet_person,
+            checkin_at,
+            notes,
+            post,
+            _parse_truthy(force),
+            destination_room,
+            visitor_card_no,
+            _parse_truthy(ktp_exchanged) if ktp_exchanged is not None else None,
+            photo_b64,
+            photo_mime,
+            photo_name,
+            photo_uploaded_at,
+        )
         conn.commit()
         return {"ok": True, "id": gid}
 
@@ -2130,6 +2246,7 @@ def patch_guest(guest_id: str, body: PatchGuestBody, request: Request):
             if not _can_quick_modify(sess, created_by=int(row["created_by"]), created_at_iso=str(row.get("created_at") or "")):
                 raise HTTPException(status_code=403, detail="Tidak punya akses edit")
             before = dict(row)
+            post_cur = str(row.get("post") or "").strip()
             updates: dict[str, Any] = {}
             if body.name is not None:
                 updates["name"] = _text_field(body.name, field="Nama", max_len=80, default="Tidak diketahui") or "Tidak diketahui"
@@ -2141,6 +2258,12 @@ def patch_guest(guest_id: str, body: PatchGuestBody, request: Request):
                 updates["meet_person"] = _text_field(body.meet_person, field="Orang yang ditemui", max_len=80, default="-") or "-"
             if body.notes is not None:
                 updates["notes"] = _text_field(body.notes, field="Keperluan", max_len=240, default="")
+            if body.destination_room is not None:
+                updates["destination_room"] = _text_field(body.destination_room, field="Ruang tujuan", max_len=80, default="") or None
+            if body.visitor_card_no is not None:
+                updates["visitor_card_no"] = _text_field(body.visitor_card_no, field="Kartu penunggu", max_len=40, default="") or None
+            if body.ktp_exchanged is not None:
+                updates["ktp_exchanged"] = True if bool(body.ktp_exchanged) else False
             if body.checkin_at is not None:
                 updates["checkin_at"] = _iso_field(body.checkin_at, field="Waktu masuk") or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
             if body.checkout_at is not None:
@@ -2148,6 +2271,14 @@ def patch_guest(guest_id: str, body: PatchGuestBody, request: Request):
                     updates["checkout_at"] = _iso_field(body.checkout_at, field="Waktu keluar")
                 else:
                     updates["checkout_at"] = None
+            if post_cur == "Pintu Utama":
+                dest_next = updates.get("destination_room", row.get("destination_room"))
+                card_next = updates.get("visitor_card_no", row.get("visitor_card_no"))
+                if not str(dest_next or "").strip():
+                    raise HTTPException(status_code=400, detail="Ruang tujuan wajib diisi (Pintu Utama)")
+                if not str(card_next or "").strip():
+                    raise HTTPException(status_code=400, detail="Nomor kartu penunggu wajib diisi (Pintu Utama)")
+                updates["ktp_exchanged"] = True
             if not updates:
                 return {"ok": True}
             updates["updated_at"] = utc_now_iso()

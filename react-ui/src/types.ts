@@ -53,6 +53,9 @@ export type GuestEntry = {
   notes?: string
   status: 'in' | 'out' | 'void'
   void_reason?: string | null
+  destination_room?: string | null
+  visitor_card_no?: string | null
+  ktp_exchanged?: boolean | null
   created_by?: number
   created_at?: string
   created_by_name?: string

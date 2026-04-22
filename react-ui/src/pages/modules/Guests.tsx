@@ -27,6 +27,8 @@ export default function GuestsPage({ me }: { me: Me }) {
   const [editPurpose, setEditPurpose] = useState('')
   const [editMeet, setEditMeet] = useState('')
   const [editNotes, setEditNotes] = useState('')
+  const [editDestinationRoom, setEditDestinationRoom] = useState('')
+  const [editVisitorCardNo, setEditVisitorCardNo] = useState('')
 
   const [name, setName] = useState('')
   const [instansi, setInstansi] = useState('')
@@ -34,6 +36,8 @@ export default function GuestsPage({ me }: { me: Me }) {
   const [meet, setMeet] = useState('')
   const [time, setTime] = useState(nowHm())
   const [notes, setNotes] = useState('')
+  const [destinationRoom, setDestinationRoom] = useState('')
+  const [visitorCardNo, setVisitorCardNo] = useState('')
   const [photos, setPhotos] = useState<Array<{ file: File; kind: string; previewUrl: string }>>([])
   const [photoKey, setPhotoKey] = useState(0)
   const [attachments, setAttachments] = useState<AttachmentItem[]>([])
@@ -83,6 +87,8 @@ export default function GuestsPage({ me }: { me: Me }) {
       if (typeof d.instansi === 'string') setInstansi(d.instansi)
       if (typeof d.purpose === 'string') setPurpose(d.purpose)
       if (typeof d.meet === 'string') setMeet(d.meet)
+      if (typeof d.destinationRoom === 'string') setDestinationRoom(d.destinationRoom)
+      if (typeof d.visitorCardNo === 'string') setVisitorCardNo(d.visitorCardNo)
       if (typeof d.time === 'string') setTime(d.time || nowHm())
       if (typeof d.notes === 'string') setNotes(d.notes)
     } catch {
@@ -92,11 +98,11 @@ export default function GuestsPage({ me }: { me: Me }) {
 
   useEffect(() => {
     const t = window.setTimeout(() => {
-      const payload = { name, instansi, purpose, meet, time, notes }
+      const payload = { name, instansi, purpose, meet, destinationRoom, visitorCardNo, time, notes }
       localStorage.setItem(draftKey, JSON.stringify(payload))
     }, 300)
     return () => window.clearTimeout(t)
-  }, [draftKey, instansi, meet, name, notes, purpose, time])
+  }, [draftKey, destinationRoom, instansi, meet, name, notes, purpose, time, visitorCardNo])
 
   const downloadCsv = (filename: string, rows: Array<Array<string | number>>) => {
     const lines = rows.map((r) => r.map((x) => `"${String(x ?? '').replace(/"/g, '""')}"`).join(','))
@@ -116,7 +122,15 @@ export default function GuestsPage({ me }: { me: Me }) {
     setBusy(true)
     try {
       setFormError('')
-      const payload = { name, instansi, purpose, meet_person: meet, checkin_at: toIsoLocal(formDate, time), notes, post: postFilter }
+      const payload: any = { name, instansi, checkin_at: toIsoLocal(formDate, time), notes, post: postFilter }
+      if (postFilter === 'Pintu Utama') {
+        payload.destination_room = destinationRoom
+        payload.visitor_card_no = visitorCardNo
+        payload.ktp_exchanged = true
+      } else {
+        payload.purpose = purpose
+        payload.meet_person = meet
+      }
       let createdId: number | null = null
       try {
         const res = await apiPost<{ ok: boolean; id: number }>('/api/guests', payload)
@@ -152,6 +166,8 @@ export default function GuestsPage({ me }: { me: Me }) {
       setPurpose('')
       setMeet('')
       setNotes('')
+      setDestinationRoom('')
+      setVisitorCardNo('')
       for (const p of photos) URL.revokeObjectURL(p.previewUrl)
       setPhotos([])
       setPhotoKey((x) => x + 1)
@@ -176,23 +192,38 @@ export default function GuestsPage({ me }: { me: Me }) {
     setEditPurpose(r.purpose || '')
     setEditMeet(r.meet_person || '')
     setEditNotes(r.notes || '')
+    setEditDestinationRoom(String(r.destination_room || ''))
+    setEditVisitorCardNo(String(r.visitor_card_no || ''))
   }
 
   const saveEdit = async () => {
     if (!editRow) return
     try {
-      await apiPatch(`/api/guests/${editRow.id}`, {
-        name: editName,
-        instansi: editInstansi,
-        purpose: editPurpose,
-        meet_person: editMeet,
-        notes: editNotes,
-      })
+      const patch: any = { name: editName, instansi: editInstansi, notes: editNotes }
+      if (editRow.post === 'Pintu Utama' || editRow.post === 'Lobby') {
+        patch.destination_room = editDestinationRoom
+        patch.visitor_card_no = editVisitorCardNo
+        patch.ktp_exchanged = true
+      } else {
+        patch.purpose = editPurpose
+        patch.meet_person = editMeet
+      }
+      await apiPatch(`/api/guests/${editRow.id}`, patch)
       toast.push('Tamu diperbarui', 'success')
       setItems((prev) =>
         prev.map((x) =>
           x.id === editRow.id
-            ? { ...x, name: editName, instansi: editInstansi, purpose: editPurpose, meet_person: editMeet, notes: editNotes }
+            ? {
+                ...x,
+                name: editName,
+                instansi: editInstansi,
+                purpose: editRow.post === 'Pintu Utama' || editRow.post === 'Lobby' ? x.purpose : editPurpose,
+                meet_person: editRow.post === 'Pintu Utama' || editRow.post === 'Lobby' ? x.meet_person : editMeet,
+                destination_room: editRow.post === 'Pintu Utama' || editRow.post === 'Lobby' ? editDestinationRoom : x.destination_room,
+                visitor_card_no: editRow.post === 'Pintu Utama' || editRow.post === 'Lobby' ? editVisitorCardNo : x.visitor_card_no,
+                ktp_exchanged: editRow.post === 'Pintu Utama' || editRow.post === 'Lobby' ? true : x.ktp_exchanged,
+                notes: editNotes,
+              }
             : x,
         ),
       )
@@ -354,9 +385,16 @@ export default function GuestsPage({ me }: { me: Me }) {
             </div>
             <div className="field">
               <label className="label" htmlFor="guestPurpose">
-                Divisi Tujuan
+                {postFilter === 'Pintu Utama' ? 'Ruang Tujuan' : 'Divisi Tujuan'}
               </label>
-              <input className="input" id="guestPurpose" value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="mis. IT / HRD" required />
+              <input
+                className="input"
+                id="guestPurpose"
+                value={postFilter === 'Pintu Utama' ? destinationRoom : purpose}
+                onChange={(e) => (postFilter === 'Pintu Utama' ? setDestinationRoom(e.target.value) : setPurpose(e.target.value))}
+                placeholder={postFilter === 'Pintu Utama' ? 'mis. Ruang 204 / Anak / ICU' : 'mis. IT / HRD'}
+                required
+              />
             </div>
             <div className="field field-time">
               <label className="label" htmlFor="guestTime">
@@ -379,12 +417,21 @@ export default function GuestsPage({ me }: { me: Me }) {
               </div>
               <div className="muted">Akan tersimpan: {fmtDateTime(toIsoLocal(formDate, time))}</div>
             </div>
-            <div className="field grid-span-2">
-              <label className="label" htmlFor="guestMeet">
-                Orang yang ditemui
-              </label>
-              <input className="input" id="guestMeet" value={meet} onChange={(e) => setMeet(e.target.value)} placeholder="Nama staf/unit" required />
-            </div>
+            {postFilter === 'Pintu Utama' ? (
+              <div className="field grid-span-2">
+                <label className="label" htmlFor="guestCard">
+                  No Kartu Penunggu Pasien
+                </label>
+                <input className="input" id="guestCard" value={visitorCardNo} onChange={(e) => setVisitorCardNo(e.target.value)} placeholder="Nomor kartu" required />
+              </div>
+            ) : (
+              <div className="field grid-span-2">
+                <label className="label" htmlFor="guestMeet">
+                  Orang yang ditemui
+                </label>
+                <input className="input" id="guestMeet" value={meet} onChange={(e) => setMeet(e.target.value)} placeholder="Nama staf/unit" required />
+              </div>
+            )}
             <div className="field grid-span-2">
               <label className="label" htmlFor="guestNotes">
                 Keperluan
@@ -506,7 +553,8 @@ export default function GuestsPage({ me }: { me: Me }) {
                 <tr>
                   <th>Nama</th>
                   <th>Instansi</th>
-                  <th>Divisi Tujuan</th>
+                  <th>Tujuan</th>
+                  <th>Kartu</th>
                   <th>Ditemui</th>
                   <th>Masuk</th>
                   <th>Keluar</th>
@@ -519,8 +567,9 @@ export default function GuestsPage({ me }: { me: Me }) {
                   <tr key={r.id} className={r.status === 'in' ? 'table-row-active' : r.status === 'void' ? 'table-row-void' : undefined}>
                     <td data-label="Nama">{r.name}</td>
                     <td data-label="Instansi">{r.instansi}</td>
-                    <td data-label="Divisi Tujuan">{r.purpose}</td>
-                    <td data-label="Ditemui">{r.meet_person}</td>
+                    <td data-label="Tujuan">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? (r.destination_room || '-') : (r.purpose || '-')}</td>
+                    <td data-label="Kartu">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? (r.visitor_card_no || '-') : '-'}</td>
+                    <td data-label="Ditemui">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? '-' : (r.meet_person || '-')}</td>
                     <td data-label="Masuk">{fmtTime(r.checkin_at)}</td>
                     <td data-label="Keluar">{fmtTime(r.checkout_at)}</td>
                     <td data-label="Foto">
@@ -563,7 +612,7 @@ export default function GuestsPage({ me }: { me: Me }) {
                 ))}
                 {items.length === 0 && (
                   <tr>
-                    <td className="muted" colSpan={8}>
+                    <td className="muted" colSpan={9}>
                       Tidak ada data.
                     </td>
                   </tr>
@@ -612,12 +661,13 @@ export default function GuestsPage({ me }: { me: Me }) {
                 onClick={() =>
                   downloadCsv(
                     `tamu-${postFilter}-${date || 'semua'}.csv`,
-                    [['Nama', 'Instansi', 'Divisi Tujuan', 'Ditemui', 'Masuk', 'Keluar', 'Keperluan', 'Foto', 'Petugas', 'Status', 'Alasan void']].concat(
+                    [['Nama', 'Instansi', 'Tujuan', 'Kartu', 'Ditemui', 'Masuk', 'Keluar', 'Keperluan', 'Foto', 'Petugas', 'Status', 'Alasan void']].concat(
                       items.map((r) => [
                         r.name,
                         r.instansi,
-                        r.purpose,
-                        r.meet_person,
+                        r.post === 'Pintu Utama' || r.post === 'Lobby' ? String(r.destination_room || '') : r.purpose,
+                        r.post === 'Pintu Utama' || r.post === 'Lobby' ? String(r.visitor_card_no || '') : '',
+                        r.post === 'Pintu Utama' || r.post === 'Lobby' ? '' : r.meet_person,
                         fmtDateTime(r.checkin_at),
                         fmtDateTime(r.checkout_at),
                         r.notes || '',
@@ -698,8 +748,17 @@ export default function GuestsPage({ me }: { me: Me }) {
               <div className="grid" style={{ gap: 10 }}>
                 <input className="input" value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Nama" />
                 <input className="input" value={editInstansi} onChange={(e) => setEditInstansi(e.target.value)} placeholder="Instansi" />
-                <input className="input" value={editPurpose} onChange={(e) => setEditPurpose(e.target.value)} placeholder="Divisi tujuan" />
-                <input className="input" value={editMeet} onChange={(e) => setEditMeet(e.target.value)} placeholder="Ditemui" />
+                {editRow.post === 'Pintu Utama' || editRow.post === 'Lobby' ? (
+                  <>
+                    <input className="input" value={editDestinationRoom} onChange={(e) => setEditDestinationRoom(e.target.value)} placeholder="Ruang tujuan" />
+                    <input className="input" value={editVisitorCardNo} onChange={(e) => setEditVisitorCardNo(e.target.value)} placeholder="No kartu penunggu" />
+                  </>
+                ) : (
+                  <>
+                    <input className="input" value={editPurpose} onChange={(e) => setEditPurpose(e.target.value)} placeholder="Divisi tujuan" />
+                    <input className="input" value={editMeet} onChange={(e) => setEditMeet(e.target.value)} placeholder="Ditemui" />
+                  </>
+                )}
                 <textarea className="textarea" value={editNotes} onChange={(e) => setEditNotes(e.target.value)} placeholder="Keperluan" />
               </div>
               <div className="row row-right" style={{ marginTop: 14 }}>
