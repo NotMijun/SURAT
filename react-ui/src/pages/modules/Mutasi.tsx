@@ -451,7 +451,15 @@ export default function MutasiPage({ me }: { me: Me }) {
           <div className="muted">{loading ? 'Memuat...' : `${items.length} entri`}</div>
         </header>
         <div className="card-body">
-          <div className="table-wrap">
+          {loading && (
+            <div className="table-empty">
+              <div className="brand-mark brand-mark-sm">
+                <img src="/api/brand/logo.png" alt="BSH" />
+              </div>
+              <div className="muted" style={{ marginTop: 8 }}>Memuat data mutasi...</div>
+            </div>
+          )}
+          <div className="table-wrap" aria-hidden={loading}>
             <table className="table table-mobile-cards">
               <thead>
                 <tr>

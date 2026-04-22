@@ -182,6 +182,16 @@ export default function Shell() {
 
   return (
     <div className="shell">
+      {loading && (
+        <div className="global-loading-overlay">
+          <div className="global-loading-card">
+            <div className="brand-mark brand-mark-lg">
+              <img src="/api/brand/logo.png" alt="BSH" />
+            </div>
+            <div className="muted" style={{ marginTop: 8 }}>Memuat data...</div>
+          </div>
+        </div>
+      )}
       <div className="topbar">
         <div className="topbar-left">
           <div className="brand">
