@@ -298,9 +298,9 @@ export default function GuestsPage({ me }: { me: Me }) {
           <div className="muted">Petugas: {me.user.display_name}</div>
         </header>
         <div className="card-body">
-          <form className="form grid grid-4" onSubmit={onSubmit}>
+          <form className="form grid grid-2" onSubmit={onSubmit}>
             {formError && (
-              <div className="grid-span-4">
+              <div className="grid-span-2">
                 <div className="inline-error">{formError}</div>
               </div>
             )}
@@ -343,19 +343,19 @@ export default function GuestsPage({ me }: { me: Me }) {
               </div>
               <div className="muted">Akan tersimpan: {fmtDateTime(toIsoLocal(formDate, time))}</div>
             </div>
-            <div className="field grid-span-4">
+            <div className="field grid-span-2">
               <label className="label" htmlFor="guestMeet">
                 Orang yang ditemui
               </label>
               <input className="input" id="guestMeet" value={meet} onChange={(e) => setMeet(e.target.value)} placeholder="Nama staf/unit" required />
             </div>
-            <div className="field grid-span-4">
+            <div className="field grid-span-2">
               <label className="label" htmlFor="guestNotes">
                 Keperluan
               </label>
-              <input className="input" id="guestNotes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="opsional" />
+              <textarea className="input textarea" id="guestNotes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="opsional" />
             </div>
-            <div className="field grid-span-4">
+            <div className="field grid-span-2">
               <label className="label" htmlFor="guestPhoto">
                 Foto (opsional)
               </label>
@@ -385,7 +385,7 @@ export default function GuestsPage({ me }: { me: Me }) {
               />
               <div className="muted">{photo ? `Dipilih: ${photo.name}` : 'Tidak ada foto'}</div>
             </div>
-            <div className="sticky-actions grid-span-4">
+            <div className="sticky-actions grid-span-2">
               <div className="row row-right">
                 <button
                   className="button button-secondary"
