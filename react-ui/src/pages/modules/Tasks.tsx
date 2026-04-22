@@ -441,7 +441,7 @@ export default function TasksPage({ me }: { me: Me }) {
 
   return (
     <section className="section">
-      <div className="tabsbar" style={{ marginBottom: 16 }}>
+      <div className="tabsbar tabsbar-sub" style={{ marginBottom: 16 }}>
         <div className="tabs">
           <button type="button" className={`tab${tab === 'umum' ? ' tab-active' : ''}`} onClick={() => setTab('umum')}>Umum</button>
           <button type="button" className={`tab${tab === 'pom' ? ' tab-active' : ''}`} onClick={() => setTab('pom')}>Pom Catering</button>

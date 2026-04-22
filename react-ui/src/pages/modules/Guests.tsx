@@ -276,7 +276,7 @@ export default function GuestsPage({ me }: { me: Me }) {
 
   return (
     <section className="section">
-      <div className="tabsbar" style={{ marginBottom: 16 }}>
+      <div className="tabsbar tabsbar-sub" style={{ marginBottom: 16 }}>
         <div className="tabs">
           <button className={`tab${postFilter === 'IGD' ? ' tab-active' : ''}`} onClick={() => setPostFilter('IGD')}>Pos IGD</button>
           <button className={`tab${postFilter === 'Pintu Utama' ? ' tab-active' : ''}`} onClick={() => setPostFilter('Pintu Utama')}>Pos Pintu Utama</button>
