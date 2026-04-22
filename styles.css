@@ -14,8 +14,12 @@
   --danger:#ff6b81;
   --warn:#f1c453;
   --ok:#3dd6a0;
+  --danger-text:#ffc1cd;
+  --warn-text:#ffe9a8;
+  --ok-text:#baf7dc;
   --soft-bg:rgba(255,255,255,.03);
   --soft-bg-2:rgba(255,255,255,.06);
+  --zebra-bg:rgba(255,255,255,.02);
   --field-bg:rgba(24,24,26,.85);
   --field-bg-2:rgba(24,24,26,.72);
   --glass-bg:rgba(10,10,11,.78);
@@ -33,7 +37,7 @@
   --card:#ffffff;
   --text:#151618;
   --muted:#54565b;
-  --border:rgba(16,16,20,.10);
+  --border:rgba(16,16,20,.12);
   --shadow:0 16px 48px rgba(10,10,12,.12);
   --primary:#caa12a;
   --primary-2:#a88219;
@@ -42,12 +46,16 @@
   --danger:#d64b60;
   --warn:#b9890b;
   --ok:#1e9a6f;
-  --soft-bg:rgba(10,10,12,.03);
-  --soft-bg-2:rgba(10,10,12,.06);
-  --field-bg:rgba(255,255,255,.96);
-  --field-bg-2:rgba(255,255,255,.92);
-  --glass-bg:rgba(255,255,255,.86);
-  --glass-bg-2:rgba(255,255,255,.92);
+  --danger-text:#8a1a2b;
+  --warn-text:#7a5a00;
+  --ok-text:#0e5d42;
+  --soft-bg:rgba(10,10,12,.04);
+  --soft-bg-2:rgba(10,10,12,.08);
+  --zebra-bg:rgba(10,10,12,.02);
+  --field-bg:rgba(255,255,255,.98);
+  --field-bg-2:rgba(255,255,255,.94);
+  --glass-bg:rgba(255,255,255,.88);
+  --glass-bg-2:rgba(255,255,255,.94);
 }
 
 [data-accent="gold"]{
@@ -132,7 +140,7 @@ a{color:inherit}
 .page-center{display:grid;place-items:center}
 
 .card{
-  background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+  background:var(--card);
   border:1px solid var(--border);
   border-radius:var(--radius);
   box-shadow:var(--shadow);
@@ -211,13 +219,13 @@ html[data-focus="keyboard"] .button:focus-visible,html[data-focus="keyboard"] .t
 .button:active{transform:translateY(1px)}
 .button-primary{border-color:rgba(212,175,55,.6);background:linear-gradient(180deg, rgba(212,175,55,.32), rgba(182,143,33,.28))}
 .button-secondary{border-color:rgba(212,175,55,.25);background:rgba(212,175,55,.10)}
-.button-danger{border-color:rgba(255,91,122,.55);background:rgba(255,91,122,.13);color:#ffc1cd}
+.button-danger{border-color:rgba(255,91,122,.55);background:rgba(255,91,122,.13);color:var(--danger-text)}
 .button-ghost{border-color:transparent;background:transparent}
 .button-sm{padding:8px 10px;border-radius:var(--radius-sm);font-size:14px}
 .inline-error{
   border:1px solid rgba(255,91,122,.55);
   background:rgba(255,91,122,.11);
-  color:#ffc1cd;
+  color:var(--danger-text);
   border-radius:var(--radius-sm);
   padding:10px 12px;
   font-weight:650;
@@ -250,11 +258,11 @@ html[data-focus="keyboard"] .button:focus-visible,html[data-focus="keyboard"] .t
   border:1px solid var(--border);
   background:var(--soft-bg-2);
 }
-.badge-ok{border-color:rgba(43,212,143,.45);background:rgba(43,212,143,.12);color:#baf7dc}
-.badge-warn{border-color:rgba(212,175,55,.6);background:rgba(212,175,55,.15);color:#ffe9a8}
-.badge-danger{border-color:rgba(255,91,122,.55);background:rgba(255,91,122,.13);color:#ffc1cd}
-.badge-gold{border-color:rgba(212,175,55,.7);background:rgba(212,175,55,.16);color:#ffe9a8}
-.badge-silver{border-color:rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#f2f2f4}
+.badge-ok{border-color:rgba(43,212,143,.45);background:rgba(43,212,143,.12);color:var(--ok-text)}
+.badge-warn{border-color:rgba(212,175,55,.6);background:rgba(212,175,55,.15);color:var(--warn-text)}
+.badge-danger{border-color:rgba(255,91,122,.55);background:rgba(255,91,122,.13);color:var(--danger-text)}
+.badge-gold{border-color:rgba(212,175,55,.7);background:rgba(212,175,55,.16);color:var(--warn-text)}
+.badge-silver{border-color:rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:var(--text)}
 
 .shell{
   min-height:100%;
@@ -398,13 +406,13 @@ html[data-focus="keyboard"] .button:focus-visible,html[data-focus="keyboard"] .t
 .table th,.table td{padding:11px 12px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .table th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;background:var(--soft-bg)}
 .table tr:last-child td{border-bottom:0}
-.table tbody tr:nth-child(even){background:rgba(255,255,255,.02)}
+.table tbody tr:nth-child(even){background:var(--zebra-bg)}
 .table-row-active{
-  background:rgba(212,175,55,.10);
-  box-shadow:inset 3px 0 0 rgba(212,175,55,.75);
+  background:rgba(212,175,55,.12);
+  box-shadow:inset 3px 0 0 rgba(212,175,55,.8);
 }
 .table-row-void{
-  background:rgba(255,91,122,.08);
+  background:rgba(255,91,122,.10);
 }
 
 .time-row {
