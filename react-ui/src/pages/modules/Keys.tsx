@@ -272,7 +272,7 @@ export default function KeysPage({ me }: { me: Me }) {
   const doReturn = async (r: KeyTx) => {
     const ok = await confirm.confirm({
       title: 'Ambil Kunci',
-      message: `Tandai kunci sudah diambil?\n\n${r.key_name} · ${r.borrower_name}\nTitip: ${fmtDateTime(r.checkout_at)}\n\nLanjutkan?`,
+      message: `Tandai kunci sudah diambil?\n\n${r.borrower_name} · ${r.key_name}\nTitip: ${fmtDateTime(r.checkout_at)}\n\nLanjutkan?`,
       confirmText: 'Tandai Diambil',
     })
     if (!ok) return
@@ -338,7 +338,7 @@ export default function KeysPage({ me }: { me: Me }) {
   const doReopen = async (r: KeyTx) => {
     const ok = await confirm.confirm({
       title: 'Batal Ambil',
-      message: `Batal ambil kunci ini (kembali status dipinjam)?\n\n${r.key_name} · ${r.borrower_name}\nTitip: ${fmtDateTime(r.checkout_at)}\nAmbil: ${fmtDateTime(r.checkin_at || '')}\n\nLanjutkan?`,
+      message: `Batal ambil kunci ini (kembali status dipinjam)?\n\n${r.borrower_name} · ${r.key_name}\nTitip: ${fmtDateTime(r.checkout_at)}\nAmbil: ${fmtDateTime(r.checkin_at || '')}\n\nLanjutkan?`,
       confirmText: 'Batal Ambil',
     })
     if (!ok) return
@@ -526,7 +526,7 @@ export default function KeysPage({ me }: { me: Me }) {
               .map((r) => (
                 <div key={r.id} className="list-item">
                   <div className="list-title">
-                    {r.key_name} · {r.borrower_name}
+                    {r.borrower_name} · {r.key_name}
                   </div>
                   <div className="list-meta">
                     {fmtTime(r.checkout_at)} · {r.status === 'open' ? 'dititipkan' : r.status === 'closed' ? `diambil ${r.checkin_at ? fmtTime(r.checkin_at) : ''}` : 'void'}
