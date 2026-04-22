@@ -20,6 +20,8 @@ export type ShiftReport = {
     tasks_total: number
     mutasi_total: number
   }
+  mutasi?: MutasiEntry[]
+  tasks?: TaskEntry[]
 }
 
 export type KeyTx = {
@@ -112,4 +114,5 @@ export type AuditRow = {
   action: string
   table_name: string
   record_id: string
+  target_label?: string | null
 }

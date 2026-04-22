@@ -16,10 +16,6 @@ export default function TasksPage({ me }: { me: Me }) {
   const [limit, setLimit] = useState(200)
   const [items, setItems] = useState<TaskEntry[]>([])
   const [loading, setLoading] = useState(true)
-  const [filtersOpen, setFiltersOpen] = useState(() => (typeof window !== 'undefined' ? !window.matchMedia('(max-width: 560px)').matches : true))
-  const [offset, setOffset] = useState(0)
-  const [hasMore, setHasMore] = useState(false)
-  const [loadingMore, setLoadingMore] = useState(false)
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string>('')
 
@@ -57,30 +53,19 @@ export default function TasksPage({ me }: { me: Me }) {
   const [photoKey, setPhotoKey] = useState(0)
   const [photoView, setPhotoView] = useState<string | null>(null)
 
-  const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number; offset?: number; append?: boolean }) => {
+  const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number }) => {
     const { q, date, sort, limit } = opts
-    const nextOffset = Math.max(0, opts.offset || 0)
-    const append = Boolean(opts.append)
-    if (append) setLoadingMore(true)
-    else setLoading(true)
+    setLoading(true)
     try {
       const res = await apiGet<{ items: TaskEntry[] }>(
-        `/api/tasks?q=${encodeURIComponent(q.trim())}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&status=all&offset=${encodeURIComponent(String(nextOffset))}`,
+        `/api/tasks?q=${encodeURIComponent(q.trim())}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&status=all&offset=0`,
       )
       const nextItems = res.items || []
-      setHasMore(nextItems.length >= limit)
-      if (append) {
-        setItems((prev) => prev.concat(nextItems))
-        setOffset((prev) => prev + nextItems.length)
-      } else {
-        setItems(nextItems)
-        setOffset(nextItems.length)
-      }
+      setItems(nextItems)
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal memuat tugas'), 'error')
     } finally {
       setLoading(false)
-      setLoadingMore(false)
     }
   }, [toast])
 
@@ -91,7 +76,7 @@ export default function TasksPage({ me }: { me: Me }) {
   }, [])
 
   useEffect(() => {
-    const t = window.setTimeout(() => refresh({ q, date, sort, limit, offset: 0, append: false }).catch(() => {}), 250)
+    const t = window.setTimeout(() => refresh({ q, date, sort, limit }).catch(() => {}), 250)
     return () => window.clearTimeout(t)
   }, [date, limit, q, refresh, sort])
 
@@ -785,7 +770,7 @@ export default function TasksPage({ me }: { me: Me }) {
               <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
                 Semua
               </button>
-              <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ q, date, sort, limit, offset: 0, append: false })}>
+              <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ q, date, sort, limit })}>
                 Refresh
               </button>
               <button

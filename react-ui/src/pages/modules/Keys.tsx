@@ -23,7 +23,6 @@ export default function KeysPage({ me }: { me: Me }) {
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState<KeyTx[]>([])
   const [closed, setClosed] = useState<KeyTx[]>([])
-  const [filtersOpen, setFiltersOpen] = useState(() => (typeof window !== 'undefined' ? !window.matchMedia('(max-width: 560px)').matches : true))
   const [openOffset, setOpenOffset] = useState(0)
   const [closedOffset, setClosedOffset] = useState(0)
   const [openHasMore, setOpenHasMore] = useState(false)

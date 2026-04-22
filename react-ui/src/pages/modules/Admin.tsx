@@ -12,6 +12,7 @@ type SecurityHistoryRow = {
   action: string
   table_name: string
   record_id: string
+  target_label?: string | null
   before: any
   after: any
 }
@@ -355,7 +356,7 @@ export default function AdminPage({ me }: { me: Me }) {
                       <td>{h.created_at || '-'}</td>
                       <td>{`${h.actor_shift || '-'} / ${h.actor_post || '-'}`}</td>
                       <td>{h.action || '-'}</td>
-                      <td>{`${h.table_name}:${h.record_id}`}</td>
+                      <td>{h.target_label ? `${h.target_label} (${h.table_name}:${h.record_id})` : `${h.table_name}:${h.record_id}`}</td>
                     </tr>
                   ))}
                   {history.length === 0 && (
@@ -551,7 +552,7 @@ export default function AdminPage({ me }: { me: Me }) {
                     <td>{a.created_at || '-'}</td>
                     <td>{a.actor_name || '-'}</td>
                     <td>{a.action || '-'}</td>
-                    <td>{`${a.table_name}:${a.record_id}`}</td>
+                    <td>{a.target_label ? `${a.target_label} (${a.table_name}:${a.record_id})` : `${a.table_name}:${a.record_id}`}</td>
                   </tr>
                 ))}
                 {audit.length === 0 && (

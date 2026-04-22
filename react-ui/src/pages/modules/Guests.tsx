@@ -17,7 +17,6 @@ export default function GuestsPage({ me }: { me: Me }) {
   const [limit, setLimit] = useState(200)
   const [loading, setLoading] = useState(true)
   const [items, setItems] = useState<GuestEntry[]>([])
-  const [filtersOpen, setFiltersOpen] = useState(() => (typeof window !== 'undefined' ? !window.matchMedia('(max-width: 560px)').matches : true))
   const [offset, setOffset] = useState(0)
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)

@@ -2277,11 +2277,37 @@ def report_shift(request: Request, date: str = "", shift: str = "", post: str = 
                 mutasi_params.append(f_post)
             cur.execute(f"SELECT COUNT(1) FROM mutasi_entries WHERE {' AND '.join(mutasi_where)}", tuple(mutasi_params))
             mutasi_total = int(cur.fetchone()[0] or 0)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                f"""
+                SELECT id, occurred_at, kind, description, COALESCE(status, 'active') AS status, void_reason
+                FROM mutasi_entries
+                WHERE {' AND '.join(mutasi_where)}
+                ORDER BY occurred_at DESC
+                LIMIT 30
+                """,
+                tuple(mutasi_params),
+            )
+            mutasi_rows = cur.fetchall() or []
+
+            cur.execute(
+                f"""
+                SELECT id, occurred_at, kind, destination, COALESCE(status, 'active') AS status, void_reason
+                FROM task_entries
+                WHERE {' AND '.join(task_where)}
+                ORDER BY occurred_at DESC
+                LIMIT 30
+                """,
+                tuple(task_params),
+            )
+            task_rows = cur.fetchall() or []
         return {
             "date": date,
             "shift": f_shift,
             "post": f_post,
             "counts": {"keys_total": key_total, "keys_open": key_open, "guests_total": guest_total, "tasks_total": task_total, "mutasi_total": mutasi_total},
+            "mutasi": mutasi_rows,
+            "tasks": task_rows,
         }
 
 
@@ -2640,6 +2666,34 @@ def admin_audit(request: Request, q: str = "", table_name: str = "", record_id: 
               ELSE 'unknown'
             END AS table_name,
             COALESCE(a.target_key_transaction_id, a.target_guest_entry_id, a.target_mutasi_entry_id, a.target_task_entry_id, a.target_user_id) AS record_id,
+            CASE
+              WHEN a.target_key_transaction_id IS NOT NULL THEN (
+                SELECT COALESCE(k.borrower_name, '') || CASE WHEN COALESCE(k.key_name, '') <> '' THEN ' · ' || k.key_name ELSE '' END
+                FROM key_transactions k
+                WHERE k.id = a.target_key_transaction_id
+              )
+              WHEN a.target_guest_entry_id IS NOT NULL THEN (
+                SELECT COALESCE(g.name, '') || CASE WHEN COALESCE(g.instansi, '') <> '' THEN ' · ' || g.instansi ELSE '' END
+                FROM guest_entries g
+                WHERE g.id = a.target_guest_entry_id
+              )
+              WHEN a.target_mutasi_entry_id IS NOT NULL THEN (
+                SELECT COALESCE(m.kind, '') || CASE WHEN COALESCE(m.description, '') <> '' THEN ' · ' || m.description ELSE '' END
+                FROM mutasi_entries m
+                WHERE m.id = a.target_mutasi_entry_id
+              )
+              WHEN a.target_task_entry_id IS NOT NULL THEN (
+                SELECT COALESCE(t.kind, '') || CASE WHEN COALESCE(t.destination, '') <> '' THEN ' · ' || t.destination ELSE '' END
+                FROM task_entries t
+                WHERE t.id = a.target_task_entry_id
+              )
+              WHEN a.target_user_id IS NOT NULL THEN (
+                SELECT COALESCE(u2.display_name, '') || CASE WHEN COALESCE(u2.username, '') <> '' THEN ' · ' || u2.username ELSE '' END
+                FROM users u2
+                WHERE u2.id = a.target_user_id
+              )
+              ELSE NULL
+            END AS target_label,
             a.action, a.created_at,
             u.display_name AS actor_name, a.actor_shift, a.actor_post
           FROM audit_log a
@@ -2656,8 +2710,24 @@ def admin_audit(request: Request, q: str = "", table_name: str = "", record_id: 
             filters.append("COALESCE(a.target_key_transaction_id, a.target_guest_entry_id, a.target_mutasi_entry_id, a.target_task_entry_id, a.target_user_id) = CAST(%s AS BIGINT)")
             params.append(rid)
         if qn:
-            filters.append("(lower(a.action) LIKE %s OR lower(u.display_name) LIKE %s)")
-            params.extend([f"%{qn}%", f"%{qn}%"])
+            filters.append(
+                """(
+                  lower(a.action) LIKE %s OR
+                  lower(u.display_name) LIKE %s OR
+                  lower(COALESCE(
+                    CASE
+                      WHEN a.target_key_transaction_id IS NOT NULL THEN (SELECT COALESCE(k.borrower_name, '') || CASE WHEN COALESCE(k.key_name, '') <> '' THEN ' · ' || k.key_name ELSE '' END FROM key_transactions k WHERE k.id = a.target_key_transaction_id)
+                      WHEN a.target_guest_entry_id IS NOT NULL THEN (SELECT COALESCE(g.name, '') || CASE WHEN COALESCE(g.instansi, '') <> '' THEN ' · ' || g.instansi ELSE '' END FROM guest_entries g WHERE g.id = a.target_guest_entry_id)
+                      WHEN a.target_mutasi_entry_id IS NOT NULL THEN (SELECT COALESCE(m.kind, '') || CASE WHEN COALESCE(m.description, '') <> '' THEN ' · ' || m.description ELSE '' END FROM mutasi_entries m WHERE m.id = a.target_mutasi_entry_id)
+                      WHEN a.target_task_entry_id IS NOT NULL THEN (SELECT COALESCE(t.kind, '') || CASE WHEN COALESCE(t.destination, '') <> '' THEN ' · ' || t.destination ELSE '' END FROM task_entries t WHERE t.id = a.target_task_entry_id)
+                      WHEN a.target_user_id IS NOT NULL THEN (SELECT COALESCE(u2.display_name, '') || CASE WHEN COALESCE(u2.username, '') <> '' THEN ' · ' || u2.username ELSE '' END FROM users u2 WHERE u2.id = a.target_user_id)
+                      ELSE NULL
+                    END,
+                    ''
+                  )) LIKE %s
+                )"""
+            )
+            params.extend([f"%{qn}%", f"%{qn}%", f"%{qn}%"])
         if filters:
             base += " WHERE " + " AND ".join(filters)
         base += " ORDER BY a.id DESC LIMIT %s"
@@ -2672,6 +2742,7 @@ def admin_audit(request: Request, q: str = "", table_name: str = "", record_id: 
                     "id": int(r["id"]),
                     "table_name": r["table_name"],
                     "record_id": str(r["record_id"]) if r["record_id"] is not None else "",
+                    "target_label": r.get("target_label") if isinstance(r, dict) else None,
                     "action": r["action"],
                     "created_at": r["created_at"],
                     "actor_name": r["actor_name"],
@@ -2705,6 +2776,34 @@ def admin_security_history(request: Request, user_id: str, limit: int = 120):
                     ELSE 'unknown'
                   END AS table_name,
                   COALESCE(a.target_key_transaction_id, a.target_guest_entry_id, a.target_mutasi_entry_id, a.target_task_entry_id, a.target_user_id) AS record_id,
+                  CASE
+                    WHEN a.target_key_transaction_id IS NOT NULL THEN (
+                      SELECT COALESCE(k.borrower_name, '') || CASE WHEN COALESCE(k.key_name, '') <> '' THEN ' · ' || k.key_name ELSE '' END
+                      FROM key_transactions k
+                      WHERE k.id = a.target_key_transaction_id
+                    )
+                    WHEN a.target_guest_entry_id IS NOT NULL THEN (
+                      SELECT COALESCE(g.name, '') || CASE WHEN COALESCE(g.instansi, '') <> '' THEN ' · ' || g.instansi ELSE '' END
+                      FROM guest_entries g
+                      WHERE g.id = a.target_guest_entry_id
+                    )
+                    WHEN a.target_mutasi_entry_id IS NOT NULL THEN (
+                      SELECT COALESCE(m.kind, '') || CASE WHEN COALESCE(m.description, '') <> '' THEN ' · ' || m.description ELSE '' END
+                      FROM mutasi_entries m
+                      WHERE m.id = a.target_mutasi_entry_id
+                    )
+                    WHEN a.target_task_entry_id IS NOT NULL THEN (
+                      SELECT COALESCE(t.kind, '') || CASE WHEN COALESCE(t.destination, '') <> '' THEN ' · ' || t.destination ELSE '' END
+                      FROM task_entries t
+                      WHERE t.id = a.target_task_entry_id
+                    )
+                    WHEN a.target_user_id IS NOT NULL THEN (
+                      SELECT COALESCE(u2.display_name, '') || CASE WHEN COALESCE(u2.username, '') <> '' THEN ' · ' || u2.username ELSE '' END
+                      FROM users u2
+                      WHERE u2.id = a.target_user_id
+                    )
+                    ELSE NULL
+                  END AS target_label,
                   a.action, a.created_at,
                   u.display_name AS actor_name, a.actor_shift, a.actor_post,
                   a.before_json, a.after_json
@@ -2729,6 +2828,7 @@ def admin_security_history(request: Request, user_id: str, limit: int = 120):
                     "action": r["action"],
                     "table_name": r["table_name"],
                     "record_id": str(r["record_id"]) if r["record_id"] is not None else "",
+                    "target_label": r.get("target_label") if isinstance(r, dict) else None,
                     "before": json.loads(r["before_json"]) if r["before_json"] else None,
                     "after": json.loads(r["after_json"]) if r["after_json"] else None,
                 }
