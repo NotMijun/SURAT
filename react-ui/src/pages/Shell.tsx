@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import { apiGet, apiPost } from '../lib/api'
-import { accentKey, clearToken, compactKey, themeKey, tokenKey } from '../lib/storage'
+import { clearToken, compactKey, themeKey, tokenKey } from '../lib/storage'
 import type { Me } from '../types'
 import { useConfirm, useToast } from '../components/ToastHost'
 import LoadingScreen from '../components/LoadingScreen'
@@ -13,8 +13,6 @@ import MutasiPage from './modules/Mutasi'
 import AdminPage from './modules/Admin'
 
 const tabClass = ({ isActive }: { isActive: boolean }) => `tab${isActive ? ' tab-active' : ''}`
-const accents = ['bsh', 'gold', 'blue', 'green', 'mono'] as const
-type Accent = (typeof accents)[number]
 
 export default function Shell() {
   const nav = useNavigate()
@@ -26,7 +24,6 @@ export default function Shell() {
   const [navCounts, setNavCounts] = useState<{ keysOpen: number | null; guestsIn: number | null }>({ keysOpen: null, guestsIn: null })
   const [theme, setTheme] = useState<'light' | 'dark'>(localStorage.getItem(themeKey) === 'light' ? 'light' : 'dark')
   const [compact] = useState(localStorage.getItem(compactKey) === 'true')
-  const [accent, setAccent] = useState<Accent>((localStorage.getItem(accentKey) as Accent) || 'bsh')
   const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => {
@@ -58,9 +55,8 @@ export default function Shell() {
   }, [compact])
 
   useEffect(() => {
-    document.documentElement.dataset.accent = accent
-    localStorage.setItem(accentKey, accent)
-  }, [accent])
+    document.documentElement.dataset.accent = 'bsh'
+  }, [])
 
   useEffect(() => {
     const handleAuthError = () => {
@@ -209,18 +205,6 @@ export default function Shell() {
           <button className="button button-secondary button-sm topbar-action" type="button" onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}>
             {theme === 'light' ? 'Mode: Terang' : 'Mode: Gelap'}
           </button>
-          <button
-            className="button button-secondary button-sm topbar-action"
-            type="button"
-            onClick={() =>
-              setAccent((a) => {
-                const idx = accents.indexOf(a)
-                return accents[(idx + 1) % accents.length]
-              })
-            }
-          >
-            Tema: {accent}
-          </button>
           <button className="button button-ghost topbar-logout" type="button" onClick={logoutAll}>
             Keluar Semua
           </button>
@@ -242,18 +226,6 @@ export default function Shell() {
               <div className="row" style={{ flexWrap: 'wrap' }}>
                 <button className="button button-secondary" type="button" onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}>
                   {theme === 'light' ? 'Mode: Terang' : 'Mode: Gelap'}
-                </button>
-                <button
-                  className="button button-secondary"
-                  type="button"
-                  onClick={() =>
-                    setAccent((a) => {
-                      const idx = accents.indexOf(a)
-                      return accents[(idx + 1) % accents.length]
-                    })
-                  }
-                >
-                  Tema: {accent}
                 </button>
               </div>
               <div className="row" style={{ marginTop: 10, flexWrap: 'wrap' }}>

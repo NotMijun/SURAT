@@ -123,12 +123,13 @@ export default function GuestsPage({ me }: { me: Me }) {
     setBusy(true)
     try {
       setFormError('')
-      const payload: any = { name, instansi, checkin_at: toIsoLocal(formDate, time), notes, post: postFilter }
+      const payload: any = { name, checkin_at: toIsoLocal(formDate, time), notes, post: postFilter }
       if (postFilter === 'Pintu Utama') {
         payload.destination_room = destinationRoom
         payload.visitor_card_no = visitorCardNo
         payload.ktp_exchanged = true
       } else {
+        payload.instansi = instansi
         payload.purpose = purpose
         payload.meet_person = meet
       }
@@ -200,12 +201,13 @@ export default function GuestsPage({ me }: { me: Me }) {
   const saveEdit = async () => {
     if (!editRow) return
     try {
-      const patch: any = { name: editName, instansi: editInstansi, notes: editNotes }
+      const patch: any = { name: editName, notes: editNotes }
       if (editRow.post === 'Pintu Utama' || editRow.post === 'Lobby') {
         patch.destination_room = editDestinationRoom
         patch.visitor_card_no = editVisitorCardNo
         patch.ktp_exchanged = true
       } else {
+        patch.instansi = editInstansi
         patch.purpose = editPurpose
         patch.meet_person = editMeet
       }
@@ -217,7 +219,7 @@ export default function GuestsPage({ me }: { me: Me }) {
             ? {
                 ...x,
                 name: editName,
-                instansi: editInstansi,
+                instansi: editRow.post === 'Pintu Utama' || editRow.post === 'Lobby' ? '' : editInstansi,
                 purpose: editRow.post === 'Pintu Utama' || editRow.post === 'Lobby' ? x.purpose : editPurpose,
                 meet_person: editRow.post === 'Pintu Utama' || editRow.post === 'Lobby' ? x.meet_person : editMeet,
                 destination_room: editRow.post === 'Pintu Utama' || editRow.post === 'Lobby' ? editDestinationRoom : x.destination_room,
@@ -266,9 +268,10 @@ export default function GuestsPage({ me }: { me: Me }) {
   }
 
   const checkout = async (r: GuestEntry) => {
+    const detail = r.post === 'Pintu Utama' || r.post === 'Lobby' ? (r.destination_room || '-') : (r.instansi || '-')
     const ok = await confirm.confirm({
       title: 'Checkout Tamu',
-      message: `Checkout tamu ini?\n\n${r.name} · ${r.instansi}\nMasuk: ${fmtDateTime(r.checkin_at)}\n\nLanjutkan?`,
+      message: `Checkout tamu ini?\n\n${r.name} · ${detail}\nMasuk: ${fmtDateTime(r.checkin_at)}\n\nLanjutkan?`,
       confirmText: 'Checkout',
     })
     if (!ok) return
@@ -378,12 +381,14 @@ export default function GuestsPage({ me }: { me: Me }) {
               </label>
               <input className="input" id="guestName" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nama tamu" required />
             </div>
-            <div className="field">
-              <label className="label" htmlFor="guestInstansi">
-                Instansi
-              </label>
-              <input className="input" id="guestInstansi" value={instansi} onChange={(e) => setInstansi(e.target.value)} placeholder="mis. Vendor" required />
-            </div>
+            {postFilter !== 'Pintu Utama' && (
+              <div className="field">
+                <label className="label" htmlFor="guestInstansi">
+                  Instansi
+                </label>
+                <input className="input" id="guestInstansi" value={instansi} onChange={(e) => setInstansi(e.target.value)} placeholder="mis. Vendor" required />
+              </div>
+            )}
             <div className="field">
               <label className="label" htmlFor="guestPurpose">
                 {postFilter === 'Pintu Utama' ? 'Ruang Tujuan' : 'Divisi Tujuan'}
@@ -450,7 +455,6 @@ export default function GuestsPage({ me }: { me: Me }) {
                 type="file"
                 accept="image/*"
                 multiple
-                capture="environment"
                 onChange={(e) => {
                   ;(async () => {
                     await addSelectedPhotos(e.target.files)
@@ -531,7 +535,7 @@ export default function GuestsPage({ me }: { me: Me }) {
             {items.slice(0, 3).map((r) => (
               <div key={r.id} className="list-item">
                 <div className="list-title">
-                  {r.name} · {r.instansi}
+                  {r.name} · {r.post === 'Pintu Utama' || r.post === 'Lobby' ? (r.destination_room || '-') : (r.instansi || '-')}
                 </div>
                 <div className="list-meta">
                   {fmtTime(r.checkin_at)} {r.status === 'out' && r.checkout_at ? `· keluar ${fmtTime(r.checkout_at)}` : '· masih di dalam'}
@@ -554,7 +558,7 @@ export default function GuestsPage({ me }: { me: Me }) {
               <thead>
                 <tr>
                   <th>Nama</th>
-                  <th>Instansi</th>
+                  {postFilter === 'IGD' && <th>Instansi</th>}
                   <th>Tujuan</th>
                   <th>Kartu</th>
                   <th>Ditemui</th>
@@ -568,7 +572,7 @@ export default function GuestsPage({ me }: { me: Me }) {
                 {items.map((r) => (
                   <tr key={r.id} className={r.status === 'in' ? 'table-row-active' : r.status === 'void' ? 'table-row-void' : undefined}>
                     <td data-label="Nama">{r.name}</td>
-                    <td data-label="Instansi">{r.instansi}</td>
+                    {postFilter === 'IGD' && <td data-label="Instansi">{r.instansi}</td>}
                     <td data-label="Tujuan">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? (r.destination_room || '-') : (r.purpose || '-')}</td>
                     <td data-label="Kartu">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? (r.visitor_card_no || '-') : '-'}</td>
                     <td data-label="Ditemui">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? '-' : (r.meet_person || '-')}</td>
@@ -614,7 +618,7 @@ export default function GuestsPage({ me }: { me: Me }) {
                 ))}
                 {items.length === 0 && (
                   <tr>
-                    <td className="muted" colSpan={9}>
+                    <td className="muted" colSpan={postFilter === 'IGD' ? 9 : 8}>
                       Tidak ada data.
                     </td>
                   </tr>
@@ -626,7 +630,7 @@ export default function GuestsPage({ me }: { me: Me }) {
           <div className="table-footer-filters">
             <div className="filter-group">
               <label className="label-sm">Cari</label>
-              <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari tamu / instansi..." />
+              <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder={postFilter === 'IGD' ? 'Cari tamu / instansi...' : 'Cari tamu...'} />
             </div>
             <div className="filter-group">
               <label className="label-sm">Tanggal</label>
@@ -749,7 +753,6 @@ export default function GuestsPage({ me }: { me: Me }) {
             <div className="modal-body">
               <div className="grid" style={{ gap: 10 }}>
                 <input className="input" value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Nama" />
-                <input className="input" value={editInstansi} onChange={(e) => setEditInstansi(e.target.value)} placeholder="Instansi" />
                 {editRow.post === 'Pintu Utama' || editRow.post === 'Lobby' ? (
                   <>
                     <input className="input" value={editDestinationRoom} onChange={(e) => setEditDestinationRoom(e.target.value)} placeholder="Ruang tujuan" />
@@ -757,6 +760,7 @@ export default function GuestsPage({ me }: { me: Me }) {
                   </>
                 ) : (
                   <>
+                    <input className="input" value={editInstansi} onChange={(e) => setEditInstansi(e.target.value)} placeholder="Instansi" />
                     <input className="input" value={editPurpose} onChange={(e) => setEditPurpose(e.target.value)} placeholder="Divisi tujuan" />
                     <input className="input" value={editMeet} onChange={(e) => setEditMeet(e.target.value)} placeholder="Ditemui" />
                   </>

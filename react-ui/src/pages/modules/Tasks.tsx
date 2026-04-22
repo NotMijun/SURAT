@@ -57,16 +57,27 @@ export default function TasksPage({ me }: { me: Me }) {
   const [photoView, setPhotoView] = useState<string | null>(null)
 
   type PomShiftKey = 'siang' | 'sore' | 'malam'
-  type PomCell = { qty: number; signed: boolean; note: string }
-  type PomRow = { unit: string; siang: PomCell; sore: PomCell; malam: PomCell }
-  type PomSheetRes = { date: string; staff_name: string; rows: PomRow[]; total_boxes_in: number; updated_at: string }
+  type PomRow = { unit: string; jatah: number; taken: number; person: string; note: string }
+  type PomSheetRes = {
+    date: string
+    shift: PomShiftKey
+    staff_name: string
+    rows: PomRow[]
+    total_boxes_in: number
+    vendor_name?: string | null
+    updated_at: string
+  }
+  type CateringVendor = { id: number | null; name: string }
+  const [pomShift, setPomShift] = useState<PomShiftKey>('siang')
   const [pomStaffName, setPomStaffName] = useState(me.user.display_name)
   const [pomRows, setPomRows] = useState<PomRow[]>([])
   const [pomTotalBoxesIn, setPomTotalBoxesIn] = useState(0)
+  const [pomVendorName, setPomVendorName] = useState('')
   const [pomUpdatedAt, setPomUpdatedAt] = useState('')
   const [pomLoading, setPomLoading] = useState(false)
   const [pomSaving, setPomSaving] = useState(false)
   const [pomError, setPomError] = useState('')
+  const [cateringVendors, setCateringVendors] = useState<CateringVendor[]>([])
 
   const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number }) => {
     const { q, date, sort, limit } = opts
@@ -89,13 +100,6 @@ export default function TasksPage({ me }: { me: Me }) {
     return () => window.clearTimeout(t)
   }, [date, limit, q, refresh, sort])
 
-  const pomNormalizeCell = useCallback((v: any): PomCell => {
-    const qty = Math.max(0, Math.min(999, parseInt(String(v?.qty ?? 0), 10) || 0))
-    const signed = Boolean(v?.signed)
-    const note = String(v?.note ?? '')
-    return { qty, signed, note }
-  }, [])
-
   const pomNormalizeRows = useCallback((rows: any): PomRow[] => {
     const list = Array.isArray(rows) ? rows : []
     return list
@@ -104,60 +108,65 @@ export default function TasksPage({ me }: { me: Me }) {
         if (!unit) return null
         return {
           unit,
-          siang: pomNormalizeCell(r?.siang),
-          sore: pomNormalizeCell(r?.sore),
-          malam: pomNormalizeCell(r?.malam),
+          jatah: Math.max(0, Math.min(9999, parseInt(String(r?.jatah ?? 0), 10) || 0)),
+          taken: Math.max(0, Math.min(9999, parseInt(String(r?.taken ?? 0), 10) || 0)),
+          person: String(r?.person ?? ''),
+          note: String(r?.note ?? ''),
         } as PomRow
       })
       .filter(Boolean) as PomRow[]
-  }, [pomNormalizeCell])
+  }, [])
 
-  const loadPomSheet = useCallback(async () => {
-    const d = date || today
-    setPomLoading(true)
-    try {
-      const res = await apiGet<PomSheetRes>(`/api/pom_catering/sheet?date=${encodeURIComponent(d)}`)
-      setPomStaffName(String(res.staff_name || '').trim() || me.user.display_name)
-      setPomRows(pomNormalizeRows(res.rows))
-      setPomTotalBoxesIn(Math.max(0, parseInt(String((res as any)?.total_boxes_in ?? 0), 10) || 0))
-      setPomUpdatedAt(String(res.updated_at || ''))
-      setPomError('')
-    } catch (err: any) {
-      setPomError(String(err?.message || err || 'Gagal memuat sheet POM'))
-      setPomRows([])
-    } finally {
-      setPomLoading(false)
-    }
-  }, [date, me.user.display_name, pomNormalizeRows, today])
+  const loadPomSheet = useCallback(
+    async (shift?: PomShiftKey) => {
+      const d = date || today
+      const s = shift || pomShift
+      setPomLoading(true)
+      try {
+        const res = await apiGet<PomSheetRes>(`/api/pom_catering/sheet?date=${encodeURIComponent(d)}&shift=${encodeURIComponent(s)}`)
+        const nextShift = (res.shift as PomShiftKey) || s
+        setPomShift(nextShift)
+        setPomStaffName(String(res.staff_name || '').trim() || me.user.display_name)
+        setPomRows(pomNormalizeRows(res.rows))
+        setPomTotalBoxesIn(Math.max(0, parseInt(String((res as any)?.total_boxes_in ?? 0), 10) || 0))
+        setPomVendorName(String((res as any)?.vendor_name ?? '') || '')
+        setPomUpdatedAt(String(res.updated_at || ''))
+        setPomError('')
+      } catch (err: any) {
+        setPomError(String(err?.message || err || 'Gagal memuat sheet POM'))
+        setPomRows([])
+      } finally {
+        setPomLoading(false)
+      }
+    },
+    [date, me.user.display_name, pomNormalizeRows, pomShift, today],
+  )
 
   useEffect(() => {
     if (tab !== 'pom') return
     loadPomSheet().catch(() => {})
   }, [loadPomSheet, tab])
 
-  const setPomCell = useCallback((rowIdx: number, shift: PomShiftKey, patch: Partial<PomCell>) => {
+  const setPomRow = useCallback((rowIdx: number, patch: Partial<PomRow>) => {
     setPomRows((prev) =>
       prev.map((r, i) => {
         if (i !== rowIdx) return r
-        const curr = r[shift]
-        return { ...r, [shift]: { ...curr, ...patch } }
+        return { ...r, ...patch }
       }),
     )
   }, [])
 
   const pomTotals = useMemo(() => {
-    let siang = 0
-    let sore = 0
-    let malam = 0
+    let jatah = 0
+    let taken = 0
     for (const r of pomRows) {
-      siang += r.siang.qty || 0
-      sore += r.sore.qty || 0
-      malam += r.malam.qty || 0
+      jatah += r.jatah || 0
+      taken += r.taken || 0
     }
-    return { siang, sore, malam }
+    return { jatah, taken }
   }, [pomRows])
 
-  const pomUsedTotal = useMemo(() => pomTotals.siang + pomTotals.sore + pomTotals.malam, [pomTotals.malam, pomTotals.siang, pomTotals.sore])
+  const pomUsedTotal = useMemo(() => pomTotals.taken, [pomTotals.taken])
 
   const pomRemaining = useMemo(() => pomTotalBoxesIn - pomUsedTotal, [pomTotalBoxesIn, pomUsedTotal])
 
@@ -166,8 +175,12 @@ export default function TasksPage({ me }: { me: Me }) {
     setPomSaving(true)
     try {
       const d = date || today
-      const payload = { staff_name: pomStaffName, rows: pomRows, total_boxes_in: pomTotalBoxesIn, date: d }
-      const res = await apiPost<{ ok: boolean; updated_at: string }>(`/api/pom_catering/sheet?date=${encodeURIComponent(d)}`, payload)
+      const payload = { staff_name: pomStaffName, rows: pomRows, total_boxes_in: pomTotalBoxesIn, vendor_name: pomVendorName, date: d }
+      const res = await apiPost<{ ok: boolean; shift: PomShiftKey; updated_at: string }>(
+        `/api/pom_catering/sheet?date=${encodeURIComponent(d)}&shift=${encodeURIComponent(pomShift)}`,
+        payload,
+      )
+      if (res.shift) setPomShift(res.shift)
       setPomUpdatedAt(String(res.updated_at || ''))
       toast.push('Sheet POM tersimpan', 'success')
       setPomError('')
@@ -178,7 +191,19 @@ export default function TasksPage({ me }: { me: Me }) {
     } finally {
       setPomSaving(false)
     }
-  }, [date, pomRows, pomSaving, pomStaffName, pomTotalBoxesIn, toast, today])
+  }, [date, pomRows, pomSaving, pomShift, pomStaffName, pomTotalBoxesIn, pomVendorName, toast, today])
+
+  useEffect(() => {
+    const loadVendors = async () => {
+      try {
+        const res = await apiGet<{ items: CateringVendor[] }>('/api/vendors/catering')
+        setCateringVendors(res.items || [])
+      } catch (err) {
+        console.error('Gagal memuat vendor catering', err)
+      }
+    }
+    loadVendors().catch(() => {})
+  }, [])
 
   useEffect(() => {
     const raw = localStorage.getItem(draftKey)
@@ -572,7 +597,9 @@ export default function TasksPage({ me }: { me: Me }) {
           <header className="card-header">
             <div className="card-title">Pom Catering (Sheet)</div>
             <div className="muted">
-              {pomLoading ? 'Memuat...' : `Tanggal: ${date || today}`}
+              {pomLoading
+                ? 'Memuat...'
+                : `Tanggal: ${date || today} · Shift: ${pomShift === 'siang' ? 'Siang' : pomShift === 'sore' ? 'Sore' : 'Malam'}`}
               {pomUpdatedAt ? ` · Update: ${fmtTime(pomUpdatedAt)}` : ''}
             </div>
           </header>
@@ -592,6 +619,58 @@ export default function TasksPage({ me }: { me: Me }) {
                 <input className="input" id="pomDate" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
               </div>
             </div>
+            <div className="tabsbar tabsbar-sub" style={{ marginBottom: 12, marginTop: 4 }}>
+              <div className="tabs tabs-sm">
+                <button
+                  type="button"
+                  className={`tab${pomShift === 'siang' ? ' tab-active' : ''}`}
+                  onClick={() => {
+                    setPomShift('siang')
+                    loadPomSheet('siang').catch(() => {})
+                  }}
+                >
+                  Siang
+                </button>
+                <button
+                  type="button"
+                  className={`tab${pomShift === 'sore' ? ' tab-active' : ''}`}
+                  onClick={() => {
+                    setPomShift('sore')
+                    loadPomSheet('sore').catch(() => {})
+                  }}
+                >
+                  Sore
+                </button>
+                <button
+                  type="button"
+                  className={`tab${pomShift === 'malam' ? ' tab-active' : ''}`}
+                  onClick={() => {
+                    setPomShift('malam')
+                    loadPomSheet('malam').catch(() => {})
+                  }}
+                >
+                  Malam
+                </button>
+              </div>
+            </div>
+            <div className="field" style={{ marginBottom: 12 }}>
+              <label className="label" htmlFor="pomVendor">
+                Vendor
+              </label>
+              <select
+                className="select"
+                id="pomVendor"
+                value={pomVendorName}
+                onChange={(e) => setPomVendorName(e.target.value)}
+              >
+                <option value="">Pilih vendor</option>
+                {cateringVendors.map((v) => (
+                  <option key={`${v.id ?? v.name}`} value={v.name}>
+                    {v.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="grid grid-2" style={{ gap: 12, marginBottom: 12 }}>
               <div className="field">
                 <label className="label" htmlFor="pomTotalIn">
@@ -608,14 +687,18 @@ export default function TasksPage({ me }: { me: Me }) {
                 />
               </div>
               <div className="card" style={{ padding: 12, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--soft-bg)' }}>
-                <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Summary</div>
+                <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Ringkasan shift ini</div>
                 <div className="row" style={{ justifyContent: 'space-between' }}>
                   <div>Total datang</div>
                   <div style={{ fontWeight: 800 }}>{pomTotalBoxesIn}</div>
                 </div>
                 <div className="row" style={{ justifyContent: 'space-between' }}>
-                  <div>Total terpakai</div>
-                  <div style={{ fontWeight: 800 }}>{pomUsedTotal}</div>
+                  <div>Total jatah</div>
+                  <div style={{ fontWeight: 800 }}>{pomTotals.jatah}</div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Total diambil</div>
+                  <div style={{ fontWeight: 800 }}>{pomTotals.taken}</div>
                 </div>
                 <div className="row" style={{ justifyContent: 'space-between' }}>
                   <div>{pomRemaining >= 0 ? 'Sisa box' : 'Kurang box'}</div>
@@ -627,21 +710,11 @@ export default function TasksPage({ me }: { me: Me }) {
               <table className="table">
                 <thead>
                   <tr>
-                    <th rowSpan={2}>No</th>
-                    <th rowSpan={2}>Unit</th>
-                    <th colSpan={3}>Siang</th>
-                    <th colSpan={3}>Sore</th>
-                    <th colSpan={3}>Malam</th>
-                  </tr>
-                  <tr>
-                    <th>Jumlah</th>
-                    <th>Paraf</th>
-                    <th>Keterangan</th>
-                    <th>Jumlah</th>
-                    <th>Paraf</th>
-                    <th>Keterangan</th>
-                    <th>Jumlah</th>
-                    <th>Paraf</th>
+                    <th>No</th>
+                    <th>Unit</th>
+                    <th>Jatah</th>
+                    <th>Jumlah Diambil</th>
+                    <th>Penanggung jawab</th>
                     <th>Keterangan</th>
                   </tr>
                 </thead>
@@ -656,16 +729,10 @@ export default function TasksPage({ me }: { me: Me }) {
                           type="number"
                           min={0}
                           step={1}
-                          value={r.siang.qty}
-                          onChange={(e) => setPomCell(idx, 'siang', { qty: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                          value={r.jatah}
+                          onChange={(e) => setPomRow(idx, { jatah: Math.max(0, parseInt(e.target.value, 10) || 0) })}
                           style={{ width: 90 }}
                         />
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        <input type="checkbox" checked={r.siang.signed} onChange={(e) => setPomCell(idx, 'siang', { signed: e.target.checked })} />
-                      </td>
-                      <td>
-                        <input className="input input-sm" value={r.siang.note} onChange={(e) => setPomCell(idx, 'siang', { note: e.target.value })} />
                       </td>
                       <td>
                         <input
@@ -673,33 +740,21 @@ export default function TasksPage({ me }: { me: Me }) {
                           type="number"
                           min={0}
                           step={1}
-                          value={r.sore.qty}
-                          onChange={(e) => setPomCell(idx, 'sore', { qty: Math.max(0, parseInt(e.target.value, 10) || 0) })}
-                          style={{ width: 90 }}
+                          value={r.taken}
+                          onChange={(e) => setPomRow(idx, { taken: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                          style={{ width: 110 }}
                         />
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        <input type="checkbox" checked={r.sore.signed} onChange={(e) => setPomCell(idx, 'sore', { signed: e.target.checked })} />
-                      </td>
-                      <td>
-                        <input className="input input-sm" value={r.sore.note} onChange={(e) => setPomCell(idx, 'sore', { note: e.target.value })} />
                       </td>
                       <td>
                         <input
                           className="input input-sm"
-                          type="number"
-                          min={0}
-                          step={1}
-                          value={r.malam.qty}
-                          onChange={(e) => setPomCell(idx, 'malam', { qty: Math.max(0, parseInt(e.target.value, 10) || 0) })}
-                          style={{ width: 90 }}
+                          value={r.person}
+                          onChange={(e) => setPomRow(idx, { person: e.target.value })}
+                          placeholder="Nama penanggung jawab"
                         />
                       </td>
-                      <td style={{ textAlign: 'center' }}>
-                        <input type="checkbox" checked={r.malam.signed} onChange={(e) => setPomCell(idx, 'malam', { signed: e.target.checked })} />
-                      </td>
                       <td>
-                        <input className="input input-sm" value={r.malam.note} onChange={(e) => setPomCell(idx, 'malam', { note: e.target.value })} />
+                        <input className="input input-sm" value={r.note} onChange={(e) => setPomRow(idx, { note: e.target.value })} />
                       </td>
                     </tr>
                   ))}
@@ -707,13 +762,8 @@ export default function TasksPage({ me }: { me: Me }) {
                     <td colSpan={2} style={{ fontWeight: 800 }}>
                       TOTAL
                     </td>
-                    <td style={{ fontWeight: 800 }}>{pomTotals.siang}</td>
-                    <td />
-                    <td />
-                    <td style={{ fontWeight: 800 }}>{pomTotals.sore}</td>
-                    <td />
-                    <td />
-                    <td style={{ fontWeight: 800 }}>{pomTotals.malam}</td>
+                    <td style={{ fontWeight: 800 }}>{pomTotals.jatah}</td>
+                    <td style={{ fontWeight: 800 }}>{pomTotals.taken}</td>
                     <td />
                     <td />
                   </tr>
@@ -755,6 +805,70 @@ export default function TasksPage({ me }: { me: Me }) {
                     <option>Lainnya</option>
                   </select>
                 </div>
+              )}
+              {(tab as string) === 'pom' && (
+                <>
+                  <div className="field">
+                    <label className="label" htmlFor="taskPomVendor">
+                      Vendor
+                    </label>
+                    <select
+                      className="select"
+                      id="taskPomVendor"
+                      value={vendor}
+                      onChange={(e) => setVendor(e.target.value)}
+                    >
+                      <option value="">Pilih vendor</option>
+                      {cateringVendors.map((v) => (
+                        <option key={`${v.id ?? v.name}`} value={v.name}>
+                          {v.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label className="label" htmlFor="taskPomStatus">
+                      Status POM
+                    </label>
+                    <select
+                      className="select"
+                      id="taskPomStatus"
+                      value={pomStatus}
+                      onChange={(e) => setPomStatus(e.target.value as any)}
+                    >
+                      <option value="Dijadwalkan">Dijadwalkan</option>
+                      <option value="Datang">Datang</option>
+                      <option value="Selesai">Selesai</option>
+                      <option value="Bermasalah">Bermasalah</option>
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label className="label" htmlFor="taskPomArrived">
+                      Jam catering datang
+                    </label>
+                    <input
+                      className="input"
+                      id="taskPomArrived"
+                      type="time"
+                      value={pomArrivedTime}
+                      onChange={(e) => setPomArrivedTime(e.target.value)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label className="label" htmlFor="taskPomBoxCount">
+                      Jumlah box
+                    </label>
+                    <input
+                      className="input"
+                      id="taskPomBoxCount"
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={boxCount}
+                      onChange={(e) => setBoxCount(e.target.value)}
+                    />
+                  </div>
+                </>
               )}
               {tab === 'galon' && (
               <>
@@ -842,7 +956,6 @@ export default function TasksPage({ me }: { me: Me }) {
                 type="file"
                 accept="image/*"
                 multiple
-                capture="environment"
                 onChange={(e) => {
                   ;(async () => {
                     await addSelectedPhotos(e.target.files)

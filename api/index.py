@@ -503,6 +503,14 @@ def _ensure_schema(conn) -> None:
             cur.execute("ALTER TABLE guest_entries ADD COLUMN IF NOT EXISTS ktp_exchanged BOOLEAN")
             cur.execute("ALTER TABLE guest_entries DROP CONSTRAINT IF EXISTS guest_entries_status_check")
             cur.execute("ALTER TABLE guest_entries ADD CONSTRAINT guest_entries_status_check CHECK (status IN ('in','out','void'))")
+            cur.execute(
+                """
+                UPDATE guest_entries
+                SET instansi=''
+                WHERE (post='Pintu Utama' OR post='Lobby')
+                  AND COALESCE(instansi,'') <> ''
+                """
+            )
             cur.execute("CREATE INDEX IF NOT EXISTS idx_guest_status ON guest_entries(status)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_guest_checkin ON guest_entries(checkin_at)")
             cur.execute(
@@ -869,7 +877,7 @@ class CreateMutasiBody(BaseModel):
 
 class CreateGuestBody(BaseModel):
     name: str
-    instansi: str
+    instansi: str | None = None
     purpose: str | None = None
     meet_person: str | None = None
     checkin_at: str | None = None
@@ -882,22 +890,23 @@ class CreateGuestBody(BaseModel):
 
 
 class PomCateringCellBody(BaseModel):
-    qty: int | None = None
-    signed: bool | None = None
+    jatah: int | None = None
+    taken: int | None = None
+    person: str | None = None
     note: str | None = None
 
 
 class PomCateringRowBody(BaseModel):
     unit: str
-    siang: PomCateringCellBody | None = None
-    sore: PomCateringCellBody | None = None
-    malam: PomCateringCellBody | None = None
+    cell: PomCateringCellBody | None = None
 
 
 class SavePomCateringSheetBody(BaseModel):
     staff_name: str | None = None
     rows: list[PomCateringRowBody] | None = None
     total_boxes_in: int | None = None
+    vendor_id: int | None = None
+    vendor_name: str | None = None
 
 
 class CreateTaskBody(BaseModel):
@@ -1122,43 +1131,83 @@ def _ymd_or_today(value: str) -> str:
     return s
 
 
+def _pom_shift_key(value: str) -> str:
+    s = normalize_text(value or "")
+    if s.startswith("so"):
+        return "sore"
+    if s.startswith("ma"):
+        return "malam"
+    return "siang"
+
+
 def _pom_cell(value: PomCateringCellBody | None) -> dict[str, Any]:
     v = value or PomCateringCellBody()
-    qty_raw = v.qty if v.qty is not None else 0
+    jatah_raw = v.jatah if v.jatah is not None else 0
+    taken_raw = v.taken if v.taken is not None else 0
     try:
-        qty = int(qty_raw)
+        jatah = int(jatah_raw)
     except Exception:
-        qty = 0
-    qty = max(0, min(999, qty))
-    signed = True if bool(v.signed) else False
+        jatah = 0
+    try:
+        taken = int(taken_raw)
+    except Exception:
+        taken = 0
+    jatah = max(0, min(9_999, jatah))
+    taken = max(0, min(9_999, taken))
+    person = _text_field(v.person, field="Penanggung jawab", max_len=80, default="")
     note = _text_field(v.note, field="Keterangan", max_len=120, default="")
-    return {"qty": qty, "signed": signed, "note": note}
+    return {"jatah": jatah, "taken": taken, "person": person, "note": note}
 
 
-def _pom_rows_normalized(rows: list[PomCateringRowBody] | None) -> list[dict[str, Any]]:
-    result: list[dict[str, Any]] = []
-    for r in rows or []:
-        unit = _text_field(r.unit, field="Unit", max_len=80, default="").strip()
+def _pom_rows_normalized(rows: Any) -> list[dict[str, Any]]:
+    items: list[Any] = list(rows or []) if isinstance(rows, list) else []
+    by_norm: dict[str, dict[str, Any]] = {}
+    for r in items:
+        if isinstance(r, PomCateringRowBody):
+            unit = _text_field(r.unit, field="Unit", max_len=80, default="").strip()
+            cell = _pom_cell(r.cell)
+        else:
+            unit = _text_field(str((r or {}).get("unit") or ""), field="Unit", max_len=80, default="").strip()
+            raw_cell = (r or {}).get("cell")
+            if isinstance(raw_cell, dict):
+                cell = _pom_cell(
+                    PomCateringCellBody(
+                        jatah=raw_cell.get("jatah"),
+                        taken=raw_cell.get("taken"),
+                        person=raw_cell.get("person"),
+                        note=raw_cell.get("note"),
+                    )
+                )
+            else:
+                cell = _pom_cell(None)
         if not unit:
             continue
-        result.append(
-            {
-                "unit": unit,
-                "siang": _pom_cell(r.siang),
-                "sore": _pom_cell(r.sore),
-                "malam": _pom_cell(r.malam),
-            }
-        )
+        key = normalize_text(unit)
+        by_norm[key] = {
+            "unit": unit,
+            "jatah": cell["jatah"],
+            "taken": cell["taken"],
+            "person": cell["person"],
+            "note": cell["note"],
+        }
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for unit in _POM_CATERING_UNITS_DEFAULT:
+        key = normalize_text(unit)
+        row = by_norm.get(key)
+        if row is None:
+            row = {"unit": unit, "jatah": 0, "taken": 0, "person": "", "note": ""}
+        else:
+            row["unit"] = unit
+        result.append(row)
+        seen.add(key)
+    for key, row in by_norm.items():
+        if key in seen:
+            continue
+        result.append(row)
     if not result:
         for unit in _POM_CATERING_UNITS_DEFAULT:
-            result.append(
-                {
-                    "unit": unit,
-                    "siang": {"qty": 0, "signed": False, "note": ""},
-                    "sore": {"qty": 0, "signed": False, "note": ""},
-                    "malam": {"qty": 0, "signed": False, "note": ""},
-                }
-            )
+            result.append({"unit": unit, "jatah": 0, "taken": 0, "person": "", "note": ""})
     return result
 
 
@@ -1172,67 +1221,175 @@ def _pom_total_boxes_in(value: Any) -> int:
     return max(0, min(50_000, n))
 
 
+def _pom_upgrade_legacy_data(row_db: dict[str, Any], parsed: dict[str, Any], fallback_staff: str) -> dict[str, Any]:
+    legacy_rows = parsed.get("rows")
+    if not isinstance(legacy_rows, list):
+        legacy_rows = []
+    staff_name = (row_db.get("staff_name") or fallback_staff or "").strip()
+    total_boxes_in = _pom_total_boxes_in(parsed.get("total_boxes_in"))
+    blocks: dict[str, dict[str, Any]] = {}
+    for shift_key in ("siang", "sore", "malam"):
+        tmp: list[PomCateringRowBody] = []
+        for r in legacy_rows:
+            unit = str((r or {}).get("unit") or "").strip()
+            if not unit:
+                continue
+            cell_src = (r or {}).get(shift_key) or {}
+            qty = cell_src.get("qty")
+            note = cell_src.get("note")
+            cell = PomCateringCellBody(jatah=qty, taken=qty, person=None, note=note)
+            tmp.append(PomCateringRowBody(unit=unit, cell=cell))
+        rows_norm = _pom_rows_normalized(tmp or None)
+        blocks[shift_key] = {
+            "staff_name": staff_name,
+            "vendor_id": None,
+            "vendor_name": None,
+            "total_boxes_in": total_boxes_in,
+            "rows": rows_norm,
+        }
+    return blocks
+
+
+def _pom_ensure_all_shifts(parsed: Any, default_staff: str) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    src = parsed if isinstance(parsed, dict) else {}
+    for shift_key in ("siang", "sore", "malam"):
+        block_raw = src.get(shift_key) if isinstance(src.get(shift_key), dict) else {}
+        staff_name = str((block_raw.get("staff_name") or default_staff or "")).strip()
+        rows_norm = _pom_rows_normalized(block_raw.get("rows"))
+        total_boxes_in = _pom_total_boxes_in(block_raw.get("total_boxes_in"))
+        vendor_id_raw = block_raw.get("vendor_id")
+        try:
+            vendor_id = int(vendor_id_raw) if vendor_id_raw is not None else None
+        except Exception:
+            vendor_id = None
+        vendor_name_text = _text_field(block_raw.get("vendor_name"), field="Nama vendor", max_len=80, default="")
+        vendor_name = vendor_name_text or None
+        out[shift_key] = {
+            "staff_name": staff_name,
+            "vendor_id": vendor_id,
+            "vendor_name": vendor_name,
+            "total_boxes_in": total_boxes_in,
+            "rows": rows_norm,
+        }
+    return out
+
+
 @app.get("/api/pom_catering/sheet")
-def get_pom_catering_sheet(request: Request, date: str = ""):
+def get_pom_catering_sheet(request: Request, date: str = "", shift: str = ""):
     with db_connect() as conn:
         sess = _require_session(conn, request)
         d = _ymd_or_today(date)
+        shift_key = _pom_shift_key(shift)
+        default_staff = str(sess.get("display_name") or "")
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT sheet_date, staff_name, data_json, updated_at FROM pom_catering_sheets WHERE sheet_date=%s", (d,))
             row = cur.fetchone()
+        updated_at = ""
+        parsed_all: dict[str, Any] = {}
         if row:
+            updated_at = row.get("updated_at") or ""
             data_raw = (row.get("data_json") or "").strip()
-            parsed: dict[str, Any] = {}
             if data_raw:
                 try:
-                    parsed = json.loads(data_raw)
+                    parsed_all = json.loads(data_raw)
                 except Exception:
-                    parsed = {}
-            rows = parsed.get("rows")
-            if not isinstance(rows, list):
-                rows = None
-            total_boxes_in = _pom_total_boxes_in(parsed.get("total_boxes_in"))
-            staff_name = (row.get("staff_name") or "").strip() or str(sess.get("display_name") or "")
-            return {
-                "date": d,
-                "staff_name": staff_name,
-                "rows": rows or _pom_rows_normalized(None),
-                "total_boxes_in": total_boxes_in,
-                "updated_at": row.get("updated_at") or "",
-            }
+                    parsed_all = {}
+            if isinstance(parsed_all.get("rows"), list):
+                parsed_all = _pom_upgrade_legacy_data(row, parsed_all, default_staff or (row.get("staff_name") or ""))
+            parsed_all = _pom_ensure_all_shifts(parsed_all, (row.get("staff_name") or default_staff))
+        else:
+            parsed_all = _pom_ensure_all_shifts({}, default_staff)
+        block = parsed_all.get(shift_key) or {}
+        staff_name = str((block.get("staff_name") or (row.get("staff_name") if row else "") or default_staff) or "").strip()
+        rows_norm = _pom_rows_normalized(block.get("rows"))
+        total_boxes_in = _pom_total_boxes_in(block.get("total_boxes_in"))
+        vendor_id = block.get("vendor_id")
+        vendor_name = block.get("vendor_name")
         return {
             "date": d,
-            "staff_name": str(sess.get("display_name") or ""),
-            "rows": _pom_rows_normalized(None),
-            "total_boxes_in": 0,
-            "updated_at": "",
+            "shift": shift_key,
+            "staff_name": staff_name,
+            "rows": rows_norm,
+            "total_boxes_in": total_boxes_in,
+            "vendor_id": vendor_id,
+            "vendor_name": vendor_name,
+            "updated_at": updated_at,
         }
 
 
 @app.post("/api/pom_catering/sheet")
-def save_pom_catering_sheet(body: SavePomCateringSheetBody, request: Request, date: str = ""):
+def save_pom_catering_sheet(body: SavePomCateringSheetBody, request: Request, date: str = "", shift: str = ""):
     with db_connect() as conn:
         sess = _require_session(conn, request)
         d = _ymd_or_today(date)
+        shift_key = _pom_shift_key(shift)
         staff_name = _text_field(body.staff_name, field="Nama", max_len=80, default=str(sess.get("display_name") or "")).strip() or str(sess.get("display_name") or "")
         rows_norm = _pom_rows_normalized(body.rows)
-        if len(rows_norm) > 120:
+        if len(rows_norm) > 200:
             raise HTTPException(status_code=400, detail="Terlalu banyak baris unit")
         total_boxes_in = _pom_total_boxes_in(body.total_boxes_in)
+        vendor_id: int | None = None
+        vendor_name: str | None = None
+        raw_vid = body.vendor_id
+        if raw_vid is not None:
+            try:
+                vid_int = int(raw_vid)
+            except Exception:
+                vid_int = None
+            if vid_int is not None:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute("SELECT id, name FROM catering_vendors WHERE id=%s", (vid_int,))
+                    vrow = cur.fetchone()
+                if vrow:
+                    vendor_id = int(vrow["id"])
+                    vendor_name = str(vrow["name"])
+        if vendor_id is None and (body.vendor_name or "").strip():
+            vendor_name = _text_field(body.vendor_name, field="Nama vendor", max_len=80, default="")
         now = utc_now_iso()
-        data_json = json.dumps({"rows": rows_norm, "total_boxes_in": total_boxes_in}, ensure_ascii=False, separators=(",", ":"))
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO pom_catering_sheets(sheet_date, staff_name, data_json, created_by, updated_by, created_at, updated_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s)
-                ON CONFLICT (sheet_date)
-                DO UPDATE SET staff_name=EXCLUDED.staff_name, data_json=EXCLUDED.data_json, updated_by=EXCLUDED.updated_by, updated_at=EXCLUDED.updated_at
-                """,
-                (d, staff_name, data_json, int(sess["user_id"]), int(sess["user_id"]), now, now),
-            )
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT id, data_json FROM pom_catering_sheets WHERE sheet_date=%s", (d,))
+            row = cur.fetchone()
+            if row:
+                data_raw = (row.get("data_json") or "").strip()
+                parsed_all: dict[str, Any] = {}
+                if data_raw:
+                    try:
+                        parsed_all = json.loads(data_raw)
+                    except Exception:
+                        parsed_all = {}
+                if isinstance(parsed_all.get("rows"), list):
+                    parsed_all = _pom_upgrade_legacy_data(row, parsed_all, staff_name)
+            else:
+                parsed_all = {}
+            parsed_all = _pom_ensure_all_shifts(parsed_all, staff_name)
+            block = parsed_all.get(shift_key) or {}
+            block["staff_name"] = staff_name
+            block["rows"] = rows_norm
+            block["total_boxes_in"] = total_boxes_in
+            block["vendor_id"] = vendor_id
+            block["vendor_name"] = vendor_name
+            parsed_all[shift_key] = block
+            data_json = json.dumps(parsed_all, ensure_ascii=False, separators=(",", ":"))
+            if row:
+                cur.execute(
+                    """
+                    UPDATE pom_catering_sheets
+                    SET staff_name=%s, data_json=%s, updated_by=%s, updated_at=%s
+                    WHERE sheet_date=%s
+                    """,
+                    (staff_name, data_json, int(sess["user_id"]), now, d),
+                )
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO pom_catering_sheets(sheet_date, staff_name, data_json, created_by, updated_by, created_at, updated_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s)
+                    """,
+                    (d, staff_name, data_json, int(sess["user_id"]), int(sess["user_id"]), now, now),
+                )
         conn.commit()
-        return {"ok": True, "date": d, "updated_at": now}
+        return {"ok": True, "date": d, "shift": shift_key, "updated_at": now}
 
 
 @app.post("/api/logout")
@@ -2196,7 +2353,7 @@ def _create_guest(
     photo_uploaded_at: str | None,
 ) -> int:
     name = _text_field(name, field="Nama", max_len=80, default="Tidak diketahui")
-    instansi = _text_field(instansi, field="Instansi", max_len=80, default="-")
+    instansi = _text_field(instansi, field="Instansi", max_len=80, default="")
     purpose = _text_field(purpose, field="Divisi tujuan", max_len=80, default="-")
     meet = _text_field(meet_person, field="Orang yang ditemui", max_len=80, default="-")
     notes = _text_field(notes, field="Keperluan", max_len=240, default="")
@@ -2209,6 +2366,11 @@ def _create_guest(
     dest_room = _text_field(destination_room, field="Ruang tujuan", max_len=80, default="")
     card_no = _text_field(visitor_card_no, field="Kartu penunggu", max_len=40, default="")
     exchanged = bool(ktp_exchanged) if ktp_exchanged is not None else False
+    if post_val in ("Pintu Utama", "Lobby"):
+        instansi = ""
+    if post_val == "IGD":
+        if not str(instansi or "").strip():
+            raise HTTPException(status_code=400, detail="Instansi wajib diisi (IGD)")
     if post_val == "Pintu Utama":
         if not dest_room:
             raise HTTPException(status_code=400, detail="Ruang tujuan wajib diisi (Pintu Utama)")
@@ -2467,8 +2629,13 @@ def patch_guest(guest_id: str, body: PatchGuestBody, request: Request):
             updates: dict[str, Any] = {}
             if body.name is not None:
                 updates["name"] = _text_field(body.name, field="Nama", max_len=80, default="Tidak diketahui") or "Tidak diketahui"
-            if body.instansi is not None:
-                updates["instansi"] = _text_field(body.instansi, field="Instansi", max_len=80, default="-") or "-"
+            if post_cur in ("Pintu Utama", "Lobby"):
+                updates["instansi"] = ""
+            elif body.instansi is not None:
+                instansi_next = _text_field(body.instansi, field="Instansi", max_len=80, default="").strip()
+                if not instansi_next:
+                    raise HTTPException(status_code=400, detail="Instansi wajib diisi (IGD)")
+                updates["instansi"] = instansi_next
             if body.purpose is not None:
                 updates["purpose"] = _text_field(body.purpose, field="Divisi tujuan", max_len=80, default="-") or "-"
             if body.meet_person is not None:

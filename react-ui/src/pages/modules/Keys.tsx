@@ -504,7 +504,6 @@ export default function KeysPage({ me }: { me: Me }) {
                 type="file"
                 accept="image/*"
                 multiple
-                capture="environment"
                 onChange={(e) => {
                   ;(async () => {
                     await addSelectedPhotos(e.target.files)
