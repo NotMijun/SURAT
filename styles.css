@@ -629,6 +629,21 @@ html[data-focus="keyboard"] .button:focus-visible,html[data-focus="keyboard"] .t
   box-shadow: 0 0 8px var(--primary);
   animation: tabSlideIn 0.3s ease-out;
 }
+.tab-count{
+  margin-left:8px;
+  padding:2px 7px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight: 800;
+  line-height:1.2;
+  border:1px solid rgba(212,175,55,0.4);
+  background:rgba(212,175,55,0.15);
+  color:inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 5px rgba(212,175,55,0.1);
+}
 @keyframes tabSlideIn {
   from { transform: scaleX(0); opacity: 0; }
   to { transform: scaleX(1); opacity: 1; }
