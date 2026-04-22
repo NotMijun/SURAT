@@ -36,7 +36,6 @@ export default function TasksPage({ me }: { me: Me }) {
 
   type TaskTab = 'umum' | 'pom' | 'galon'
   const [tab, setTab] = useState<TaskTab>('umum')
-  const [vendors, setVendors] = useState<string[]>([])
   const [vendor, setVendor] = useState('')
   const [pomStatus, setPomStatus] = useState<'Dijadwalkan' | 'Datang' | 'Selesai' | 'Bermasalah'>('Datang')
   const [pomArrivedTime, setPomArrivedTime] = useState('')
@@ -56,6 +55,17 @@ export default function TasksPage({ me }: { me: Me }) {
   const [activeAttachment, setActiveAttachment] = useState<AttachmentItem | null>(null)
   const [photoView, setPhotoView] = useState<string | null>(null)
 
+  type PomShiftKey = 'siang' | 'sore' | 'malam'
+  type PomCell = { qty: number; signed: boolean; note: string }
+  type PomRow = { unit: string; siang: PomCell; sore: PomCell; malam: PomCell }
+  type PomSheetRes = { date: string; staff_name: string; rows: PomRow[]; updated_at: string }
+  const [pomStaffName, setPomStaffName] = useState(me.user.display_name)
+  const [pomRows, setPomRows] = useState<PomRow[]>([])
+  const [pomUpdatedAt, setPomUpdatedAt] = useState('')
+  const [pomLoading, setPomLoading] = useState(false)
+  const [pomSaving, setPomSaving] = useState(false)
+  const [pomError, setPomError] = useState('')
+
   const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number }) => {
     const { q, date, sort, limit } = opts
     setLoading(true)
@@ -72,16 +82,96 @@ export default function TasksPage({ me }: { me: Me }) {
     }
   }, [toast])
 
-  const loadVendors = useCallback(() => {
-    apiGet<{ items: { name: string }[] }>('/api/vendors/catering')
-      .then((res) => setVendors((res.items || []).map((x) => String(x.name || '')).filter(Boolean)))
-      .catch(() => {})
-  }, [])
-
   useEffect(() => {
     const t = window.setTimeout(() => refresh({ q, date, sort, limit }).catch(() => {}), 250)
     return () => window.clearTimeout(t)
   }, [date, limit, q, refresh, sort])
+
+  const pomNormalizeCell = useCallback((v: any): PomCell => {
+    const qty = Math.max(0, Math.min(999, parseInt(String(v?.qty ?? 0), 10) || 0))
+    const signed = Boolean(v?.signed)
+    const note = String(v?.note ?? '')
+    return { qty, signed, note }
+  }, [])
+
+  const pomNormalizeRows = useCallback((rows: any): PomRow[] => {
+    const list = Array.isArray(rows) ? rows : []
+    return list
+      .map((r) => {
+        const unit = String(r?.unit ?? '').trim()
+        if (!unit) return null
+        return {
+          unit,
+          siang: pomNormalizeCell(r?.siang),
+          sore: pomNormalizeCell(r?.sore),
+          malam: pomNormalizeCell(r?.malam),
+        } as PomRow
+      })
+      .filter(Boolean) as PomRow[]
+  }, [pomNormalizeCell])
+
+  const loadPomSheet = useCallback(async () => {
+    const d = date || today
+    setPomLoading(true)
+    try {
+      const res = await apiGet<PomSheetRes>(`/api/pom_catering/sheet?date=${encodeURIComponent(d)}`)
+      setPomStaffName(String(res.staff_name || '').trim() || me.user.display_name)
+      setPomRows(pomNormalizeRows(res.rows))
+      setPomUpdatedAt(String(res.updated_at || ''))
+      setPomError('')
+    } catch (err: any) {
+      setPomError(String(err?.message || err || 'Gagal memuat sheet POM'))
+      setPomRows([])
+    } finally {
+      setPomLoading(false)
+    }
+  }, [date, me.user.display_name, pomNormalizeRows, today])
+
+  useEffect(() => {
+    if (tab !== 'pom') return
+    loadPomSheet().catch(() => {})
+  }, [loadPomSheet, tab])
+
+  const setPomCell = useCallback((rowIdx: number, shift: PomShiftKey, patch: Partial<PomCell>) => {
+    setPomRows((prev) =>
+      prev.map((r, i) => {
+        if (i !== rowIdx) return r
+        const curr = r[shift]
+        return { ...r, [shift]: { ...curr, ...patch } }
+      }),
+    )
+  }, [])
+
+  const pomTotals = useMemo(() => {
+    let siang = 0
+    let sore = 0
+    let malam = 0
+    for (const r of pomRows) {
+      siang += r.siang.qty || 0
+      sore += r.sore.qty || 0
+      malam += r.malam.qty || 0
+    }
+    return { siang, sore, malam }
+  }, [pomRows])
+
+  const savePomSheet = useCallback(async () => {
+    if (pomSaving) return
+    setPomSaving(true)
+    try {
+      const d = date || today
+      const payload = { staff_name: pomStaffName, rows: pomRows, date: d }
+      const res = await apiPost<{ ok: boolean; updated_at: string }>(`/api/pom_catering/sheet?date=${encodeURIComponent(d)}`, payload)
+      setPomUpdatedAt(String(res.updated_at || ''))
+      toast.push('Sheet POM tersimpan', 'success')
+      setPomError('')
+    } catch (err: any) {
+      const msg = String(err?.message || err || 'Gagal menyimpan sheet POM')
+      setPomError(msg)
+      toast.push(msg, 'error')
+    } finally {
+      setPomSaving(false)
+    }
+  }, [date, pomRows, pomSaving, pomStaffName, toast, today])
 
   useEffect(() => {
     const raw = localStorage.getItem(draftKey)
@@ -129,21 +219,6 @@ export default function TasksPage({ me }: { me: Me }) {
     }, 300)
     return () => window.clearTimeout(t)
   }, [boxCount, destination, draftKey, galonReturned, galonTo, galonUnused, galonUsed, kind, notes, pomArrivedTime, pomStatus, tab, time, vendor])
-
-  useEffect(() => {
-    loadVendors()
-  }, [loadVendors])
-
-  useEffect(() => {
-    if (tab !== 'pom') return
-    loadVendors()
-  }, [loadVendors, tab])
-
-  useEffect(() => {
-    const onFocus = () => loadVendors()
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
-  }, [loadVendors])
 
   const isPom = (k: string) => /pom/i.test(k || '') && /cater/i.test(k || '')
   const isGalon = (k: string) => /galon/i.test(k || '')
@@ -485,80 +560,165 @@ export default function TasksPage({ me }: { me: Me }) {
         </div>
       </div>
 
-      <section className="card" id="tasksForm">
-        <header className="card-header">
-          <div className="card-title">{tab === 'pom' ? 'Pom Catering' : tab === 'galon' ? 'Galon' : 'Catat tugas'}</div>
-          <div className="muted">Petugas: {me.user.display_name}</div>
-        </header>
-        <div className="card-body">
-          <form className="form grid grid-4" onSubmit={onSubmit}>
-            {formError && (
-              <div className="grid-span-4">
-                <div className="inline-error">{formError}</div>
-              </div>
-            )}
-            {tab === 'umum' && (
+      {tab === 'pom' ? (
+        <section className="card" id="pomSheet">
+          <header className="card-header">
+            <div className="card-title">Pom Catering (Sheet)</div>
+            <div className="muted">
+              {pomLoading ? 'Memuat...' : `Tanggal: ${date || today}`}
+              {pomUpdatedAt ? ` · Update: ${fmtTime(pomUpdatedAt)}` : ''}
+            </div>
+          </header>
+          <div className="card-body pom-sheet">
+            {pomError ? <div className="inline-error" style={{ marginBottom: 12 }}>{pomError}</div> : null}
+            <div className="grid grid-2" style={{ gap: 12, marginBottom: 12 }}>
               <div className="field">
-                <label className="label" htmlFor="taskKind">
-                  Jenis tugas
+                <label className="label" htmlFor="pomStaff">
+                  Nama
                 </label>
-                <select className="select" id="taskKind" value={kind} onChange={(e) => setKind(e.target.value)}>
-                  <option>Antar sampel</option>
-                  <option>Antar surat</option>
-                  <option>Antar berkas</option>
-                  <option>Lainnya</option>
-                </select>
+                <input className="input" id="pomStaff" value={pomStaffName} onChange={(e) => setPomStaffName(e.target.value)} placeholder="Nama petugas" />
               </div>
-            )}
-            {tab === 'pom' && (
-              <>
-                <div className="field">
-                  <label className="label" htmlFor="taskPomVendor">
-                    Vendor pom
-                  </label>
-                  {vendors.length > 0 ? (
-                    <select className="select" id="taskPomVendor" value={vendor} onChange={(e) => setVendor(e.target.value)}>
-                      <option value="">Pilih vendor</option>
-                      {vendors.map((v) => (
-                        <option key={v} value={v}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input className="input" id="taskPomVendor" value={vendor} onChange={(e) => setVendor(e.target.value)} placeholder="Isi vendor (CATERING_VENDORS belum diset)" />
-                  )}
+              <div className="field">
+                <label className="label" htmlFor="pomDate">
+                  Tanggal
+                </label>
+                <input className="input" id="pomDate" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              </div>
+            </div>
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th rowSpan={2}>No</th>
+                    <th rowSpan={2}>Unit</th>
+                    <th colSpan={3}>Siang</th>
+                    <th colSpan={3}>Sore</th>
+                    <th colSpan={3}>Malam</th>
+                  </tr>
+                  <tr>
+                    <th>Jumlah</th>
+                    <th>Paraf</th>
+                    <th>Keterangan</th>
+                    <th>Jumlah</th>
+                    <th>Paraf</th>
+                    <th>Keterangan</th>
+                    <th>Jumlah</th>
+                    <th>Paraf</th>
+                    <th>Keterangan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pomRows.map((r, idx) => (
+                    <tr key={`${idx}:${r.unit}`}>
+                      <td>{idx + 1}</td>
+                      <td>{r.unit}</td>
+                      <td>
+                        <input
+                          className="input input-sm"
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={r.siang.qty}
+                          onChange={(e) => setPomCell(idx, 'siang', { qty: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                          style={{ width: 90 }}
+                        />
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <input type="checkbox" checked={r.siang.signed} onChange={(e) => setPomCell(idx, 'siang', { signed: e.target.checked })} />
+                      </td>
+                      <td>
+                        <input className="input input-sm" value={r.siang.note} onChange={(e) => setPomCell(idx, 'siang', { note: e.target.value })} />
+                      </td>
+                      <td>
+                        <input
+                          className="input input-sm"
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={r.sore.qty}
+                          onChange={(e) => setPomCell(idx, 'sore', { qty: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                          style={{ width: 90 }}
+                        />
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <input type="checkbox" checked={r.sore.signed} onChange={(e) => setPomCell(idx, 'sore', { signed: e.target.checked })} />
+                      </td>
+                      <td>
+                        <input className="input input-sm" value={r.sore.note} onChange={(e) => setPomCell(idx, 'sore', { note: e.target.value })} />
+                      </td>
+                      <td>
+                        <input
+                          className="input input-sm"
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={r.malam.qty}
+                          onChange={(e) => setPomCell(idx, 'malam', { qty: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                          style={{ width: 90 }}
+                        />
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <input type="checkbox" checked={r.malam.signed} onChange={(e) => setPomCell(idx, 'malam', { signed: e.target.checked })} />
+                      </td>
+                      <td>
+                        <input className="input input-sm" value={r.malam.note} onChange={(e) => setPomCell(idx, 'malam', { note: e.target.value })} />
+                      </td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td colSpan={2} style={{ fontWeight: 800 }}>
+                      TOTAL
+                    </td>
+                    <td style={{ fontWeight: 800 }}>{pomTotals.siang}</td>
+                    <td />
+                    <td />
+                    <td style={{ fontWeight: 800 }}>{pomTotals.sore}</td>
+                    <td />
+                    <td />
+                    <td style={{ fontWeight: 800 }}>{pomTotals.malam}</td>
+                    <td />
+                    <td />
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div className="row row-right" style={{ marginTop: 12 }}>
+              <button className="button button-secondary" type="button" onClick={() => loadPomSheet().catch(() => {})} disabled={pomSaving || pomLoading}>
+                Refresh
+              </button>
+              <button className="button button-primary" type="button" onClick={() => savePomSheet().catch(() => {})} disabled={pomSaving || pomLoading}>
+                {pomSaving ? 'Menyimpan...' : 'Simpan'}
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : (
+        <section className="card" id="tasksForm">
+          <header className="card-header">
+            <div className="card-title">{tab === 'galon' ? 'Galon' : 'Catat tugas'}</div>
+            <div className="muted">Petugas: {me.user.display_name}</div>
+          </header>
+          <div className="card-body">
+            <form className="form grid grid-4" onSubmit={onSubmit}>
+              {formError && (
+                <div className="grid-span-4">
+                  <div className="inline-error">{formError}</div>
                 </div>
+              )}
+              {tab === 'umum' && (
                 <div className="field">
-                  <label className="label" htmlFor="taskPomBox">
-                    Jumlah box
+                  <label className="label" htmlFor="taskKind">
+                    Jenis tugas
                   </label>
-                  <div className="number-stepper">
-                    <button className="stepper-btn" type="button" onClick={() => setBoxCount(String(Math.max(0, (parseInt(boxCount, 10) || 0) - 1)))}>-</button>
-                    <input className="input" id="taskPomBox" type="number" min={0} step={1} value={boxCount} onChange={(e) => setBoxCount(e.target.value)} placeholder="0" />
-                    <button className="stepper-btn" type="button" onClick={() => setBoxCount(String((parseInt(boxCount, 10) || 0) + 1))}>+</button>
-                  </div>
-                </div>
-                <div className="field">
-                  <label className="label" htmlFor="taskPomStatus">
-                    Status
-                  </label>
-                  <select className="select" id="taskPomStatus" value={pomStatus} onChange={(e) => setPomStatus(e.target.value as any)}>
-                    <option value="Dijadwalkan">Dijadwalkan</option>
-                    <option value="Datang">Datang</option>
-                    <option value="Selesai">Selesai</option>
-                    <option value="Bermasalah">Bermasalah</option>
+                  <select className="select" id="taskKind" value={kind} onChange={(e) => setKind(e.target.value)}>
+                    <option>Antar sampel</option>
+                    <option>Antar surat</option>
+                    <option>Antar berkas</option>
+                    <option>Lainnya</option>
                   </select>
                 </div>
-                <div className="field">
-                  <label className="label" htmlFor="taskPomArrived">
-                    Jam datang (opsional)
-                  </label>
-                  <input className="input" id="taskPomArrived" type="time" value={pomArrivedTime} onChange={(e) => setPomArrivedTime(e.target.value)} />
-                </div>
-              </>
-            )}
-            {tab === 'galon' && (
+              )}
+              {tab === 'galon' && (
               <>
                 <div className="field">
                   <label className="label" htmlFor="taskGalonUsed">
@@ -723,9 +883,10 @@ export default function TasksPage({ me }: { me: Me }) {
                 </button>
               </div>
             </div>
-          </form>
-        </div>
-      </section>
+            </form>
+          </div>
+        </section>
+      )}
 
       <section className="card">
         <header className="card-header">

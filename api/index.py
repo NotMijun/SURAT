@@ -563,6 +563,27 @@ def _ensure_schema(conn) -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_catering_vendors_norm ON catering_vendors(name_norm)")
             cur.execute(
                 """
+                CREATE TABLE IF NOT EXISTS pom_catering_sheets (
+                  id BIGSERIAL PRIMARY KEY,
+                  sheet_date TEXT NOT NULL UNIQUE,
+                  staff_name TEXT,
+                  data_json TEXT NOT NULL,
+                  created_by BIGINT REFERENCES users(id),
+                  updated_by BIGINT REFERENCES users(id),
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                )
+                """
+            )
+            cur.execute("ALTER TABLE pom_catering_sheets ADD COLUMN IF NOT EXISTS staff_name TEXT")
+            cur.execute("ALTER TABLE pom_catering_sheets ADD COLUMN IF NOT EXISTS data_json TEXT")
+            cur.execute("ALTER TABLE pom_catering_sheets ADD COLUMN IF NOT EXISTS created_by BIGINT REFERENCES users(id)")
+            cur.execute("ALTER TABLE pom_catering_sheets ADD COLUMN IF NOT EXISTS updated_by BIGINT REFERENCES users(id)")
+            cur.execute("ALTER TABLE pom_catering_sheets ADD COLUMN IF NOT EXISTS created_at TEXT")
+            cur.execute("ALTER TABLE pom_catering_sheets ADD COLUMN IF NOT EXISTS updated_at TEXT")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_pom_catering_sheets_date ON pom_catering_sheets(sheet_date)")
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS media_attachments (
                   id BIGSERIAL PRIMARY KEY,
                   target_table TEXT NOT NULL,
@@ -860,6 +881,24 @@ class CreateGuestBody(BaseModel):
     ktp_exchanged: bool | None = None
 
 
+class PomCateringCellBody(BaseModel):
+    qty: int | None = None
+    signed: bool | None = None
+    note: str | None = None
+
+
+class PomCateringRowBody(BaseModel):
+    unit: str
+    siang: PomCateringCellBody | None = None
+    sore: PomCateringCellBody | None = None
+    malam: PomCateringCellBody | None = None
+
+
+class SavePomCateringSheetBody(BaseModel):
+    staff_name: str | None = None
+    rows: list[PomCateringRowBody] | None = None
+
+
 class CreateTaskBody(BaseModel):
     kind: str
     occurred_at: str
@@ -1024,6 +1063,151 @@ def vendors_catering(request: Request):
         seen.add(norm)
         fallback.append({"id": None, "name": name})
     return {"items": fallback}
+
+
+_POM_CATERING_UNITS_DEFAULT = [
+    "Direktur",
+    "Manajer Medis",
+    "Sekretaris",
+    "Div. Keu & Akt",
+    "Div. TI",
+    "Div. Umum",
+    "Div. SDM",
+    "Marketing",
+    "Driver Operasional",
+    "Rumah Tangga",
+    "Pembelian",
+    "IPCN",
+    "Manajer Keperawatan",
+    "CSSD",
+    "Fisioterapi",
+    "Pemeliharaan",
+    "Dokter Umum",
+    "Driver",
+    "Laboratorium",
+    "Gizi",
+    "Farmasi",
+    "Rekam medis",
+    "Radiologi",
+    "FO",
+    "Kasir",
+    "MCU",
+    "Karyawan Baru",
+    "Ranap Inap Lt 3 & P",
+    "Ranap Inap Lt 2 & HD",
+    "IKO, Endoskopi, Bedah",
+    "IGD",
+    "Poli",
+    "ICU",
+    "Bidan",
+    "Perinatologi (NICU)",
+    "Perinatologi (K. Bayi)",
+    "Stock Opname",
+    "Tim Casemix",
+    "Kegiatan MCU (tambahan untuk vendor/radiologi dll)",
+    "MPP",
+]
+
+
+def _ymd_or_today(value: str) -> str:
+    s = (value or "").strip()
+    if not s:
+        return datetime.now().strftime("%Y-%m-%d")
+    if len(s) != 10 or s[4] != "-" or s[7] != "-":
+        raise HTTPException(status_code=400, detail="Tanggal tidak valid")
+    y, m, d = s.split("-", 2)
+    if not (y.isdigit() and m.isdigit() and d.isdigit()):
+        raise HTTPException(status_code=400, detail="Tanggal tidak valid")
+    return s
+
+
+def _pom_cell(value: PomCateringCellBody | None) -> dict[str, Any]:
+    v = value or PomCateringCellBody()
+    qty_raw = v.qty if v.qty is not None else 0
+    try:
+        qty = int(qty_raw)
+    except Exception:
+        qty = 0
+    qty = max(0, min(999, qty))
+    signed = True if bool(v.signed) else False
+    note = _text_field(v.note, field="Keterangan", max_len=120, default="")
+    return {"qty": qty, "signed": signed, "note": note}
+
+
+def _pom_rows_normalized(rows: list[PomCateringRowBody] | None) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for r in rows or []:
+        unit = _text_field(r.unit, field="Unit", max_len=80, default="").strip()
+        if not unit:
+            continue
+        result.append(
+            {
+                "unit": unit,
+                "siang": _pom_cell(r.siang),
+                "sore": _pom_cell(r.sore),
+                "malam": _pom_cell(r.malam),
+            }
+        )
+    if not result:
+        for unit in _POM_CATERING_UNITS_DEFAULT:
+            result.append(
+                {
+                    "unit": unit,
+                    "siang": {"qty": 0, "signed": False, "note": ""},
+                    "sore": {"qty": 0, "signed": False, "note": ""},
+                    "malam": {"qty": 0, "signed": False, "note": ""},
+                }
+            )
+    return result
+
+
+@app.get("/api/pom_catering/sheet")
+def get_pom_catering_sheet(request: Request, date: str = ""):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        d = _ymd_or_today(date)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT sheet_date, staff_name, data_json, updated_at FROM pom_catering_sheets WHERE sheet_date=%s", (d,))
+            row = cur.fetchone()
+        if row:
+            data_raw = (row.get("data_json") or "").strip()
+            parsed: dict[str, Any] = {}
+            if data_raw:
+                try:
+                    parsed = json.loads(data_raw)
+                except Exception:
+                    parsed = {}
+            rows = parsed.get("rows")
+            if not isinstance(rows, list):
+                rows = None
+            staff_name = (row.get("staff_name") or "").strip() or str(sess.get("display_name") or "")
+            return {"date": d, "staff_name": staff_name, "rows": rows or _pom_rows_normalized(None), "updated_at": row.get("updated_at") or ""}
+        return {"date": d, "staff_name": str(sess.get("display_name") or ""), "rows": _pom_rows_normalized(None), "updated_at": ""}
+
+
+@app.post("/api/pom_catering/sheet")
+def save_pom_catering_sheet(body: SavePomCateringSheetBody, request: Request, date: str = ""):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        d = _ymd_or_today(date)
+        staff_name = _text_field(body.staff_name, field="Nama", max_len=80, default=str(sess.get("display_name") or "")).strip() or str(sess.get("display_name") or "")
+        rows_norm = _pom_rows_normalized(body.rows)
+        if len(rows_norm) > 120:
+            raise HTTPException(status_code=400, detail="Terlalu banyak baris unit")
+        now = utc_now_iso()
+        data_json = json.dumps({"rows": rows_norm}, ensure_ascii=False, separators=(",", ":"))
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO pom_catering_sheets(sheet_date, staff_name, data_json, created_by, updated_by, created_at, updated_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (sheet_date)
+                DO UPDATE SET staff_name=EXCLUDED.staff_name, data_json=EXCLUDED.data_json, updated_by=EXCLUDED.updated_by, updated_at=EXCLUDED.updated_at
+                """,
+                (d, staff_name, data_json, int(sess["user_id"]), int(sess["user_id"]), now, now),
+            )
+        conn.commit()
+        return {"ok": True, "date": d, "updated_at": now}
 
 
 @app.post("/api/logout")
