@@ -81,7 +81,7 @@ def root_styles():
 
 @app.get("/api/brand/logo.png")
 def brand_logo():
-    file_path = ROOT_DIR / "bsh.png"
+    file_path = ROOT_DIR / "bshcrop.png"
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Logo tidak ditemukan")
     return FileResponse(path=str(file_path), media_type="image/png")
