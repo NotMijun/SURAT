@@ -225,6 +225,7 @@ export default function TasksPage({ me }: { me: Me }) {
       toast.push('Sheet POM tersimpan', 'success')
       setPomEditRowIdx(null)
       loadPomHistory().catch(() => {})
+      refresh({ q, date: d, sort, limit }).catch(() => {})
       setPomError('')
     } catch (err: any) {
       const msg = String(err?.message || err || 'Gagal menyimpan sheet POM')
@@ -233,7 +234,7 @@ export default function TasksPage({ me }: { me: Me }) {
     } finally {
       setPomSaving(false)
     }
-  }, [date, loadPomHistory, pomRows, pomSaving, pomShift, pomStaffName, pomTotalBoxesIn, pomVendorName, toast, today])
+  }, [date, limit, loadPomHistory, pomRows, pomSaving, pomShift, pomStaffName, pomTotalBoxesIn, pomVendorName, q, refresh, sort, toast, today])
 
   useEffect(() => {
     const loadVendors = async () => {
@@ -306,9 +307,13 @@ export default function TasksPage({ me }: { me: Me }) {
     const e = r.extra || {}
     if (isPom(r.kind)) {
       const parts = []
-      if (e.vendor) parts.push(`Vendor: ${String(e.vendor)}`)
+      if (e.source === 'sheet' && e.sheet_date && e.sheet_shift) {
+        parts.push(`Sheet: ${String(e.sheet_date)} (${String(e.sheet_shift)})`)
+      }
+      if (e.vendor || e.vendor_name) parts.push(`Vendor: ${String(e.vendor || e.vendor_name)}`)
       if (e.pom_status) parts.push(`Status: ${String(e.pom_status)}`)
       if (e.arrived_at) parts.push(`Datang: ${fmtDateTime(String(e.arrived_at))}`)
+      if (typeof e.total_taken === 'number' && Number.isFinite(e.total_taken)) parts.push(`Diambil: ${String(e.total_taken)}`)
       if (typeof e.box_count === 'number' && Number.isFinite(e.box_count)) parts.push(`Box: ${String(e.box_count)}`)
       return parts.join(' · ')
     }
@@ -333,7 +338,7 @@ export default function TasksPage({ me }: { me: Me }) {
       for (const r of viewItems) {
         if (r.status === 'void') continue
         const e = r.extra || {}
-        const bc = typeof e.box_count === 'number' ? e.box_count : null
+        const bc = typeof e.box_count === 'number' ? e.box_count : (typeof e.total_boxes_in === 'number' ? e.total_boxes_in : null)
         if (bc != null && Number.isFinite(bc)) totalBox += bc
         if (String(e.pom_status || '') === 'Bermasalah') bermasalah += 1
         const a = e.arrived_at ? String(e.arrived_at) : null
@@ -1136,7 +1141,15 @@ export default function TasksPage({ me }: { me: Me }) {
                           <button
                             className="button button-sm button-secondary"
                             type="button"
-                            onClick={() => loadPomSheet(h.shift, h.date).catch(() => {})}
+                            onClick={() => {
+                              ;(async () => {
+                                await loadPomSheet(h.shift, h.date)
+                                document.getElementById('pomSheet')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                                toast.push(`Sheet ${h.date} (${h.shift === 'siang' ? 'Siang' : h.shift === 'sore' ? 'Sore' : 'Malam'}) dimuat`, 'success')
+                              })().catch((err: any) => {
+                                toast.push(String(err?.message || err || 'Gagal membuka sheet'), 'error')
+                              })
+                            }}
                             disabled={pomLoading || pomSaving}
                           >
                             Buka

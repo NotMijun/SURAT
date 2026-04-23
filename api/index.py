@@ -899,6 +899,10 @@ class PomCateringCellBody(BaseModel):
 class PomCateringRowBody(BaseModel):
     unit: str
     cell: PomCateringCellBody | None = None
+    jatah: int | None = None
+    taken: int | None = None
+    person: str | None = None
+    note: str | None = None
 
 
 class SavePomCateringSheetBody(BaseModel):
@@ -1165,21 +1169,20 @@ def _pom_rows_normalized(rows: Any) -> list[dict[str, Any]]:
     for r in items:
         if isinstance(r, PomCateringRowBody):
             unit = _text_field(r.unit, field="Unit", max_len=80, default="").strip()
-            cell = _pom_cell(r.cell)
+            cell_src = r.cell or PomCateringCellBody(jatah=r.jatah, taken=r.taken, person=r.person, note=r.note)
+            cell = _pom_cell(cell_src)
         else:
             unit = _text_field(str((r or {}).get("unit") or ""), field="Unit", max_len=80, default="").strip()
-            raw_cell = (r or {}).get("cell")
+            raw = r or {}
+            raw_cell = raw.get("cell")
             if isinstance(raw_cell, dict):
-                cell = _pom_cell(
-                    PomCateringCellBody(
-                        jatah=raw_cell.get("jatah"),
-                        taken=raw_cell.get("taken"),
-                        person=raw_cell.get("person"),
-                        note=raw_cell.get("note"),
-                    )
-                )
+                cell = _pom_cell(PomCateringCellBody(jatah=raw_cell.get("jatah"), taken=raw_cell.get("taken"), person=raw_cell.get("person"), note=raw_cell.get("note")))
             else:
-                cell = _pom_cell(None)
+                has_flat = any(k in raw for k in ("jatah", "taken", "person", "note"))
+                if has_flat:
+                    cell = _pom_cell(PomCateringCellBody(jatah=raw.get("jatah"), taken=raw.get("taken"), person=raw.get("person"), note=raw.get("note")))
+                else:
+                    cell = _pom_cell(None)
         if not unit:
             continue
         key = normalize_text(unit)
@@ -1273,6 +1276,73 @@ def _pom_ensure_all_shifts(parsed: Any, default_staff: str) -> dict[str, Any]:
             "rows": rows_norm,
         }
     return out
+
+
+def _pom_sheet_task_time(shift_key: str) -> str:
+    if shift_key == "sore":
+        return "16:00:00"
+    if shift_key == "malam":
+        return "21:00:00"
+    return "11:00:00"
+
+
+def _upsert_pom_sheet_task(conn, sess, sheet_date: str, shift_key: str, vendor_name: str | None, total_boxes_in: int, total_jatah: int, total_taken: int) -> None:
+    occurred_at = f"{sheet_date}T{_pom_sheet_task_time(shift_key)}"
+    extra = {
+        "source": "sheet",
+        "sheet_date": sheet_date,
+        "sheet_shift": shift_key,
+        "vendor": vendor_name,
+        "vendor_name": vendor_name,
+        "pom_status": "Selesai",
+        "arrived_at": occurred_at,
+        "box_count": int(total_boxes_in),
+        "total_boxes_in": int(total_boxes_in),
+        "total_jatah": int(total_jatah),
+        "total_taken": int(total_taken),
+    }
+    extra_json = json.dumps(extra, ensure_ascii=False, separators=(",", ":"))
+    now = utc_now_iso()
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT *
+            FROM task_entries
+            WHERE COALESCE(status,'active') <> 'void'
+              AND lower(kind)=lower('Pom Catering')
+              AND COALESCE(destination,'-')='-'
+              AND COALESCE(extra_json,'') LIKE %s
+              AND COALESCE(extra_json,'') LIKE %s
+            ORDER BY occurred_at DESC
+            LIMIT 1
+            """,
+            (f"%\"sheet_date\":\"{sheet_date}\"%", f"%\"sheet_shift\":\"{shift_key}\"%"),
+        )
+        existing = cur.fetchone()
+        if existing:
+            before = dict(existing)
+            cur.execute(
+                """
+                UPDATE task_entries
+                SET occurred_at=%s, notes=%s, extra_json=%s, updated_at=%s
+                WHERE id=%s
+                """,
+                (occurred_at, "", extra_json, now, int(existing["id"])),
+            )
+            cur.execute("SELECT * FROM task_entries WHERE id=%s", (int(existing["id"]),))
+            after = dict(cur.fetchone())
+            _audit(conn, sess, "task_entries", str(int(existing["id"])), "update", before, after)
+            return
+        cur.execute(
+            """
+            INSERT INTO task_entries(kind, occurred_at, destination, notes, extra_json, status, void_reason, voided_by, voided_at, created_by, shift, post, photo_b64, photo_mime, photo_name, photo_uploaded_at, created_at, updated_at)
+            VALUES (%s,%s,%s,%s,%s,'active',NULL,NULL,NULL,%s,%s,%s,NULL,NULL,NULL,NULL,%s,%s)
+            RETURNING id
+            """,
+            ("Pom Catering", occurred_at, "-", "", extra_json, int(sess["user_id"]), sess["shift"], sess["post"], now, now),
+        )
+        tid = int(cur.fetchone()["id"])
+        _audit(conn, sess, "task_entries", str(tid), "create", None, {"kind": "Pom Catering", "occurred_at": occurred_at, "destination": "-", "notes": "", "extra": extra})
 
 
 @app.get("/api/pom_catering/sheet")
@@ -1388,6 +1458,18 @@ def save_pom_catering_sheet(body: SavePomCateringSheetBody, request: Request, da
                     """,
                     (d, staff_name, data_json, int(sess["user_id"]), int(sess["user_id"]), now, now),
                 )
+        total_jatah = 0
+        total_taken = 0
+        for r in rows_norm:
+            try:
+                total_jatah += int(r.get("jatah") or 0)
+            except Exception:
+                pass
+            try:
+                total_taken += int(r.get("taken") or 0)
+            except Exception:
+                pass
+        _upsert_pom_sheet_task(conn, sess, d, shift_key, vendor_name, total_boxes_in, int(total_jatah), int(total_taken))
         conn.commit()
         return {"ok": True, "date": d, "shift": shift_key, "updated_at": now}
 
