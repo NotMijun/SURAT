@@ -255,15 +255,15 @@ export default function GuestsPage({ me }: { me: Me }) {
     }
   }
 
-  const voidGuest = async (r: GuestEntry) => {
-    const reason = await confirm.prompt({ title: 'Void Tamu', message: 'Alasan void:', initialValue: '', confirmText: 'Void', cancelText: 'Batal', required: true })
-    if (!reason) return
+  const deleteGuest = async (r: GuestEntry) => {
+    const ok = await confirm.confirm({ title: 'Delete Tamu', message: 'Hapus data tamu ini secara permanen? Tindakan ini tidak bisa dibatalkan.', confirmText: 'Delete', cancelText: 'Batal' })
+    if (!ok) return
     try {
-      await apiPost(`/api/guests/${r.id}/void`, { reason })
-      toast.push('Tamu di-void', 'success')
-      setItems((prev) => prev.map((x) => (x.id === r.id ? { ...x, status: 'void', void_reason: reason } : x)))
+      await apiPost(`/api/guests/${r.id}/delete`, {})
+      toast.push('Tamu dihapus', 'success')
+      setItems((prev) => prev.filter((x) => x.id !== r.id))
     } catch (err: any) {
-      toast.push(String(err?.message || err || 'Gagal void tamu'), 'error')
+      toast.push(String(err?.message || err || 'Gagal delete tamu'), 'error')
     }
   }
 
@@ -617,7 +617,7 @@ export default function GuestsPage({ me }: { me: Me }) {
               </thead>
               <tbody>
                 {items.map((r) => (
-                  <tr key={r.id} className={r.status === 'in' ? 'table-row-active' : r.status === 'void' ? 'table-row-void' : undefined}>
+                    <tr key={r.id} className={r.status === 'in' ? 'table-row-active' : r.status === 'void' ? 'table-row-void' : undefined}>
                     <td data-label="Nama">{r.name}</td>
                     {view === 'riwayat' && postFilter === 'IGD' && <td data-label="Instansi">{r.instansi}</td>}
                     <td data-label="Tujuan">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? (r.destination_room || '-') : (r.purpose || '-')}</td>
@@ -640,7 +640,7 @@ export default function GuestsPage({ me }: { me: Me }) {
                     </td>
                     <td data-label="Aksi">
                       {r.status === 'void' ? (
-                        <span className="muted">Void{r.void_reason ? `: ${r.void_reason}` : ''}</span>
+                        <span className="muted">Deleted</span>
                       ) : (
                         <div className="card-actions">
                           {r.status === 'in' ? (
@@ -658,8 +658,8 @@ export default function GuestsPage({ me }: { me: Me }) {
                             </button>
                           ) : null}
                           {canCorrect(r) ? (
-                            <button className="button button-sm button-void" type="button" onClick={() => voidGuest(r)}>
-                              ✕ Void
+                            <button className="button button-sm button-danger" type="button" onClick={() => deleteGuest(r)}>
+                              Delete
                             </button>
                           ) : null}
                         </div>
@@ -736,7 +736,7 @@ export default function GuestsPage({ me }: { me: Me }) {
                   onClick={() =>
                     downloadCsv(
                       `tamu-${postFilter}-${date || 'semua'}.csv`,
-                      [['Nama', 'Instansi', 'Tujuan', 'Kartu', 'Ditemui', 'Masuk', 'Keluar', 'Keperluan', 'Foto', 'Petugas', 'Status', 'Alasan void']].concat(
+                  [['Nama', 'Instansi', 'Tujuan', 'Kartu', 'Ditemui', 'Masuk', 'Keluar', 'Keperluan', 'Foto', 'Petugas', 'Status']].concat(
                         items.map((r) => [
                           r.name,
                           r.instansi,
@@ -749,7 +749,6 @@ export default function GuestsPage({ me }: { me: Me }) {
                           r.has_photo ? 'Ya' : 'Tidak',
                           r.created_by_name || '-',
                           r.status,
-                          r.void_reason || '',
                         ]),
                       ),
                     )

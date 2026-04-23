@@ -8,7 +8,7 @@ import LoadingScreen from '../../components/LoadingScreen'
 
 const badge = (s: KeyTx['status']) => {
   if (s === 'closed') return <span className="badge badge-ok">Diambil</span>
-  if (s === 'void') return <span className="badge badge-danger">Void</span>
+  if (s === 'void') return <span className="badge badge-danger">Deleted</span>
   return <span className="badge badge-warn">Dititipkan</span>
 }
 
@@ -281,11 +281,11 @@ export default function KeysPage({ me }: { me: Me }) {
   }
 
   const doUndo = async (id: number) => {
-    const reason = await confirm.prompt({ title: 'Void Penitipan', message: 'Alasan void:', initialValue: '', confirmText: 'Void', cancelText: 'Batal', required: true })
-    if (!reason) return
+    const ok = await confirm.confirm({ title: 'Delete Penitipan', message: 'Hapus data penitipan ini secara permanen? Tindakan ini tidak bisa dibatalkan.', confirmText: 'Delete', cancelText: 'Batal' })
+    if (!ok) return
     try {
-      await apiPost(`/api/keys/${id}/undo`, { reason })
-      toast.push('Penitipan kunci di-void', 'success')
+      await apiPost(`/api/keys/${id}/undo`, {})
+      toast.push('Penitipan kunci dihapus', 'success')
       const closedDateField = date === today && filterBy === 'ambil' ? 'checkin' : 'checkout'
       await refresh({ q, date, sort, limit, closedDateField })
     } catch (err: any) {
@@ -294,15 +294,15 @@ export default function KeysPage({ me }: { me: Me }) {
   }
 
   const doVoid = async (r: KeyTx) => {
-    const reason = await confirm.prompt({ title: 'Void Transaksi', message: 'Alasan void:', initialValue: '', confirmText: 'Void', cancelText: 'Batal', required: true })
-    if (!reason) return
+    const ok = await confirm.confirm({ title: 'Delete Transaksi', message: 'Hapus transaksi ini secara permanen? Tindakan ini tidak bisa dibatalkan.', confirmText: 'Delete', cancelText: 'Batal' })
+    if (!ok) return
     try {
-      await apiPost(`/api/keys/${r.id}/void`, { reason })
-      toast.push('Transaksi di-void', 'success')
+      await apiPost(`/api/keys/${r.id}/delete`, {})
+      toast.push('Transaksi dihapus', 'success')
       const closedDateField = date === today && filterBy === 'ambil' ? 'checkin' : 'checkout'
       await refresh({ q, date, sort, limit, closedDateField })
     } catch (err: any) {
-      toast.push(String(err?.message || err || 'Gagal void transaksi'), 'error')
+      toast.push(String(err?.message || err || 'Gagal delete transaksi'), 'error')
     }
   }
 
@@ -590,7 +590,7 @@ export default function KeysPage({ me }: { me: Me }) {
                     {r.borrower_name} · {r.key_name}
                   </div>
                   <div className="list-meta">
-                    {fmtTime(r.checkout_at)} · {r.status === 'open' ? 'dititipkan' : r.status === 'closed' ? `diambil ${r.checkin_at ? fmtTime(r.checkin_at) : ''}` : 'void'}
+                    {fmtTime(r.checkout_at)} · {r.status === 'open' ? 'dititipkan' : r.status === 'closed' ? `diambil ${r.checkin_at ? fmtTime(r.checkin_at) : ''}` : 'deleted'}
                   </div>
                 </div>
               ))}
@@ -648,7 +648,7 @@ export default function KeysPage({ me }: { me: Me }) {
                           ) : null}
                           {canCorrect(r) ? (
                             <button className="button button-sm button-danger" type="button" onClick={() => doUndo(r.id)}>
-                              ✕ Void
+                              Delete
                             </button>
                           ) : null}
                         </div>
@@ -704,7 +704,7 @@ export default function KeysPage({ me }: { me: Me }) {
                       <td data-label="Ambil">{fmtDateTime(r.checkin_at || '')}</td>
                       <td data-label="Status">
                         {badge(r.status)}
-                        {r.status === 'void' && r.void_reason ? <div className="muted">Void: {r.void_reason}</div> : null}
+                        {r.status === 'void' ? <div className="muted">Deleted</div> : null}
                       </td>
                       <td data-label="Foto">
                         {r.has_photo && r.photo_url ? (
@@ -732,7 +732,7 @@ export default function KeysPage({ me }: { me: Me }) {
                             ) : null}
                             {canCorrect(r) ? (
                               <button className="button button-sm button-danger" type="button" onClick={() => doVoid(r)}>
-                                ⨯ Void
+                                Delete
                               </button>
                             ) : null}
                           </div>
@@ -833,7 +833,7 @@ export default function KeysPage({ me }: { me: Me }) {
                   const allRows = [...openView, ...closedView].sort((a, b) => Date.parse(b.checkout_at || '') - Date.parse(a.checkout_at || ''))
                   downloadCsv(
                     `kunci-${date || 'semua'}.csv`,
-                    [['Instansi', 'Unit', 'Ruangan/Kunci', 'Jam titip', 'Jam ambil', 'Catatan', 'Foto', 'Petugas', 'Status', 'Alasan void']].concat(
+                    [['Instansi', 'Unit', 'Ruangan/Kunci', 'Jam titip', 'Jam ambil', 'Catatan', 'Foto', 'Petugas', 'Status']].concat(
                       allRows.map((r) => [
                         String(r.borrower_name || ''),
                         String(r.unit || ''),
@@ -844,7 +844,6 @@ export default function KeysPage({ me }: { me: Me }) {
                         r.has_photo ? 'Ya' : 'Tidak',
                         petugasName(r),
                         String(r.status || ''),
-                        String(r.void_reason || ''),
                       ]),
                     ),
                   )

@@ -291,6 +291,45 @@ export default function AdminPage({ me }: { me: Me }) {
     }
   }
 
+  const resetAllData = async () => {
+    const ok = await confirm.confirm({
+      title: 'Delete Data',
+      message: 'Hapus SEMUA data (tamu, mutasi, tugas, kunci, attachments, audit, dll) untuk reset database?\n\nTindakan ini tidak bisa dibatalkan.',
+      confirmText: 'Lanjut',
+      cancelText: 'Batal',
+    })
+    if (!ok) return
+
+    const typed = await confirm.prompt({
+      title: 'Konfirmasi',
+      message: 'Ketik DELETE untuk melanjutkan:',
+      placeholder: 'DELETE',
+      initialValue: '',
+      confirmText: 'Delete Data',
+      cancelText: 'Batal',
+      required: true,
+    })
+    if (typed == null) return
+    if (typed.trim() !== 'DELETE') {
+      toast.push('Konfirmasi tidak sesuai', 'error')
+      return
+    }
+
+    try {
+      const res = await apiPost<{ ok: boolean; deleted?: Record<string, number> }>('/api/admin/reset_data', { confirm: 'DELETE' })
+      toast.push('Database direset', 'success')
+      const lines = Object.entries(res.deleted || {})
+        .map(([k, v]) => `${k}: ${v}`)
+        .join('\n')
+      if (lines) {
+        await confirm.message({ title: 'Hasil Reset', message: lines, closeText: 'Tutup' })
+      }
+      await refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal reset database'), 'error')
+    }
+  }
+
   return (
     <section className="section">
       <div className="section-header">
@@ -743,7 +782,7 @@ export default function AdminPage({ me }: { me: Me }) {
               </button>
             </div>
           </form>
-          <div className="hint">Catatan: Penitipan kunci akan di-void (bukan dihapus permanen), agar jejak audit tetap ada.</div>
+          <div className="hint">Catatan: Aksi ini menghapus data secara permanen.</div>
         </div>
       </section>
 
@@ -784,6 +823,18 @@ export default function AdminPage({ me }: { me: Me }) {
               </tbody>
             </table>
           </div>
+        </div>
+      </section>
+
+      <section className="card">
+        <header className="card-header">
+          <div className="card-title">Delete Data</div>
+          <div className="muted">Reset database untuk testing (hapus semua jejak data)</div>
+        </header>
+        <div className="card-body">
+          <button className="button button-danger" type="button" onClick={resetAllData}>
+            Delete Data
+          </button>
         </div>
       </section>
     </section>

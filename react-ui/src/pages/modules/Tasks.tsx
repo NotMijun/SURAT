@@ -96,7 +96,7 @@ export default function TasksPage({ me }: { me: Me }) {
     setLoading(true)
     try {
       const res = await apiGet<{ items: TaskEntry[] }>(
-        `/api/tasks?q=${encodeURIComponent(q.trim())}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&status=all&offset=0`,
+        `/api/tasks?q=${encodeURIComponent(q.trim())}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&status=active&offset=0`,
       )
       const nextItems = res.items || []
       setItems(nextItems)
@@ -390,7 +390,6 @@ export default function TasksPage({ me }: { me: Me }) {
 
   const doEdit = (r: TaskEntry) => {
     if (!canAdmin) return
-    if (r.status === 'void') return
     
     setEditRow(r)
     setEditKind(r.kind || '')
@@ -451,19 +450,21 @@ export default function TasksPage({ me }: { me: Me }) {
     }
   }
 
-  const doVoid = async (r: TaskEntry) => {
+  const doDelete = async (r: TaskEntry) => {
     if (!canAdmin) return
-    if (r.status === 'void') return
-    const reason = await confirm.prompt({ title: 'Void Tugas', message: 'Alasan void:', initialValue: '', confirmText: 'Void', cancelText: 'Batal', required: true })
-    if (reason == null) return
-    const value = reason.trim()
-    if (!value) return
+    const ok = await confirm.confirm({
+      title: 'Delete Tugas',
+      message: 'Hapus tugas ini secara permanen? Tindakan ini tidak bisa dibatalkan.',
+      confirmText: 'Delete',
+      cancelText: 'Batal',
+    })
+    if (!ok) return
     try {
-      await apiPost(`/api/tasks/${r.id}/void`, { reason: value })
-      toast.push('Tugas di-void', 'success')
+      await apiPost(`/api/tasks/${r.id}/delete`, {})
+      toast.push('Tugas dihapus', 'success')
       await refresh({ q, date, sort, limit })
     } catch (err: any) {
-      toast.push(String(err?.message || err || 'Gagal void'), 'error')
+      toast.push(String(err?.message || err || 'Gagal delete'), 'error')
     }
   }
 
@@ -1324,9 +1325,9 @@ export default function TasksPage({ me }: { me: Me }) {
                       </td>
                       <td data-label="Catatan">
                         {r.notes}
-                        {r.status === 'void' && r.void_reason ? <div className="muted">Void: {r.void_reason}</div> : null}
+                        {r.status === 'void' && r.void_reason ? <div className="muted">Deleted: {r.void_reason}</div> : null}
                       </td>
-                      <td data-label="Status">{r.status === 'void' ? <span className="badge badge-danger">Void</span> : <span className="badge badge-ok">Aktif</span>}</td>
+                      <td data-label="Status">{r.status === 'void' ? <span className="badge badge-danger">Deleted</span> : <span className="badge badge-ok">Aktif</span>}</td>
                       <td data-label="Foto">
                         {r.has_photo && r.photo_url ? (
                           <button className="button button-sm button-secondary" type="button" onClick={() => openTaskPhotos(r)}>
@@ -1340,17 +1341,18 @@ export default function TasksPage({ me }: { me: Me }) {
                       {canAdmin && (
                         <td data-label="Aksi">
                           <div className="card-actions">
-                            {r.status !== 'void' && (
+                            {r.status === 'void' ? (
+                              <span className="muted">—</span>
+                            ) : (
                               <>
                                 <button className="button button-sm button-secondary" type="button" onClick={() => doEdit(r)}>
                                   ✎ Edit
                                 </button>
-                                <button className="button button-sm button-void" type="button" onClick={() => doVoid(r)}>
-                                  ✕ Void
+                                <button className="button button-sm button-danger" type="button" onClick={() => doDelete(r)}>
+                                  Delete
                                 </button>
                               </>
                             )}
-                            {r.status === 'void' && <span className="muted">—</span>}
                           </div>
                         </td>
                       )}

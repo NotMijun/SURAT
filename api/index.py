@@ -847,6 +847,30 @@ def _audit(conn, sess: dict[str, Any], table_name: str, record_id: str, action: 
         )
 
 
+def _delete_related_and_record(conn, table_name: str, record_id: int) -> dict[str, int]:
+    allowed = {"key_transactions", "guest_entries", "mutasi_entries", "task_entries"}
+    if table_name not in allowed:
+        raise HTTPException(status_code=400, detail="Table tidak diizinkan")
+    audit_col = {
+        "key_transactions": "target_key_transaction_id",
+        "guest_entries": "target_guest_entry_id",
+        "mutasi_entries": "target_mutasi_entry_id",
+        "task_entries": "target_task_entry_id",
+    }.get(table_name)
+    deleted_attach = 0
+    deleted_audit = 0
+    deleted_row = 0
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM media_attachments WHERE target_table=%s AND target_id=%s", (table_name, int(record_id)))
+        deleted_attach = int(cur.rowcount or 0)
+        if audit_col:
+            cur.execute(f"DELETE FROM audit_log WHERE {audit_col}=%s", (int(record_id),))
+            deleted_audit = int(cur.rowcount or 0)
+        cur.execute(f"DELETE FROM {table_name} WHERE id=%s", (int(record_id),))
+        deleted_row = int(cur.rowcount or 0)
+    return {"attachments": deleted_attach, "audit": deleted_audit, "rows": deleted_row}
+
+
 class LoginBody(BaseModel):
     username: str
     password: str
@@ -998,6 +1022,10 @@ class PatchPomUnitBody(BaseModel):
     name: str | None = None
     sort_order: int | None = None
     is_active: bool | None = None
+
+
+class ResetDataBody(BaseModel):
+    confirm: str | None = None
 
 
 @app.get("/api/health")
@@ -2065,42 +2093,30 @@ def undo_key(key_id: str, request: Request, body: OptionalVoidBody | None = None
                 raise HTTPException(status_code=400, detail="Hanya transaksi open yang bisa di-undo")
             if sess.get("role") not in ("admin", "supervisor") and int(row.get("created_by") or 0) != int(sess["user_id"]):
                 raise HTTPException(status_code=403, detail="Tidak punya akses undo")
-            before = dict(row)
-            now = utc_now_iso()
-            reason = _text_field((body.reason if body else None), field="Alasan", max_len=120, default="")
-            if not reason:
-                reason = f"undo oleh {int(sess['user_id'])}"
-            cur.execute("UPDATE key_transactions SET status='void', void_reason=%s, updated_at=%s WHERE id=%s", (reason, now, key_id))
-            cur.execute("SELECT * FROM key_transactions WHERE id=%s", (key_id,))
-            after = dict(cur.fetchone())
-            _audit(conn, sess, "key_transactions", str(key_id), "undo", before, after)
+            _delete_related_and_record(conn, "key_transactions", int(key_id))
         conn.commit()
         return {"ok": True}
 
-@app.post("/api/keys/{key_id}/void")
-def void_key(key_id: str, body: VoidBody, request: Request):
+
+@app.post("/api/keys/{key_id}/delete")
+def delete_key(key_id: str, request: Request):
     with db_connect() as conn:
         sess = _require_session(conn, request)
-        reason = _text_field(body.reason, field="Alasan", max_len=120)
-        if not reason:
-            raise HTTPException(status_code=400, detail="Alasan wajib diisi")
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT * FROM key_transactions WHERE id=%s", (key_id,))
             row = cur.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Data tidak ditemukan")
-            if row["status"] == "void":
-                return {"ok": True}
             if not _can_quick_modify(sess, created_by=int(row["created_by"]), created_at_iso=str(row.get("created_at") or "")):
-                raise HTTPException(status_code=403, detail="Tidak punya akses void")
-            before = dict(row)
-            now = utc_now_iso()
-            cur.execute("UPDATE key_transactions SET status='void', void_reason=%s, updated_at=%s WHERE id=%s", (reason, now, key_id))
-            cur.execute("SELECT * FROM key_transactions WHERE id=%s", (key_id,))
-            after = dict(cur.fetchone())
-            _audit(conn, sess, "key_transactions", str(key_id), "void", before, after)
+                raise HTTPException(status_code=403, detail="Tidak punya akses delete")
+            _delete_related_and_record(conn, "key_transactions", int(key_id))
         conn.commit()
         return {"ok": True}
+
+
+@app.post("/api/keys/{key_id}/void")
+def void_key_compat(key_id: str, body: VoidBody, request: Request):
+    return delete_key(key_id=key_id, request=request)
 
 
 @app.post("/api/keys/{key_id}/reopen")
@@ -2430,33 +2446,25 @@ def patch_mutasi(mutasi_id: int, body: PatchMutasiBody, request: Request):
         return {"ok": True}
 
 
-@app.post("/api/mutasi/{mutasi_id}/void")
-def void_mutasi(mutasi_id: int, body: VoidBody, request: Request):
+@app.post("/api/mutasi/{mutasi_id}/delete")
+def delete_mutasi(mutasi_id: int, request: Request):
     with db_connect() as conn:
         sess = _require_session(conn, request)
-        reason = _text_field(body.reason, field="Alasan", max_len=120)
-        if not reason:
-            raise HTTPException(status_code=400, detail="Alasan wajib diisi")
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT * FROM mutasi_entries WHERE id=%s", (int(mutasi_id),))
             row = cur.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Data tidak ditemukan")
-            if str(row.get("status") or "active") == "void":
-                return {"ok": True}
             if not _can_quick_modify(sess, created_by=int(row["created_by"]), created_at_iso=str(row.get("created_at") or "")):
-                raise HTTPException(status_code=403, detail="Tidak punya akses void")
-            before = dict(row)
-            now = utc_now_iso()
-            cur.execute(
-                "UPDATE mutasi_entries SET status='void', void_reason=%s, voided_by=%s, voided_at=%s, updated_at=%s WHERE id=%s",
-                (reason, int(sess["user_id"]), now, now, int(mutasi_id)),
-            )
-            cur.execute("SELECT * FROM mutasi_entries WHERE id=%s", (int(mutasi_id),))
-            after = dict(cur.fetchone())
-            _audit(conn, sess, "mutasi_entries", str(mutasi_id), "void", before, after)
+                raise HTTPException(status_code=403, detail="Tidak punya akses delete")
+            _delete_related_and_record(conn, "mutasi_entries", int(mutasi_id))
         conn.commit()
         return {"ok": True}
+
+
+@app.post("/api/mutasi/{mutasi_id}/void")
+def void_mutasi_compat(mutasi_id: int, body: VoidBody, request: Request):
+    return delete_mutasi(mutasi_id=mutasi_id, request=request)
 
 
 @app.get("/api/guests")
@@ -2805,33 +2813,25 @@ def undo_checkout_guest(guest_id: str, body: VoidBody, request: Request):
         return {"ok": True}
 
 
-@app.post("/api/guests/{guest_id}/void")
-def void_guest(guest_id: str, body: VoidBody, request: Request):
+@app.post("/api/guests/{guest_id}/delete")
+def delete_guest(guest_id: str, request: Request):
     with db_connect() as conn:
         sess = _require_session(conn, request)
-        reason = _text_field(body.reason, field="Alasan", max_len=120)
-        if not reason:
-            raise HTTPException(status_code=400, detail="Alasan wajib diisi")
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT * FROM guest_entries WHERE id=%s", (guest_id,))
             row = cur.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Data tidak ditemukan")
-            if row["status"] == "void":
-                return {"ok": True}
             if not _can_quick_modify(sess, created_by=int(row["created_by"]), created_at_iso=str(row.get("created_at") or "")):
-                raise HTTPException(status_code=403, detail="Tidak punya akses void")
-            before = dict(row)
-            now = utc_now_iso()
-            cur.execute(
-                "UPDATE guest_entries SET status='void', void_reason=%s, voided_by=%s, voided_at=%s, updated_at=%s WHERE id=%s",
-                (reason, int(sess["user_id"]), now, now, guest_id),
-            )
-            cur.execute("SELECT * FROM guest_entries WHERE id=%s", (guest_id,))
-            after = dict(cur.fetchone())
-            _audit(conn, sess, "guest_entries", str(guest_id), "void", before, after)
+                raise HTTPException(status_code=403, detail="Tidak punya akses delete")
+            _delete_related_and_record(conn, "guest_entries", int(guest_id))
         conn.commit()
         return {"ok": True}
+
+
+@app.post("/api/guests/{guest_id}/void")
+def void_guest_compat(guest_id: str, body: VoidBody, request: Request):
+    return delete_guest(guest_id=guest_id, request=request)
 
 
 @app.patch("/api/guests/{guest_id}")
@@ -3137,33 +3137,25 @@ def patch_task(task_id: int, body: PatchTaskBody, request: Request):
         return {"ok": True}
 
 
-@app.post("/api/tasks/{task_id}/void")
-def void_task(task_id: int, body: VoidBody, request: Request):
+@app.post("/api/tasks/{task_id}/delete")
+def delete_task(task_id: int, request: Request):
     with db_connect() as conn:
         sess = _require_session(conn, request)
-        reason = _text_field(body.reason, field="Alasan", max_len=120)
-        if not reason:
-            raise HTTPException(status_code=400, detail="Alasan wajib diisi")
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT * FROM task_entries WHERE id=%s", (int(task_id),))
             row = cur.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Data tidak ditemukan")
-            if str(row.get("status") or "active") == "void":
-                return {"ok": True}
             if not _can_quick_modify(sess, created_by=int(row["created_by"]), created_at_iso=str(row.get("created_at") or "")):
-                raise HTTPException(status_code=403, detail="Tidak punya akses void")
-            before = dict(row)
-            now = utc_now_iso()
-            cur.execute(
-                "UPDATE task_entries SET status='void', void_reason=%s, voided_by=%s, voided_at=%s, updated_at=%s WHERE id=%s",
-                (reason, int(sess["user_id"]), now, now, int(task_id)),
-            )
-            cur.execute("SELECT * FROM task_entries WHERE id=%s", (int(task_id),))
-            after = dict(cur.fetchone())
-            _audit(conn, sess, "task_entries", str(task_id), "void", before, after)
+                raise HTTPException(status_code=403, detail="Tidak punya akses delete")
+            _delete_related_and_record(conn, "task_entries", int(task_id))
         conn.commit()
         return {"ok": True}
+
+
+@app.post("/api/tasks/{task_id}/void")
+def void_task_compat(task_id: int, body: VoidBody, request: Request):
+    return delete_task(task_id=task_id, request=request)
 
 
 @app.get("/api/report/shift")
@@ -4047,32 +4039,48 @@ def admin_delete_record(table_name: str, request: Request, id: str, note: str = 
         note = (note or "").strip()
         if not record_id:
             raise HTTPException(status_code=400, detail="id wajib")
+        try:
+            rid = int(record_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="id tidak valid")
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            if table_name == "key_transactions":
-                cur.execute("SELECT * FROM key_transactions WHERE id=%s", (record_id,))
-                row = cur.fetchone()
-                if not row:
-                    raise HTTPException(status_code=404, detail="Data tidak ditemukan")
-                if row["status"] == "void":
-                    return {"ok": True}
-                before = dict(row)
-                now = utc_now_iso()
-                cur.execute("UPDATE key_transactions SET status='void', void_reason=%s, updated_at=%s WHERE id=%s", (note or f"void oleh admin {sess['user_id']}", now, record_id))
-                cur.execute("SELECT * FROM key_transactions WHERE id=%s", (record_id,))
-                after = dict(cur.fetchone())
-                _audit(conn, sess, "key_transactions", str(record_id), "void", before, after)
-                conn.commit()
-                return {"ok": True, "mode": "void"}
-
-            cur.execute(f"SELECT * FROM {table_name} WHERE id=%s", (record_id,))
+            cur.execute(f"SELECT id FROM {table_name} WHERE id=%s", (rid,))
             row = cur.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Data tidak ditemukan")
-            before = dict(row)
-            cur.execute(f"DELETE FROM {table_name} WHERE id=%s", (record_id,))
-            _audit(conn, sess, table_name, str(record_id), "delete", before, {"note": note} if note else None)
+        deleted = _delete_related_and_record(conn, table_name, rid)
         conn.commit()
-        return {"ok": True, "mode": "deleted"}
+        return {"ok": True, "mode": "deleted", "deleted": deleted, "note": note}
+
+
+@app.post("/api/admin/reset_data")
+def admin_reset_data(body: ResetDataBody, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        _require_role(sess, ("admin",))
+        confirm = str((body.confirm or "")).strip().upper()
+        if confirm != "DELETE":
+            raise HTTPException(status_code=400, detail="Konfirmasi tidak valid")
+        counts: dict[str, int] = {}
+        with conn.cursor() as cur:
+            for t in (
+                "media_attachments",
+                "audit_log",
+                "pom_catering_sheets",
+                "task_entries",
+                "mutasi_entries",
+                "guest_entries",
+                "key_transactions",
+                "catering_vendors",
+                "key_master",
+                "room_master",
+                "pom_unit_master",
+                "sessions",
+            ):
+                cur.execute(f"DELETE FROM {t}")
+                counts[t] = int(cur.rowcount or 0)
+        conn.commit()
+        return {"ok": True, "deleted": counts}
 
 
 @app.delete("/api/admin/users/{user_id}/delete")

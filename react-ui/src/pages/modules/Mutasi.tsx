@@ -78,7 +78,7 @@ export default function MutasiPage({ me }: { me: Me }) {
     setLoading(true)
     try {
       const res = await apiGet<{ items: MutasiEntry[] }>(
-        `/api/mutasi?q=${encodeURIComponent(q.trim())}&kategori=${encodeURIComponent(fk)}&sub=${encodeURIComponent(fs)}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&status=all`,
+        `/api/mutasi?q=${encodeURIComponent(q.trim())}&kategori=${encodeURIComponent(fk)}&sub=${encodeURIComponent(fs)}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&status=active`,
       )
       setItems(res.items || [])
     } catch (err: any) {
@@ -171,7 +171,6 @@ export default function MutasiPage({ me }: { me: Me }) {
 
   const doEdit = (r: MutasiEntry) => {
     if (!canAdmin) return
-    if (r.status === 'void') return
     
     setEditRow(r)
     setEditDesc(r.description || '')
@@ -224,19 +223,21 @@ export default function MutasiPage({ me }: { me: Me }) {
     }
   }
 
-  const doVoid = async (r: MutasiEntry) => {
+  const doDelete = async (r: MutasiEntry) => {
     if (!canAdmin) return
-    if (r.status === 'void') return
-    const reason = await confirm.prompt({ title: 'Void Mutasi', message: 'Alasan void:', initialValue: '', confirmText: 'Void', cancelText: 'Batal', required: true })
-    if (reason == null) return
-    const value = reason.trim()
-    if (!value) return
+    const ok = await confirm.confirm({
+      title: 'Delete Mutasi',
+      message: 'Hapus mutasi ini secara permanen? Tindakan ini tidak bisa dibatalkan.',
+      confirmText: 'Delete',
+      cancelText: 'Batal',
+    })
+    if (!ok) return
     try {
-      await apiPost(`/api/mutasi/${r.id}/void`, { reason: value })
-      toast.push('Mutasi di-void', 'success')
+      await apiPost(`/api/mutasi/${r.id}/delete`, {})
+      toast.push('Mutasi dihapus', 'success')
       await refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub })
     } catch (err: any) {
-      toast.push(String(err?.message || err || 'Gagal void'), 'error')
+      toast.push(String(err?.message || err || 'Gagal delete'), 'error')
     }
   }
 
@@ -472,9 +473,9 @@ export default function MutasiPage({ me }: { me: Me }) {
                     <td data-label="Jenis">{r.kind}</td>
                     <td data-label="Deskripsi">
                       {r.description}
-                      {r.status === 'void' && r.void_reason ? <div className="muted">Void: {r.void_reason}</div> : null}
+                      {r.status === 'void' && r.void_reason ? <div className="muted">Deleted: {r.void_reason}</div> : null}
                     </td>
-                    <td data-label="Status">{r.status === 'void' ? <span className="badge badge-danger">Void</span> : <span className="badge badge-ok">Aktif</span>}</td>
+                    <td data-label="Status">{r.status === 'void' ? <span className="badge badge-danger">Deleted</span> : <span className="badge badge-ok">Aktif</span>}</td>
                     <td data-label="Foto">
                       {r.has_photo && r.photo_url ? (
                         <button className="button button-sm button-secondary" type="button" onClick={() => openMutasiPhotos(r)}>
@@ -488,15 +489,17 @@ export default function MutasiPage({ me }: { me: Me }) {
                     {canAdmin && (
                       <td data-label="Aksi">
                         <div className="card-actions">
-                          {canAdmin && r.status !== 'void' && (
-                            <button className="button button-sm button-secondary" type="button" onClick={() => doEdit(r)}>
-                              ✎ Edit
-                            </button>
-                          )}
-                          {canAdmin && r.status !== 'void' && (
-                            <button className="button button-sm button-void" type="button" onClick={() => doVoid(r)}>
-                              ✕ Void
-                            </button>
+                          {r.status === 'void' ? (
+                            <span className="muted">—</span>
+                          ) : (
+                            <>
+                              <button className="button button-sm button-secondary" type="button" onClick={() => doEdit(r)}>
+                                ✎ Edit
+                              </button>
+                              <button className="button button-sm button-danger" type="button" onClick={() => doDelete(r)}>
+                                Delete
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>
