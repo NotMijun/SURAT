@@ -28,11 +28,20 @@ export default function AdminPage({ me }: { me: Me }) {
   const confirm = useConfirm()
   const [userQ, setUserQ] = useState('')
   const [auditQ, setAuditQ] = useState('')
+  const [auditTable, setAuditTable] = useState('')
+  const [auditActorUserId, setAuditActorUserId] = useState('')
+  const [auditDateFrom, setAuditDateFrom] = useState('')
+  const [auditDateTo, setAuditDateTo] = useState('')
   const [users, setUsers] = useState<AdminUser[]>([])
   const [vendors, setVendors] = useState<Array<{ id: number; name: string; created_at?: string }>>([])
   const [newVendor, setNewVendor] = useState('')
   const [keyMaster, setKeyMaster] = useState<Array<{ id: number; name: string; is_active?: boolean; created_at?: string; updated_at?: string }>>([])
   const [newKeyName, setNewKeyName] = useState('')
+  const [roomMaster, setRoomMaster] = useState<Array<{ id: number; name: string; is_active?: boolean; created_at?: string; updated_at?: string }>>([])
+  const [newRoomName, setNewRoomName] = useState('')
+  const [pomUnits, setPomUnits] = useState<Array<{ id: number; name: string; sort_order?: number; is_active?: boolean; created_at?: string; updated_at?: string }>>([])
+  const [newPomUnitName, setNewPomUnitName] = useState('')
+  const [newPomUnitOrder, setNewPomUnitOrder] = useState('')
   const [audit, setAudit] = useState<AuditRow[]>([])
   const [history, setHistory] = useState<SecurityHistoryRow[]>([])
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
@@ -59,13 +68,20 @@ export default function AdminPage({ me }: { me: Me }) {
   )
 
   const refresh = useCallback(
-    async (opts: { userQ: string; auditQ: string }) => {
-      const { userQ, auditQ } = opts
+    async (opts: { userQ: string; auditQ: string; auditTable: string; auditActorUserId: string; auditDateFrom: string; auditDateTo: string }) => {
+      const { userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo } = opts
       setLoading(true)
       try {
+        const auditUrl =
+          `/api/admin/audit?q=${encodeURIComponent(auditQ)}` +
+          `&limit=160` +
+          `&table_name=${encodeURIComponent(auditTable)}` +
+          `&actor_user_id=${encodeURIComponent(auditActorUserId)}` +
+          `&date_from=${encodeURIComponent(auditDateFrom)}` +
+          `&date_to=${encodeURIComponent(auditDateTo)}`
         const [u, a] = await Promise.all([
           apiGet<{ items: AdminUser[] }>(`/api/admin/users?q=${encodeURIComponent(userQ)}`),
-          apiGet<{ items: AuditRow[] }>(`/api/admin/audit?q=${encodeURIComponent(auditQ)}&limit=120`),
+          apiGet<{ items: AuditRow[] }>(auditUrl),
         ])
         const userItems = u.items || []
         setUsers(userItems)
@@ -82,6 +98,18 @@ export default function AdminPage({ me }: { me: Me }) {
         } catch {
           setKeyMaster([])
         }
+        try {
+          const rm = await apiGet<{ items: Array<{ id: number; name: string; is_active?: boolean; created_at?: string; updated_at?: string }> }>('/api/admin/rooms/master')
+          setRoomMaster(rm.items || [])
+        } catch {
+          setRoomMaster([])
+        }
+        try {
+          const pu = await apiGet<{ items: Array<{ id: number; name: string; sort_order?: number; is_active?: boolean; created_at?: string; updated_at?: string }> }>('/api/admin/pom_units')
+          setPomUnits(pu.items || [])
+        } catch {
+          setPomUnits([])
+        }
         const selectedStillExists = selectedUserId != null && userItems.some((x) => x.id === selectedUserId)
         const fallbackId = selectedStillExists ? selectedUserId : userItems.find((x) => x.role === 'guard')?.id ?? userItems[0]?.id ?? null
         if (fallbackId !== selectedUserId) {
@@ -97,9 +125,9 @@ export default function AdminPage({ me }: { me: Me }) {
   )
 
   useEffect(() => {
-    const t = window.setTimeout(() => refresh({ userQ, auditQ }).catch(() => {}), 300)
+    const t = window.setTimeout(() => refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo }).catch(() => {}), 300)
     return () => window.clearTimeout(t)
-  }, [auditQ, refresh, userQ])
+  }, [auditActorUserId, auditDateFrom, auditDateTo, auditQ, auditTable, refresh, userQ])
 
   useEffect(() => {
     loadHistory(selectedUserId, historyLimit).catch(() => {})
@@ -113,7 +141,7 @@ export default function AdminPage({ me }: { me: Me }) {
     try {
       await apiPatch(`/api/admin/users/${u.id}`, patch)
       toast.push('User disimpan', 'success')
-      await refresh({ userQ, auditQ })
+      await refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal simpan user'), 'error')
     }
@@ -148,7 +176,7 @@ export default function AdminPage({ me }: { me: Me }) {
     try {
       const res = await apiDelete<{ mode: string }>(`/api/admin/users/${id}/delete`)
       toast.push(res.mode === 'deleted' ? 'Akun dihapus' : 'Akun dinonaktifkan', 'success')
-      await refresh({ userQ, auditQ })
+      await refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal hapus akun'), 'error')
     }
@@ -165,7 +193,7 @@ export default function AdminPage({ me }: { me: Me }) {
     try {
       const res = await apiDelete<{ deleted: number }>(`/api/admin/security_history?user_id=${encodeURIComponent(String(selectedUserId))}&keep=0`)
       toast.push(`Riwayat dihapus (${res.deleted} entri)`, 'success')
-      await refresh({ userQ, auditQ })
+      await refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })
       await loadHistory(selectedUserId, historyLimit)
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal hapus riwayat'), 'error')
@@ -180,7 +208,7 @@ export default function AdminPage({ me }: { me: Me }) {
       await apiPost('/api/admin/vendors/catering', { name })
       setNewVendor('')
       toast.push('Vendor ditambahkan', 'success')
-      await refresh({ userQ, auditQ })
+      await refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal menambah vendor'), 'error')
     }
@@ -194,7 +222,7 @@ export default function AdminPage({ me }: { me: Me }) {
       await apiPost('/api/admin/keys/master', { name })
       setNewKeyName('')
       toast.push('Master kunci ditambahkan', 'success')
-      await refresh({ userQ, auditQ })
+      await refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal menambah master kunci'), 'error')
     }
@@ -204,7 +232,7 @@ export default function AdminPage({ me }: { me: Me }) {
     try {
       await apiPatch(`/api/admin/keys/master/${id}`, { name, is_active })
       toast.push('Master kunci disimpan', 'success')
-      await refresh({ userQ, auditQ })
+      await refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal mengubah master kunci'), 'error')
     }
@@ -216,7 +244,7 @@ export default function AdminPage({ me }: { me: Me }) {
     try {
       await apiDelete(`/api/admin/keys/master/${id}`)
       toast.push('Master kunci dinonaktifkan', 'success')
-      await refresh({ userQ, auditQ })
+      await refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal menonaktifkan'), 'error')
     }
@@ -226,7 +254,7 @@ export default function AdminPage({ me }: { me: Me }) {
     try {
       await apiPatch(`/api/admin/vendors/catering/${id}`, { name })
       toast.push('Vendor disimpan', 'success')
-      await refresh({ userQ, auditQ })
+      await refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal mengubah vendor'), 'error')
     }
@@ -238,7 +266,7 @@ export default function AdminPage({ me }: { me: Me }) {
     try {
       await apiDelete(`/api/admin/vendors/catering/${id}`)
       toast.push('Vendor dihapus', 'success')
-      await refresh({ userQ, auditQ })
+      await refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal menghapus vendor'), 'error')
     }
@@ -257,7 +285,7 @@ export default function AdminPage({ me }: { me: Me }) {
       await apiDelete(`/api/admin/records/${encodeURIComponent(table)}?id=${encodeURIComponent(id)}&note=${encodeURIComponent(note)}`)
       toast.push('Data diproses', 'success')
       e.currentTarget.reset()
-      await refresh({ userQ, auditQ })
+      await refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal hapus data'), 'error')
     }
@@ -270,7 +298,29 @@ export default function AdminPage({ me }: { me: Me }) {
         <div className="section-actions section-filters">
           <input className="input input-sm" value={userQ} onChange={(e) => setUserQ(e.target.value)} placeholder="Cari user..." />
           <input className="input input-sm" value={auditQ} onChange={(e) => setAuditQ(e.target.value)} placeholder="Cari audit..." />
-          <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ userQ, auditQ })}>
+          <select className="select select-sm" value={auditTable} onChange={(e) => setAuditTable(e.target.value)}>
+            <option value="">Semua modul</option>
+            <option value="key_transactions">Kunci</option>
+            <option value="guest_entries">Tamu</option>
+            <option value="mutasi_entries">Mutasi</option>
+            <option value="task_entries">Tugas</option>
+            <option value="users">User</option>
+          </select>
+          <select className="select select-sm" value={auditActorUserId} onChange={(e) => setAuditActorUserId(e.target.value)}>
+            <option value="">Semua user</option>
+            {users.map((u) => (
+              <option key={u.id} value={String(u.id)}>
+                {u.display_name || u.username}
+              </option>
+            ))}
+          </select>
+          <input className="input input-sm" type="date" value={auditDateFrom} onChange={(e) => setAuditDateFrom(e.target.value)} />
+          <input className="input input-sm" type="date" value={auditDateTo} onChange={(e) => setAuditDateTo(e.target.value)} />
+          <button
+            className="button button-secondary button-sm"
+            type="button"
+            onClick={() => refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })}
+          >
             Refresh
           </button>
         </div>
@@ -496,6 +546,175 @@ export default function AdminPage({ me }: { me: Me }) {
 
       <section className="card">
         <header className="card-header">
+          <div className="card-title">Master Ruangan</div>
+          <div className="muted">Dipakai sebagai saran/autocomplete tujuan ruang</div>
+        </header>
+        <div className="card-body">
+          <form
+            className="form grid grid-4"
+            onSubmit={async (e) => {
+              e.preventDefault()
+              const name = newRoomName.trim()
+              if (!name) return
+              try {
+                await apiPost('/api/admin/rooms/master', { name })
+                setNewRoomName('')
+                toast.push('Master ruangan ditambahkan', 'success')
+                await refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })
+              } catch (err: any) {
+                toast.push(String(err?.message || err || 'Gagal menambah master ruangan'), 'error')
+              }
+            }}
+          >
+            <div className="field grid-span-3">
+              <label className="label">Nama ruangan</label>
+              <input className="input" value={newRoomName} onChange={(e) => setNewRoomName(e.target.value)} placeholder="mis. Poli Anak" />
+            </div>
+            <div className="row row-right grid-span-1">
+              <button className="button button-primary" type="submit">
+                Tambah
+              </button>
+            </div>
+          </form>
+          <div className="table-wrap" style={{ marginTop: 12 }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Nama</th>
+                  <th>Status</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {roomMaster.map((r) => (
+                  <RoomMasterRow
+                    key={r.id}
+                    r={r}
+                    onSave={async (id, name, is_active) => {
+                      try {
+                        await apiPatch(`/api/admin/rooms/master/${id}`, { name, is_active })
+                        toast.push('Master ruangan disimpan', 'success')
+                        await refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })
+                      } catch (err: any) {
+                        toast.push(String(err?.message || err || 'Gagal menyimpan'), 'error')
+                      }
+                    }}
+                    onDisable={async (id) => {
+                      const ok = await confirm.confirm({ title: 'Nonaktifkan Master Ruangan', message: 'Nonaktifkan master ruangan ini?', confirmText: 'Nonaktifkan' })
+                      if (!ok) return
+                      try {
+                        await apiDelete(`/api/admin/rooms/master/${id}`)
+                        toast.push('Master ruangan dinonaktifkan', 'success')
+                        await refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })
+                      } catch (err: any) {
+                        toast.push(String(err?.message || err || 'Gagal menonaktifkan'), 'error')
+                      }
+                    }}
+                  />
+                ))}
+                {roomMaster.length === 0 && (
+                  <tr>
+                    <td className="muted" colSpan={3}>
+                      Belum ada data.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section className="card">
+        <header className="card-header">
+          <div className="card-title">Master Unit POM</div>
+          <div className="muted">Menentukan urutan & daftar unit pada sheet POM Catering</div>
+        </header>
+        <div className="card-body">
+          <form
+            className="form grid grid-4"
+            onSubmit={async (e) => {
+              e.preventDefault()
+              const name = newPomUnitName.trim()
+              if (!name) return
+              const sort_order = parseInt(newPomUnitOrder, 10)
+              try {
+                await apiPost('/api/admin/pom_units', { name, sort_order: Number.isFinite(sort_order) ? sort_order : 0 })
+                setNewPomUnitName('')
+                setNewPomUnitOrder('')
+                toast.push('Master unit POM ditambahkan', 'success')
+                await refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })
+              } catch (err: any) {
+                toast.push(String(err?.message || err || 'Gagal menambah master unit POM'), 'error')
+              }
+            }}
+          >
+            <div className="field grid-span-2">
+              <label className="label">Nama unit</label>
+              <input className="input" value={newPomUnitName} onChange={(e) => setNewPomUnitName(e.target.value)} placeholder="mis. Farmasi" />
+            </div>
+            <div className="field">
+              <label className="label">Urutan</label>
+              <input className="input" value={newPomUnitOrder} onChange={(e) => setNewPomUnitOrder(e.target.value)} placeholder="0" />
+            </div>
+            <div className="row row-right grid-span-1">
+              <button className="button button-primary" type="submit">
+                Tambah
+              </button>
+            </div>
+          </form>
+          <div className="table-wrap" style={{ marginTop: 12 }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Nama</th>
+                  <th>Urutan</th>
+                  <th>Status</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pomUnits.map((p) => (
+                  <PomUnitRow
+                    key={p.id}
+                    p={p}
+                    onSave={async (id, name, sort_order, is_active) => {
+                      try {
+                        await apiPatch(`/api/admin/pom_units/${id}`, { name, sort_order, is_active })
+                        toast.push('Master unit POM disimpan', 'success')
+                        await refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })
+                      } catch (err: any) {
+                        toast.push(String(err?.message || err || 'Gagal menyimpan'), 'error')
+                      }
+                    }}
+                    onDisable={async (id) => {
+                      const ok = await confirm.confirm({ title: 'Nonaktifkan Unit POM', message: 'Nonaktifkan unit ini?', confirmText: 'Nonaktifkan' })
+                      if (!ok) return
+                      try {
+                        await apiDelete(`/api/admin/pom_units/${id}`)
+                        toast.push('Unit POM dinonaktifkan', 'success')
+                        await refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })
+                      } catch (err: any) {
+                        toast.push(String(err?.message || err || 'Gagal menonaktifkan'), 'error')
+                      }
+                    }}
+                  />
+                ))}
+                {pomUnits.length === 0 && (
+                  <tr>
+                    <td className="muted" colSpan={4}>
+                      Belum ada data.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section className="card">
+        <header className="card-header">
           <div className="card-title">Hapus Data</div>
           <div className="muted">Untuk kebutuhan koreksi (admin)</div>
         </header>
@@ -695,6 +914,94 @@ function KeyMasterRow({
           Simpan
         </button>
         <button className="button button-sm" type="button" onClick={() => onDisable(k.id)}>
+          Nonaktifkan
+        </button>
+      </td>
+    </tr>
+  )
+}
+
+function RoomMasterRow({
+  r,
+  onSave,
+  onDisable,
+}: {
+  r: { id: number; name: string; is_active?: boolean }
+  onSave: (id: number, name: string, is_active: boolean) => void
+  onDisable: (id: number) => void
+}) {
+  const [name, setName] = useState(r.name || '')
+  const [active, setActive] = useState(r.is_active !== false)
+
+  useEffect(() => {
+    setName(r.name || '')
+    setActive(r.is_active !== false)
+  }, [r.id, r.is_active, r.name])
+
+  return (
+    <tr>
+      <td>
+        <input className="input input-sm" value={name} onChange={(e) => setName(e.target.value)} />
+      </td>
+      <td>
+        <label className="row" style={{ gap: 8 }}>
+          <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
+          <span className="muted">{active ? 'Aktif' : 'Nonaktif'}</span>
+        </label>
+      </td>
+      <td className="row">
+        <button className="button button-sm" type="button" onClick={() => onSave(r.id, name, active)}>
+          Simpan
+        </button>
+        <button className="button button-sm" type="button" onClick={() => onDisable(r.id)}>
+          Nonaktifkan
+        </button>
+      </td>
+    </tr>
+  )
+}
+
+function PomUnitRow({
+  p,
+  onSave,
+  onDisable,
+}: {
+  p: { id: number; name: string; sort_order?: number; is_active?: boolean }
+  onSave: (id: number, name: string, sort_order: number, is_active: boolean) => void
+  onDisable: (id: number) => void
+}) {
+  const [name, setName] = useState(p.name || '')
+  const [order, setOrder] = useState(String(typeof p.sort_order === 'number' ? p.sort_order : 0))
+  const [active, setActive] = useState(p.is_active !== false)
+
+  useEffect(() => {
+    setName(p.name || '')
+    setOrder(String(typeof p.sort_order === 'number' ? p.sort_order : 0))
+    setActive(p.is_active !== false)
+  }, [p.id, p.is_active, p.name, p.sort_order])
+
+  const parsedOrder = parseInt(order, 10)
+  const orderValue = Number.isFinite(parsedOrder) ? parsedOrder : 0
+
+  return (
+    <tr>
+      <td>
+        <input className="input input-sm" value={name} onChange={(e) => setName(e.target.value)} />
+      </td>
+      <td style={{ width: 120 }}>
+        <input className="input input-sm" value={order} onChange={(e) => setOrder(e.target.value)} />
+      </td>
+      <td>
+        <label className="row" style={{ gap: 8 }}>
+          <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
+          <span className="muted">{active ? 'Aktif' : 'Nonaktif'}</span>
+        </label>
+      </td>
+      <td className="row">
+        <button className="button button-sm" type="button" onClick={() => onSave(p.id, name, orderValue, active)}>
+          Simpan
+        </button>
+        <button className="button button-sm" type="button" onClick={() => onDisable(p.id)}>
           Nonaktifkan
         </button>
       </td>

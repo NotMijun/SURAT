@@ -11,6 +11,10 @@ export default function GuestsPage({ me }: { me: Me }) {
   const confirm = useConfirm()
   const today = useMemo(() => toYmd(new Date()), [])
   const draftKey = useMemo(() => `draft:guests:${me.user.id}`, [me.user.id])
+  type GuestView = 'inhouse' | 'riwayat'
+  const [view, setView] = useState<GuestView>('inhouse')
+  type RoomMasterItem = { id: number; name: string }
+  const [roomMaster, setRoomMaster] = useState<RoomMasterItem[]>([])
   const [q, setQ] = useState('')
   const [postFilter, setPostFilter] = useState<'IGD' | 'Pintu Utama'>(() => (/^igd$/i.test((me.post || '').trim()) ? 'IGD' : 'Pintu Utama'))
   const [date, setDate] = useState(today)
@@ -47,15 +51,15 @@ export default function GuestsPage({ me }: { me: Me }) {
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string>('')
 
-  const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number; post: string; offset?: number; append?: boolean }) => {
-    const { q, date, sort, limit, post } = opts
+  const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number; post: string; status: string; offset?: number; append?: boolean }) => {
+    const { q, date, sort, limit, post, status } = opts
     const nextOffset = Math.max(0, opts.offset || 0)
     const append = Boolean(opts.append)
     if (append) setLoadingMore(true)
     else setLoading(true)
     try {
       const res = await apiGet<{ items: GuestEntry[] }>(
-        `/api/guests?status=all&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&post=${encodeURIComponent(post)}&offset=${encodeURIComponent(String(nextOffset))}`,
+        `/api/guests?status=${encodeURIComponent(status)}&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&post=${encodeURIComponent(post)}&offset=${encodeURIComponent(String(nextOffset))}`,
       )
       const nextItems = res.items || []
       setHasMore(nextItems.length >= limit)
@@ -75,9 +79,15 @@ export default function GuestsPage({ me }: { me: Me }) {
   }, [toast])
 
   useEffect(() => {
-    const t = window.setTimeout(() => refresh({ q, date, sort, limit, post: postFilter, offset: 0, append: false }).catch(() => {}), 250)
+    const status = view === 'inhouse' ? 'in' : 'all'
+    const effectiveDate = view === 'inhouse' ? '' : date
+    const effectiveSort = view === 'inhouse' ? 'checkin_asc' : sort
+    const t = window.setTimeout(
+      () => refresh({ q, date: effectiveDate, sort: effectiveSort, limit, post: postFilter, status, offset: 0, append: false }).catch(() => {}),
+      250,
+    )
     return () => window.clearTimeout(t)
-  }, [date, limit, q, refresh, sort, postFilter])
+  }, [date, limit, q, refresh, sort, postFilter, view])
 
   useEffect(() => {
     const raw = localStorage.getItem(draftKey)
@@ -96,6 +106,12 @@ export default function GuestsPage({ me }: { me: Me }) {
       localStorage.removeItem(draftKey)
     }
   }, [draftKey])
+
+  useEffect(() => {
+    apiGet<{ items: RoomMasterItem[] }>('/api/rooms/master')
+      .then((res) => setRoomMaster(res.items || []))
+      .catch(() => setRoomMaster([]))
+  }, [])
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -175,7 +191,10 @@ export default function GuestsPage({ me }: { me: Me }) {
       setPhotoKey((x) => x + 1)
       localStorage.removeItem(draftKey)
       toast.push('Tamu masuk dicatat', 'success')
-      await refresh({ q, date, sort, limit, post: postFilter })
+      const status = view === 'inhouse' ? 'in' : 'all'
+      const effectiveDate = view === 'inhouse' ? '' : date
+      const effectiveSort = view === 'inhouse' ? 'checkin_asc' : sort
+      await refresh({ q, date: effectiveDate, sort: effectiveSort, limit, post: postFilter, status })
     } catch (err: any) {
       const msg = String(err?.message || err || 'Gagal menyimpan')
       setFormError(msg)
@@ -280,7 +299,10 @@ export default function GuestsPage({ me }: { me: Me }) {
       const nowIso = new Date().toISOString()
       setItems((prev) => prev.map((x) => (x.id === r.id ? { ...x, status: 'out', checkout_at: nowIso } : x)))
       toast.push('Tamu checkout', 'success')
-      await refresh({ q, date, sort, limit, post: postFilter })
+      const status = view === 'inhouse' ? 'in' : 'all'
+      const effectiveDate = view === 'inhouse' ? '' : date
+      const effectiveSort = view === 'inhouse' ? 'checkin_asc' : sort
+      await refresh({ q, date: effectiveDate, sort: effectiveSort, limit, post: postFilter, status })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal memproses'), 'error')
     }
@@ -400,6 +422,7 @@ export default function GuestsPage({ me }: { me: Me }) {
                 onChange={(e) => (postFilter === 'Pintu Utama' ? setDestinationRoom(e.target.value) : setPurpose(e.target.value))}
                 placeholder={postFilter === 'Pintu Utama' ? 'mis. Ruang 204 / Anak / ICU' : 'mis. IT / HRD'}
                 required
+                list={postFilter === 'Pintu Utama' && roomMaster.length ? 'roomMasterList' : undefined}
               />
             </div>
             <div className="field field-time">
@@ -548,8 +571,32 @@ export default function GuestsPage({ me }: { me: Me }) {
 
       <section className="card">
         <header className="card-header">
-          <div className="card-title">Daftar tamu</div>
-          <div className="muted">{loading ? 'Memuat...' : `${items.length} entri`}</div>
+          <div>
+            <div className="card-title">{view === 'inhouse' ? 'Tamu masih di dalam' : 'Riwayat tamu'}</div>
+            <div className="muted">{loading ? 'Memuat...' : `${items.length} entri`}</div>
+          </div>
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <button
+              className={`tab${view === 'inhouse' ? ' tab-active' : ''}`}
+              type="button"
+              onClick={() => {
+                setView('inhouse')
+                setOffset(0)
+              }}
+            >
+              Masih di dalam
+            </button>
+            <button
+              className={`tab${view === 'riwayat' ? ' tab-active' : ''}`}
+              type="button"
+              onClick={() => {
+                setView('riwayat')
+                setOffset(0)
+              }}
+            >
+              Riwayat
+            </button>
+          </div>
         </header>
         <div className="card-body">
           {loading && <LoadingScreen mode="inline" label="Loading..." minHeight={320} />}
@@ -558,12 +605,12 @@ export default function GuestsPage({ me }: { me: Me }) {
               <thead>
                 <tr>
                   <th>Nama</th>
-                  {postFilter === 'IGD' && <th>Instansi</th>}
+                  {view === 'riwayat' && postFilter === 'IGD' && <th>Instansi</th>}
                   <th>Tujuan</th>
-                  <th>Kartu</th>
-                  <th>Ditemui</th>
+                  {view === 'riwayat' && <th>Kartu</th>}
+                  {view === 'riwayat' && <th>Ditemui</th>}
                   <th>Masuk</th>
-                  <th>Keluar</th>
+                  {view === 'riwayat' && <th>Keluar</th>}
                   <th>Foto</th>
                   <th>Aksi</th>
                 </tr>
@@ -572,12 +619,16 @@ export default function GuestsPage({ me }: { me: Me }) {
                 {items.map((r) => (
                   <tr key={r.id} className={r.status === 'in' ? 'table-row-active' : r.status === 'void' ? 'table-row-void' : undefined}>
                     <td data-label="Nama">{r.name}</td>
-                    {postFilter === 'IGD' && <td data-label="Instansi">{r.instansi}</td>}
+                    {view === 'riwayat' && postFilter === 'IGD' && <td data-label="Instansi">{r.instansi}</td>}
                     <td data-label="Tujuan">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? (r.destination_room || '-') : (r.purpose || '-')}</td>
-                    <td data-label="Kartu">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? (r.visitor_card_no || '-') : '-'}</td>
-                    <td data-label="Ditemui">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? '-' : (r.meet_person || '-')}</td>
+                    {view === 'riwayat' && (
+                      <td data-label="Kartu">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? (r.visitor_card_no || '-') : '-'}</td>
+                    )}
+                    {view === 'riwayat' && (
+                      <td data-label="Ditemui">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? '-' : (r.meet_person || '-')}</td>
+                    )}
                     <td data-label="Masuk">{fmtTime(r.checkin_at)}</td>
-                    <td data-label="Keluar">{fmtTime(r.checkout_at)}</td>
+                    {view === 'riwayat' && <td data-label="Keluar">{fmtTime(r.checkout_at)}</td>}
                     <td data-label="Foto">
                       {r.has_photo && r.photo_url ? (
                         <button className="button button-sm button-secondary" type="button" onClick={() => openGuestPhotos(r)}>
@@ -593,8 +644,8 @@ export default function GuestsPage({ me }: { me: Me }) {
                       ) : (
                         <div className="card-actions">
                           {r.status === 'in' ? (
-                            <button className="button button-sm button-primary" type="button" onClick={() => checkout(r)}>
-                              ↗ Keluar
+                            <button className="button button-sm button-primary" type="button" onClick={() => checkout(r)} style={view === 'inhouse' ? { minHeight: 46, fontSize: 15 } : undefined}>
+                              Checkout
                             </button>
                           ) : canCorrect(r) ? (
                             <button className="button button-sm button-secondary" type="button" onClick={() => undoCheckout(r)}>
@@ -618,7 +669,7 @@ export default function GuestsPage({ me }: { me: Me }) {
                 ))}
                 {items.length === 0 && (
                   <tr>
-                    <td className="muted" colSpan={postFilter === 'IGD' ? 9 : 8}>
+                    <td className="muted" colSpan={view === 'riwayat' ? (postFilter === 'IGD' ? 9 : 8) : 5}>
                       Tidak ada data.
                     </td>
                   </tr>
@@ -632,17 +683,21 @@ export default function GuestsPage({ me }: { me: Me }) {
               <label className="label-sm">Cari</label>
               <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder={postFilter === 'IGD' ? 'Cari tamu / instansi...' : 'Cari tamu...'} />
             </div>
-            <div className="filter-group">
-              <label className="label-sm">Tanggal</label>
-              <input className="input input-sm" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-            </div>
-            <div className="filter-group">
-              <label className="label-sm">Urutan</label>
-              <select className="select select-sm" value={sort} onChange={(e) => setSort(e.target.value as any)}>
-                <option value="checkin_desc">Masuk terbaru</option>
-                <option value="checkin_asc">Masuk terlama</option>
-              </select>
-            </div>
+            {view === 'riwayat' && (
+              <div className="filter-group">
+                <label className="label-sm">Tanggal</label>
+                <input className="input input-sm" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              </div>
+            )}
+            {view === 'riwayat' && (
+              <div className="filter-group">
+                <label className="label-sm">Urutan</label>
+                <select className="select select-sm" value={sort} onChange={(e) => setSort(e.target.value as any)}>
+                  <option value="checkin_desc">Masuk terbaru</option>
+                  <option value="checkin_asc">Masuk terlama</option>
+                </select>
+              </div>
+            )}
             <div className="filter-group">
               <label className="label-sm">Limit</label>
               <select className="select select-sm" value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))}>
@@ -652,52 +707,67 @@ export default function GuestsPage({ me }: { me: Me }) {
               </select>
             </div>
             <div className="filter-actions">
-              <button className="button button-secondary button-sm" type="button" onClick={() => setDate(today)}>
-                Hari ini
-              </button>
-              <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
-                Semua
-              </button>
-              <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ q, date, sort, limit, post: postFilter, offset: 0, append: false })}>
-                Refresh
-              </button>
+              {view === 'riwayat' && (
+                <button className="button button-secondary button-sm" type="button" onClick={() => setDate(today)}>
+                  Hari ini
+                </button>
+              )}
+              {view === 'riwayat' && (
+                <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
+                  Semua
+                </button>
+              )}
               <button
                 className="button button-secondary button-sm"
                 type="button"
-                onClick={() =>
-                  downloadCsv(
-                    `tamu-${postFilter}-${date || 'semua'}.csv`,
-                    [['Nama', 'Instansi', 'Tujuan', 'Kartu', 'Ditemui', 'Masuk', 'Keluar', 'Keperluan', 'Foto', 'Petugas', 'Status', 'Alasan void']].concat(
-                      items.map((r) => [
-                        r.name,
-                        r.instansi,
-                        r.post === 'Pintu Utama' || r.post === 'Lobby' ? String(r.destination_room || '') : r.purpose,
-                        r.post === 'Pintu Utama' || r.post === 'Lobby' ? String(r.visitor_card_no || '') : '',
-                        r.post === 'Pintu Utama' || r.post === 'Lobby' ? '' : r.meet_person,
-                        fmtDateTime(r.checkin_at),
-                        fmtDateTime(r.checkout_at),
-                        r.notes || '',
-                        r.has_photo ? 'Ya' : 'Tidak',
-                        r.created_by_name || '-',
-                        r.status,
-                        r.void_reason || '',
-                      ]),
-                    ),
-                  )
-                }
+                onClick={() => {
+                  const status = view === 'inhouse' ? 'in' : 'all'
+                  const effectiveDate = view === 'inhouse' ? '' : date
+                  const effectiveSort = view === 'inhouse' ? 'checkin_asc' : sort
+                  refresh({ q, date: effectiveDate, sort: effectiveSort, limit, post: postFilter, status, offset: 0, append: false }).catch(() => {})
+                }}
               >
-                Export CSV
+                Refresh
               </button>
+              {view === 'riwayat' && (
+                <button
+                  className="button button-secondary button-sm"
+                  type="button"
+                  onClick={() =>
+                    downloadCsv(
+                      `tamu-${postFilter}-${date || 'semua'}.csv`,
+                      [['Nama', 'Instansi', 'Tujuan', 'Kartu', 'Ditemui', 'Masuk', 'Keluar', 'Keperluan', 'Foto', 'Petugas', 'Status', 'Alasan void']].concat(
+                        items.map((r) => [
+                          r.name,
+                          r.instansi,
+                          r.post === 'Pintu Utama' || r.post === 'Lobby' ? String(r.destination_room || '') : r.purpose,
+                          r.post === 'Pintu Utama' || r.post === 'Lobby' ? String(r.visitor_card_no || '') : '',
+                          r.post === 'Pintu Utama' || r.post === 'Lobby' ? '' : r.meet_person,
+                          fmtDateTime(r.checkin_at),
+                          fmtDateTime(r.checkout_at),
+                          r.notes || '',
+                          r.has_photo ? 'Ya' : 'Tidak',
+                          r.created_by_name || '-',
+                          r.status,
+                          r.void_reason || '',
+                        ]),
+                      ),
+                    )
+                  }
+                >
+                  Export CSV
+                </button>
+              )}
             </div>
           </div>
 
-          {hasMore && (
+          {view === 'riwayat' && hasMore && (
             <div className="row" style={{ justifyContent: 'center', marginTop: 12 }}>
               <button
                 className="button button-secondary"
                 type="button"
                 disabled={loading || loadingMore}
-                onClick={() => refresh({ q, date, sort, limit, post: postFilter, offset, append: true })}
+                onClick={() => refresh({ q, date, sort, limit, post: postFilter, status: 'all', offset, append: true })}
               >
                 {loadingMore ? 'Memuat...' : 'Muat lebih banyak'}
               </button>
@@ -755,7 +825,13 @@ export default function GuestsPage({ me }: { me: Me }) {
                 <input className="input" value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Nama" />
                 {editRow.post === 'Pintu Utama' || editRow.post === 'Lobby' ? (
                   <>
-                    <input className="input" value={editDestinationRoom} onChange={(e) => setEditDestinationRoom(e.target.value)} placeholder="Ruang tujuan" />
+                    <input
+                      className="input"
+                      value={editDestinationRoom}
+                      onChange={(e) => setEditDestinationRoom(e.target.value)}
+                      placeholder="Ruang tujuan"
+                      list={roomMaster.length ? 'roomMasterList' : undefined}
+                    />
                     <input className="input" value={editVisitorCardNo} onChange={(e) => setEditVisitorCardNo(e.target.value)} placeholder="No kartu penunggu" />
                   </>
                 ) : (
@@ -783,6 +859,13 @@ export default function GuestsPage({ me }: { me: Me }) {
       <button className="fab" type="button" onClick={() => document.getElementById('guestsForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
         + Tamu
       </button>
+      {roomMaster.length > 0 && (
+        <datalist id="roomMasterList">
+          {roomMaster.map((r) => (
+            <option key={r.id} value={r.name} />
+          ))}
+        </datalist>
+      )}
     </section>
   )
 }

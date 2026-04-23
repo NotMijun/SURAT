@@ -559,6 +559,35 @@ def _ensure_schema(conn) -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_key_master_active ON key_master(is_active, name)")
             cur.execute(
                 """
+                CREATE TABLE IF NOT EXISTS room_master (
+                  id BIGSERIAL PRIMARY KEY,
+                  name TEXT NOT NULL UNIQUE,
+                  name_norm TEXT NOT NULL UNIQUE,
+                  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                  created_by BIGINT REFERENCES users(id),
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_room_master_active ON room_master(is_active, name)")
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS pom_unit_master (
+                  id BIGSERIAL PRIMARY KEY,
+                  name TEXT NOT NULL UNIQUE,
+                  name_norm TEXT NOT NULL UNIQUE,
+                  sort_order INT NOT NULL DEFAULT 0,
+                  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                  created_by BIGINT REFERENCES users(id),
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_pom_unit_master_active ON pom_unit_master(is_active, sort_order, name)")
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS catering_vendors (
                   id BIGSERIAL PRIMARY KEY,
                   name TEXT NOT NULL UNIQUE,
@@ -951,6 +980,26 @@ class PatchKeyMasterBody(BaseModel):
     is_active: bool | None = None
 
 
+class CreateRoomMasterBody(BaseModel):
+    name: str
+
+
+class PatchRoomMasterBody(BaseModel):
+    name: str | None = None
+    is_active: bool | None = None
+
+
+class CreatePomUnitBody(BaseModel):
+    name: str
+    sort_order: int | None = None
+
+
+class PatchPomUnitBody(BaseModel):
+    name: str | None = None
+    sort_order: int | None = None
+    is_active: bool | None = None
+
+
 @app.get("/api/health")
 def health():
     try:
@@ -1122,6 +1171,22 @@ _POM_CATERING_UNITS_DEFAULT = [
     "MPP",
 ]
 
+def _pom_get_units(conn) -> list[str]:
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT name FROM pom_unit_master WHERE is_active=TRUE ORDER BY sort_order ASC, name ASC")
+            rows = cur.fetchall()
+        units: list[str] = []
+        for r in rows or []:
+            nm = str((r or {}).get("name") or "").strip()
+            if nm and len(nm) <= 80:
+                units.append(nm)
+        if units:
+            return units
+    except Exception:
+        pass
+    return list(_POM_CATERING_UNITS_DEFAULT)
+
 
 def _ymd_or_today(value: str) -> str:
     s = (value or "").strip()
@@ -1163,7 +1228,8 @@ def _pom_cell(value: PomCateringCellBody | None) -> dict[str, Any]:
     return {"jatah": jatah, "taken": taken, "person": person, "note": note}
 
 
-def _pom_rows_normalized(rows: Any) -> list[dict[str, Any]]:
+def _pom_rows_normalized(rows: Any, units: list[str] | None = None) -> list[dict[str, Any]]:
+    units_list = units or _POM_CATERING_UNITS_DEFAULT
     items: list[Any] = list(rows or []) if isinstance(rows, list) else []
     by_norm: dict[str, dict[str, Any]] = {}
     for r in items:
@@ -1195,7 +1261,7 @@ def _pom_rows_normalized(rows: Any) -> list[dict[str, Any]]:
         }
     result: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for unit in _POM_CATERING_UNITS_DEFAULT:
+    for unit in units_list:
         key = normalize_text(unit)
         row = by_norm.get(key)
         if row is None:
@@ -1209,7 +1275,7 @@ def _pom_rows_normalized(rows: Any) -> list[dict[str, Any]]:
             continue
         result.append(row)
     if not result:
-        for unit in _POM_CATERING_UNITS_DEFAULT:
+        for unit in units_list:
             result.append({"unit": unit, "jatah": 0, "taken": 0, "person": "", "note": ""})
     return result
 
@@ -1224,7 +1290,7 @@ def _pom_total_boxes_in(value: Any) -> int:
     return max(0, min(50_000, n))
 
 
-def _pom_upgrade_legacy_data(row_db: dict[str, Any], parsed: dict[str, Any], fallback_staff: str) -> dict[str, Any]:
+def _pom_upgrade_legacy_data(row_db: dict[str, Any], parsed: dict[str, Any], fallback_staff: str, units: list[str] | None = None) -> dict[str, Any]:
     legacy_rows = parsed.get("rows")
     if not isinstance(legacy_rows, list):
         legacy_rows = []
@@ -1242,7 +1308,7 @@ def _pom_upgrade_legacy_data(row_db: dict[str, Any], parsed: dict[str, Any], fal
             note = cell_src.get("note")
             cell = PomCateringCellBody(jatah=qty, taken=qty, person=None, note=note)
             tmp.append(PomCateringRowBody(unit=unit, cell=cell))
-        rows_norm = _pom_rows_normalized(tmp or None)
+        rows_norm = _pom_rows_normalized(tmp or None, units)
         blocks[shift_key] = {
             "staff_name": staff_name,
             "vendor_id": None,
@@ -1253,13 +1319,13 @@ def _pom_upgrade_legacy_data(row_db: dict[str, Any], parsed: dict[str, Any], fal
     return blocks
 
 
-def _pom_ensure_all_shifts(parsed: Any, default_staff: str) -> dict[str, Any]:
+def _pom_ensure_all_shifts(parsed: Any, default_staff: str, units: list[str] | None = None) -> dict[str, Any]:
     out: dict[str, Any] = {}
     src = parsed if isinstance(parsed, dict) else {}
     for shift_key in ("siang", "sore", "malam"):
         block_raw = src.get(shift_key) if isinstance(src.get(shift_key), dict) else {}
         staff_name = str((block_raw.get("staff_name") or default_staff or "")).strip()
-        rows_norm = _pom_rows_normalized(block_raw.get("rows"))
+        rows_norm = _pom_rows_normalized(block_raw.get("rows"), units)
         total_boxes_in = _pom_total_boxes_in(block_raw.get("total_boxes_in"))
         vendor_id_raw = block_raw.get("vendor_id")
         try:
@@ -1352,6 +1418,7 @@ def get_pom_catering_sheet(request: Request, date: str = "", shift: str = ""):
         d = _ymd_or_today(date)
         shift_key = _pom_shift_key(shift)
         default_staff = str(sess.get("display_name") or "")
+        units = _pom_get_units(conn)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT sheet_date, staff_name, data_json, updated_at FROM pom_catering_sheets WHERE sheet_date=%s", (d,))
             row = cur.fetchone()
@@ -1366,13 +1433,13 @@ def get_pom_catering_sheet(request: Request, date: str = "", shift: str = ""):
                 except Exception:
                     parsed_all = {}
             if isinstance(parsed_all.get("rows"), list):
-                parsed_all = _pom_upgrade_legacy_data(row, parsed_all, default_staff or (row.get("staff_name") or ""))
-            parsed_all = _pom_ensure_all_shifts(parsed_all, (row.get("staff_name") or default_staff))
+                parsed_all = _pom_upgrade_legacy_data(row, parsed_all, default_staff or (row.get("staff_name") or ""), units)
+            parsed_all = _pom_ensure_all_shifts(parsed_all, (row.get("staff_name") or default_staff), units)
         else:
-            parsed_all = _pom_ensure_all_shifts({}, default_staff)
+            parsed_all = _pom_ensure_all_shifts({}, default_staff, units)
         block = parsed_all.get(shift_key) or {}
         staff_name = str((block.get("staff_name") or (row.get("staff_name") if row else "") or default_staff) or "").strip()
-        rows_norm = _pom_rows_normalized(block.get("rows"))
+        rows_norm = _pom_rows_normalized(block.get("rows"), units)
         total_boxes_in = _pom_total_boxes_in(block.get("total_boxes_in"))
         vendor_id = block.get("vendor_id")
         vendor_name = block.get("vendor_name")
@@ -1395,7 +1462,8 @@ def save_pom_catering_sheet(body: SavePomCateringSheetBody, request: Request, da
         d = _ymd_or_today(date)
         shift_key = _pom_shift_key(shift)
         staff_name = _text_field(body.staff_name, field="Nama", max_len=80, default=str(sess.get("display_name") or "")).strip() or str(sess.get("display_name") or "")
-        rows_norm = _pom_rows_normalized(body.rows)
+        units = _pom_get_units(conn)
+        rows_norm = _pom_rows_normalized(body.rows, units)
         if len(rows_norm) > 200:
             raise HTTPException(status_code=400, detail="Terlalu banyak baris unit")
         total_boxes_in = _pom_total_boxes_in(body.total_boxes_in)
@@ -1429,10 +1497,10 @@ def save_pom_catering_sheet(body: SavePomCateringSheetBody, request: Request, da
                     except Exception:
                         parsed_all = {}
                 if isinstance(parsed_all.get("rows"), list):
-                    parsed_all = _pom_upgrade_legacy_data(row, parsed_all, staff_name)
+                    parsed_all = _pom_upgrade_legacy_data(row, parsed_all, staff_name, units)
             else:
                 parsed_all = {}
-            parsed_all = _pom_ensure_all_shifts(parsed_all, staff_name)
+            parsed_all = _pom_ensure_all_shifts(parsed_all, staff_name, units)
             block = parsed_all.get(shift_key) or {}
             block["staff_name"] = staff_name
             block["rows"] = rows_norm
@@ -1479,6 +1547,7 @@ def pom_catering_history(request: Request, limit: int = 60):
     with db_connect() as conn:
         sess = _require_session(conn, request)
         default_staff = str(sess.get("display_name") or "")
+        units = _pom_get_units(conn)
         limit_n = max(1, min(365, int(limit or 60)))
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
@@ -1504,13 +1573,13 @@ def pom_catering_history(request: Request, limit: int = 60):
                 except Exception:
                     parsed_all = {}
             if isinstance(parsed_all.get("rows"), list):
-                parsed_all = _pom_upgrade_legacy_data(row, parsed_all, default_staff or (row.get("staff_name") or ""))
-            parsed_all = _pom_ensure_all_shifts(parsed_all, (row.get("staff_name") or default_staff))
+                parsed_all = _pom_upgrade_legacy_data(row, parsed_all, default_staff or (row.get("staff_name") or ""), units)
+            parsed_all = _pom_ensure_all_shifts(parsed_all, (row.get("staff_name") or default_staff), units)
             for shift_key in ("siang", "sore", "malam"):
                 block = parsed_all.get(shift_key) or {}
                 vendor_name = block.get("vendor_name")
                 total_boxes_in = _pom_total_boxes_in(block.get("total_boxes_in"))
-                rows_norm = _pom_rows_normalized(block.get("rows"))
+                rows_norm = _pom_rows_normalized(block.get("rows"), units)
                 total_jatah = 0
                 total_taken = 0
                 for r in rows_norm:
@@ -1596,6 +1665,16 @@ def list_key_master(request: Request):
         _require_session(conn, request)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT id, name FROM key_master WHERE is_active=TRUE ORDER BY name ASC")
+            rows = cur.fetchall()
+        return {"items": rows}
+
+
+@app.get("/api/rooms/master")
+def list_room_master(request: Request):
+    with db_connect() as conn:
+        _require_session(conn, request)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT id, name FROM room_master WHERE is_active=TRUE ORDER BY name ASC")
             rows = cur.fetchall()
         return {"items": rows}
 
@@ -3418,6 +3497,200 @@ def admin_delete_key_master(key_id: int, request: Request):
         return {"ok": True}
 
 
+@app.get("/api/admin/rooms/master")
+def admin_list_room_master(request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        _require_role(sess, ("admin",))
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT id, name, is_active, created_at, updated_at FROM room_master ORDER BY name ASC")
+            rows = cur.fetchall()
+        return {"items": rows}
+
+
+@app.post("/api/admin/rooms/master")
+def admin_create_room_master(body: CreateRoomMasterBody, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        _require_role(sess, ("admin",))
+        name = _text_field(body.name, field="Nama ruangan", max_len=80)
+        if not name:
+            raise HTTPException(status_code=400, detail="Nama ruangan wajib diisi")
+        norm = normalize_text(name)
+        now = utc_now_iso()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO room_master(name, name_norm, is_active, created_by, created_at, updated_at) VALUES (%s,%s,TRUE,%s,%s,%s) RETURNING id",
+                    (name, norm, int(sess["user_id"]), now, now),
+                )
+                rid = int(cur.fetchone()[0])
+                _audit(conn, sess, "auth", str(rid), "room_master_create", None, {"id": rid, "name": name, "is_active": True})
+            conn.commit()
+            return {"ok": True, "id": rid}
+        except psycopg2.IntegrityError:
+            conn.rollback()
+            raise HTTPException(status_code=409, detail="Nama ruangan sudah ada")
+
+
+@app.patch("/api/admin/rooms/master/{room_id}")
+def admin_patch_room_master(room_id: int, body: PatchRoomMasterBody, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        _require_role(sess, ("admin",))
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM room_master WHERE id=%s", (int(room_id),))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Ruangan tidak ditemukan")
+            before = dict(row)
+            updates: dict[str, Any] = {}
+            if body.name is not None:
+                nm = _text_field(body.name, field="Nama ruangan", max_len=80)
+                if not nm:
+                    raise HTTPException(status_code=400, detail="Nama ruangan wajib diisi")
+                updates["name"] = nm
+                updates["name_norm"] = normalize_text(nm)
+            if body.is_active is not None:
+                updates["is_active"] = bool(body.is_active)
+            if not updates:
+                return {"ok": True}
+            updates["updated_at"] = utc_now_iso()
+            cols = ", ".join([f"{k}=%s" for k in updates.keys()])
+            params = list(updates.values()) + [int(room_id)]
+            try:
+                cur.execute(f"UPDATE room_master SET {cols} WHERE id=%s", tuple(params))
+            except psycopg2.IntegrityError:
+                raise HTTPException(status_code=409, detail="Nama ruangan sudah dipakai")
+            cur.execute("SELECT * FROM room_master WHERE id=%s", (int(room_id),))
+            after = dict(cur.fetchone())
+            _audit(conn, sess, "auth", str(room_id), "room_master_update", before, after)
+        conn.commit()
+        return {"ok": True}
+
+
+@app.delete("/api/admin/rooms/master/{room_id}")
+def admin_delete_room_master(room_id: int, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        _require_role(sess, ("admin",))
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM room_master WHERE id=%s", (int(room_id),))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Ruangan tidak ditemukan")
+            before = dict(row)
+            now = utc_now_iso()
+            cur.execute("UPDATE room_master SET is_active=FALSE, updated_at=%s WHERE id=%s", (now, int(room_id)))
+            cur.execute("SELECT * FROM room_master WHERE id=%s", (int(room_id),))
+            after = dict(cur.fetchone())
+            _audit(conn, sess, "auth", str(room_id), "room_master_disable", before, after)
+        conn.commit()
+        return {"ok": True}
+
+
+@app.get("/api/admin/pom_units")
+def admin_list_pom_units(request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        _require_role(sess, ("admin",))
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT id, name, sort_order, is_active, created_at, updated_at FROM pom_unit_master ORDER BY sort_order ASC, name ASC")
+            rows = cur.fetchall()
+        return {"items": rows}
+
+
+@app.post("/api/admin/pom_units")
+def admin_create_pom_unit(body: CreatePomUnitBody, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        _require_role(sess, ("admin",))
+        name = _text_field(body.name, field="Nama unit", max_len=80)
+        if not name:
+            raise HTTPException(status_code=400, detail="Nama unit wajib diisi")
+        try:
+            order = int(body.sort_order) if body.sort_order is not None else 0
+        except Exception:
+            order = 0
+        order = max(-10_000, min(10_000, order))
+        norm = normalize_text(name)
+        now = utc_now_iso()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO pom_unit_master(name, name_norm, sort_order, is_active, created_by, created_at, updated_at) VALUES (%s,%s,%s,TRUE,%s,%s,%s) RETURNING id",
+                    (name, norm, int(order), int(sess["user_id"]), now, now),
+                )
+                pid = int(cur.fetchone()[0])
+                _audit(conn, sess, "auth", str(pid), "pom_unit_master_create", None, {"id": pid, "name": name, "sort_order": order, "is_active": True})
+            conn.commit()
+            return {"ok": True, "id": pid}
+        except psycopg2.IntegrityError:
+            conn.rollback()
+            raise HTTPException(status_code=409, detail="Nama unit sudah ada")
+
+
+@app.patch("/api/admin/pom_units/{unit_id}")
+def admin_patch_pom_unit(unit_id: int, body: PatchPomUnitBody, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        _require_role(sess, ("admin",))
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM pom_unit_master WHERE id=%s", (int(unit_id),))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Unit tidak ditemukan")
+            before = dict(row)
+            updates: dict[str, Any] = {}
+            if body.name is not None:
+                nm = _text_field(body.name, field="Nama unit", max_len=80)
+                if not nm:
+                    raise HTTPException(status_code=400, detail="Nama unit wajib diisi")
+                updates["name"] = nm
+                updates["name_norm"] = normalize_text(nm)
+            if body.sort_order is not None:
+                try:
+                    updates["sort_order"] = max(-10_000, min(10_000, int(body.sort_order)))
+                except Exception:
+                    updates["sort_order"] = 0
+            if body.is_active is not None:
+                updates["is_active"] = bool(body.is_active)
+            if not updates:
+                return {"ok": True}
+            updates["updated_at"] = utc_now_iso()
+            cols = ", ".join([f"{k}=%s" for k in updates.keys()])
+            params = list(updates.values()) + [int(unit_id)]
+            try:
+                cur.execute(f"UPDATE pom_unit_master SET {cols} WHERE id=%s", tuple(params))
+            except psycopg2.IntegrityError:
+                raise HTTPException(status_code=409, detail="Nama unit sudah dipakai")
+            cur.execute("SELECT * FROM pom_unit_master WHERE id=%s", (int(unit_id),))
+            after = dict(cur.fetchone())
+            _audit(conn, sess, "auth", str(unit_id), "pom_unit_master_update", before, after)
+        conn.commit()
+        return {"ok": True}
+
+
+@app.delete("/api/admin/pom_units/{unit_id}")
+def admin_delete_pom_unit(unit_id: int, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        _require_role(sess, ("admin",))
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM pom_unit_master WHERE id=%s", (int(unit_id),))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Unit tidak ditemukan")
+            before = dict(row)
+            now = utc_now_iso()
+            cur.execute("UPDATE pom_unit_master SET is_active=FALSE, updated_at=%s WHERE id=%s", (now, int(unit_id)))
+            cur.execute("SELECT * FROM pom_unit_master WHERE id=%s", (int(unit_id),))
+            after = dict(cur.fetchone())
+            _audit(conn, sess, "auth", str(unit_id), "pom_unit_master_disable", before, after)
+        conn.commit()
+        return {"ok": True}
+
+
 @app.post("/api/admin/users")
 def admin_create_user(body: CreateUserBody, request: Request):
     with db_connect() as conn:
@@ -3521,13 +3794,25 @@ def admin_reset_password(user_id: str, request: Request):
 
 
 @app.get("/api/admin/audit")
-def admin_audit(request: Request, q: str = "", table_name: str = "", record_id: str = "", limit: int = 100):
+def admin_audit(
+    request: Request,
+    q: str = "",
+    table_name: str = "",
+    record_id: str = "",
+    actor_user_id: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    limit: int = 100,
+):
     with db_connect() as conn:
         sess = _require_session(conn, request)
         _require_role(sess, ("admin",))
         qn = normalize_text(q)
         tn = normalize_text(table_name)
         rid = (record_id or "").strip()
+        auid = (actor_user_id or "").strip()
+        b_from = _day_bounds(date_from)
+        b_to = _day_bounds(date_to)
         limit = max(1, min(200, int(limit or 100)))
         base = """
           SELECT
@@ -3584,6 +3869,14 @@ def admin_audit(request: Request, q: str = "", table_name: str = "", record_id: 
         if rid:
             filters.append("COALESCE(a.target_key_transaction_id, a.target_guest_entry_id, a.target_mutasi_entry_id, a.target_task_entry_id, a.target_user_id) = CAST(%s AS BIGINT)")
             params.append(rid)
+        if auid:
+            filters.append("a.actor_user_id = CAST(%s AS BIGINT)")
+            params.append(auid)
+        if b_from or b_to:
+            start = b_from[0] if b_from else b_to[0]
+            end = b_to[1] if b_to else b_from[1]
+            filters.append("a.created_at BETWEEN %s AND %s")
+            params.extend([start, end])
         if qn:
             filters.append(
                 """(
