@@ -744,15 +744,36 @@ export default function TasksPage({ me }: { me: Me }) {
                 <label className="label" htmlFor="pomTotalIn">
                   Total box datang (hari ini)
                 </label>
-                <input
-                  className="input"
-                  id="pomTotalIn"
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={pomTotalBoxesIn}
-                  onChange={(e) => setPomTotalBoxesIn(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                />
+                <div className="number-stepper">
+                  <button
+                    className="stepper-btn"
+                    type="button"
+                    onClick={() => setPomTotalBoxesIn((n) => Math.max(0, (parseInt(String(n), 10) || 0) - 1))}
+                    disabled={pomLoading || pomSaving}
+                    aria-label="Kurangi total box datang"
+                  >
+                    -
+                  </button>
+                  <input
+                    className="input"
+                    id="pomTotalIn"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={pomTotalBoxesIn}
+                    onChange={(e) => setPomTotalBoxesIn(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    disabled={pomLoading || pomSaving}
+                  />
+                  <button
+                    className="stepper-btn"
+                    type="button"
+                    onClick={() => setPomTotalBoxesIn((n) => Math.max(0, (parseInt(String(n), 10) || 0) + 1))}
+                    disabled={pomLoading || pomSaving}
+                    aria-label="Tambah total box datang"
+                  >
+                    +
+                  </button>
+                </div>
               </div>
               <div className="card" style={{ padding: 12, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--soft-bg)' }}>
                 <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Ringkasan shift ini</div>
@@ -795,28 +816,66 @@ export default function TasksPage({ me }: { me: Me }) {
                         <td>{idx + 1}</td>
                         <td>{r.unit}</td>
                         <td>
-                          <input
-                            className="input input-sm"
-                            type="number"
-                            min={0}
-                            step={1}
-                            value={r.jatah}
-                            onChange={(e) => setPomRow(idx, { jatah: Math.max(0, parseInt(e.target.value, 10) || 0) })}
-                            disabled={!isEditing}
-                            style={{ width: 90 }}
-                          />
+                          <div className="number-stepper number-stepper-sm">
+                            <button
+                              className="stepper-btn stepper-btn-sm"
+                              type="button"
+                              onClick={() => setPomRow(idx, { jatah: Math.max(0, (parseInt(String(r.jatah), 10) || 0) - 1) })}
+                              disabled={!isEditing}
+                              aria-label={`Kurangi jatah ${r.unit}`}
+                            >
+                              -
+                            </button>
+                            <input
+                              className="input input-sm"
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={r.jatah}
+                              onChange={(e) => setPomRow(idx, { jatah: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                              disabled={!isEditing}
+                            />
+                            <button
+                              className="stepper-btn stepper-btn-sm"
+                              type="button"
+                              onClick={() => setPomRow(idx, { jatah: Math.max(0, (parseInt(String(r.jatah), 10) || 0) + 1) })}
+                              disabled={!isEditing}
+                              aria-label={`Tambah jatah ${r.unit}`}
+                            >
+                              +
+                            </button>
+                          </div>
                         </td>
                         <td>
-                          <input
-                            className="input input-sm"
-                            type="number"
-                            min={0}
-                            step={1}
-                            value={r.taken}
-                            onChange={(e) => setPomRow(idx, { taken: Math.max(0, parseInt(e.target.value, 10) || 0) })}
-                            disabled={!isEditing}
-                            style={{ width: 110 }}
-                          />
+                          <div className="number-stepper number-stepper-sm">
+                            <button
+                              className="stepper-btn stepper-btn-sm"
+                              type="button"
+                              onClick={() => setPomRow(idx, { taken: Math.max(0, (parseInt(String(r.taken), 10) || 0) - 1) })}
+                              disabled={!isEditing}
+                              aria-label={`Kurangi jumlah diambil ${r.unit}`}
+                            >
+                              -
+                            </button>
+                            <input
+                              className="input input-sm"
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={r.taken}
+                              onChange={(e) => setPomRow(idx, { taken: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                              disabled={!isEditing}
+                            />
+                            <button
+                              className="stepper-btn stepper-btn-sm"
+                              type="button"
+                              onClick={() => setPomRow(idx, { taken: Math.max(0, (parseInt(String(r.taken), 10) || 0) + 1) })}
+                              disabled={!isEditing}
+                              aria-label={`Tambah jumlah diambil ${r.unit}`}
+                            >
+                              +
+                            </button>
+                          </div>
                         </td>
                         <td>
                           <input
@@ -944,15 +1003,34 @@ export default function TasksPage({ me }: { me: Me }) {
                     <label className="label" htmlFor="taskPomBoxCount">
                       Jumlah box
                     </label>
-                    <input
-                      className="input"
-                      id="taskPomBoxCount"
-                      type="number"
-                      min={0}
-                      step={1}
-                      value={boxCount}
-                      onChange={(e) => setBoxCount(e.target.value)}
-                    />
+                    <div className="number-stepper">
+                      <button
+                        className="stepper-btn"
+                        type="button"
+                        onClick={() => setBoxCount(String(Math.max(0, (parseInt(boxCount, 10) || 0) - 1)))}
+                        aria-label="Kurangi jumlah box"
+                      >
+                        -
+                      </button>
+                      <input
+                        className="input"
+                        id="taskPomBoxCount"
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={boxCount}
+                        onChange={(e) => setBoxCount(e.target.value)}
+                        placeholder="0"
+                      />
+                      <button
+                        className="stepper-btn"
+                        type="button"
+                        onClick={() => setBoxCount(String((parseInt(boxCount, 10) || 0) + 1))}
+                        aria-label="Tambah jumlah box"
+                      >
+                        +
+                      </button>
+                    </div>
                   </div>
                 </>
               )}
@@ -1419,7 +1497,36 @@ export default function TasksPage({ me }: { me: Me }) {
                     </div>
                     <div className="field">
                       <label className="label">Box</label>
-                      <input className="input" type="number" value={editBoxCount} onChange={(e) => setEditBoxCount(e.target.value)} />
+                      <div className="number-stepper">
+                        <button
+                          className="stepper-btn"
+                          type="button"
+                          onClick={() => setEditBoxCount(String(Math.max(0, (parseInt(editBoxCount, 10) || 0) - 1)))}
+                          disabled={busy}
+                          aria-label="Kurangi box"
+                        >
+                          -
+                        </button>
+                        <input
+                          className="input"
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={editBoxCount}
+                          onChange={(e) => setEditBoxCount(e.target.value)}
+                          placeholder="0"
+                          disabled={busy}
+                        />
+                        <button
+                          className="stepper-btn"
+                          type="button"
+                          onClick={() => setEditBoxCount(String((parseInt(editBoxCount, 10) || 0) + 1))}
+                          disabled={busy}
+                          aria-label="Tambah box"
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
                     <div className="field">
                       <label className="label">Status POM</label>
@@ -1436,15 +1543,102 @@ export default function TasksPage({ me }: { me: Me }) {
                   <>
                     <div className="field">
                       <label className="label">Dipakai</label>
-                      <input className="input" type="number" value={editGalonUsed} onChange={(e) => setEditGalonUsed(e.target.value)} />
+                      <div className="number-stepper">
+                        <button
+                          className="stepper-btn"
+                          type="button"
+                          onClick={() => setEditGalonUsed(String(Math.max(0, (parseInt(editGalonUsed, 10) || 0) - 1)))}
+                          disabled={busy}
+                          aria-label="Kurangi galon dipakai"
+                        >
+                          -
+                        </button>
+                        <input
+                          className="input"
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={editGalonUsed}
+                          onChange={(e) => setEditGalonUsed(e.target.value)}
+                          placeholder="0"
+                          disabled={busy}
+                        />
+                        <button
+                          className="stepper-btn"
+                          type="button"
+                          onClick={() => setEditGalonUsed(String((parseInt(editGalonUsed, 10) || 0) + 1))}
+                          disabled={busy}
+                          aria-label="Tambah galon dipakai"
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
                     <div className="field">
                       <label className="label">Tidak Dipakai</label>
-                      <input className="input" type="number" value={editGalonUnused} onChange={(e) => setEditGalonUnused(e.target.value)} />
+                      <div className="number-stepper">
+                        <button
+                          className="stepper-btn"
+                          type="button"
+                          onClick={() => setEditGalonUnused(String(Math.max(0, (parseInt(editGalonUnused, 10) || 0) - 1)))}
+                          disabled={busy}
+                          aria-label="Kurangi galon tidak dipakai"
+                        >
+                          -
+                        </button>
+                        <input
+                          className="input"
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={editGalonUnused}
+                          onChange={(e) => setEditGalonUnused(e.target.value)}
+                          placeholder="0"
+                          disabled={busy}
+                        />
+                        <button
+                          className="stepper-btn"
+                          type="button"
+                          onClick={() => setEditGalonUnused(String((parseInt(editGalonUnused, 10) || 0) + 1))}
+                          disabled={busy}
+                          aria-label="Tambah galon tidak dipakai"
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
                     <div className="field">
                       <label className="label">Dikembalikan</label>
-                      <input className="input" type="number" value={editGalonReturned} onChange={(e) => setEditGalonReturned(e.target.value)} />
+                      <div className="number-stepper">
+                        <button
+                          className="stepper-btn"
+                          type="button"
+                          onClick={() => setEditGalonReturned(String(Math.max(0, (parseInt(editGalonReturned, 10) || 0) - 1)))}
+                          disabled={busy}
+                          aria-label="Kurangi galon dikembalikan"
+                        >
+                          -
+                        </button>
+                        <input
+                          className="input"
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={editGalonReturned}
+                          onChange={(e) => setEditGalonReturned(e.target.value)}
+                          placeholder="0"
+                          disabled={busy}
+                        />
+                        <button
+                          className="stepper-btn"
+                          type="button"
+                          onClick={() => setEditGalonReturned(String((parseInt(editGalonReturned, 10) || 0) + 1))}
+                          disabled={busy}
+                          aria-label="Tambah galon dikembalikan"
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
                     <div className="field">
                       <label className="label">Ke</label>

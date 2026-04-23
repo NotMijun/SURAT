@@ -666,6 +666,9 @@ html[data-focus="keyboard"] .button:focus-visible,html[data-focus="keyboard"] .t
   width: 70px;
   text-align: center;
 }
+.number-stepper-sm .input {
+  width: 56px;
+}
 .stepper-btn {
   width: 36px;
   height: 36px;
@@ -680,6 +683,11 @@ html[data-focus="keyboard"] .button:focus-visible,html[data-focus="keyboard"] .t
   font-weight: bold;
   font-size: 18px;
   transition: all 0.2s;
+}
+.stepper-btn-sm {
+  width: 30px;
+  height: 30px;
+  font-size: 16px;
 }
 .stepper-btn:hover {
   background: var(--button-hover);
