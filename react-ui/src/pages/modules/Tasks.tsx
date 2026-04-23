@@ -156,6 +156,27 @@ export default function TasksPage({ me }: { me: Me }) {
     [date, me.user.display_name, pomNormalizeRows, pomShift, today],
   )
 
+  const openPomSheetFromLog = useCallback(
+    async (sheetDate: any, sheetShift: any) => {
+      const d = String(sheetDate || '').trim()
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+        toast.push('Tanggal sheet tidak valid', 'error')
+        return
+      }
+      const sRaw = String(sheetShift || '').toLowerCase()
+      const s: PomShiftKey = sRaw.startsWith('so') ? 'sore' : sRaw.startsWith('ma') ? 'malam' : 'siang'
+      setTab('pom')
+      try {
+        await loadPomSheet(s, d)
+        window.setTimeout(() => document.getElementById('pomSheet')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+        toast.push(`Sheet ${d} (${s === 'siang' ? 'Siang' : s === 'sore' ? 'Sore' : 'Malam'}) dimuat`, 'success')
+      } catch (err: any) {
+        toast.push(String(err?.message || err || 'Gagal membuka sheet'), 'error')
+      }
+    },
+    [loadPomSheet, toast],
+  )
+
   const loadPomHistory = useCallback(async () => {
     setPomHistoryLoading(true)
     try {
@@ -1204,46 +1225,60 @@ export default function TasksPage({ me }: { me: Me }) {
                 </tr>
               </thead>
               <tbody>
-                {viewItems.map((r) => (
-                  <tr key={r.id} className={r.status === 'void' ? 'table-row-void' : undefined}>
-                    <td data-label="Waktu">{fmtDateTime(r.occurred_at)}</td>
-                    <td data-label="Jenis">{r.kind}</td>
-                    <td data-label="Tujuan">{r.destination}</td>
-                    <td data-label="Detail">{renderDetails(r) || <span className="muted">-</span>}</td>
-                    <td data-label="Catatan">
-                      {r.notes}
-                      {r.status === 'void' && r.void_reason ? <div className="muted">Void: {r.void_reason}</div> : null}
-                    </td>
-                    <td data-label="Status">{r.status === 'void' ? <span className="badge badge-danger">Void</span> : <span className="badge badge-ok">Aktif</span>}</td>
-                    <td data-label="Foto">
-                      {r.has_photo && r.photo_url ? (
-                        <button className="button button-sm button-secondary" type="button" onClick={() => openTaskPhotos(r)}>
-                          {typeof r.photo_count === 'number' && r.photo_count > 1 ? `Foto (${r.photo_count})` : 'Foto'}
-                        </button>
-                      ) : (
-                        <span className="muted">-</span>
-                      )}
-                    </td>
-                    <td data-label="Petugas">{r.created_by_name || '-'}</td>
-                    {canAdmin && (
-                      <td data-label="Aksi">
-                        <div className="card-actions">
-                          {r.status !== 'void' && (
-                            <>
-                              <button className="button button-sm button-secondary" type="button" onClick={() => doEdit(r)}>
-                                ✎ Edit
-                              </button>
-                              <button className="button button-sm button-void" type="button" onClick={() => doVoid(r)}>
-                                ✕ Void
-                              </button>
-                            </>
-                          )}
-                          {r.status === 'void' && <span className="muted">—</span>}
-                        </div>
+                {viewItems.map((r) => {
+                  const detailText = renderDetails(r)
+                  const e: any = r.extra || {}
+                  const canOpenSheet = isPom(r.kind) && e.source === 'sheet' && e.sheet_date && e.sheet_shift
+                  return (
+                    <tr key={r.id} className={r.status === 'void' ? 'table-row-void' : undefined}>
+                      <td data-label="Waktu">{fmtDateTime(r.occurred_at)}</td>
+                      <td data-label="Jenis">{r.kind}</td>
+                      <td data-label="Tujuan">{r.destination}</td>
+                      <td data-label="Detail">
+                        {detailText ? detailText : <span className="muted">-</span>}
+                        {canOpenSheet && (
+                          <div style={{ marginTop: 6 }}>
+                            <button className="button button-sm button-secondary" type="button" onClick={() => openPomSheetFromLog(e.sheet_date, e.sheet_shift)}>
+                              Lihat sheet
+                            </button>
+                          </div>
+                        )}
                       </td>
-                    )}
-                  </tr>
-                ))}
+                      <td data-label="Catatan">
+                        {r.notes}
+                        {r.status === 'void' && r.void_reason ? <div className="muted">Void: {r.void_reason}</div> : null}
+                      </td>
+                      <td data-label="Status">{r.status === 'void' ? <span className="badge badge-danger">Void</span> : <span className="badge badge-ok">Aktif</span>}</td>
+                      <td data-label="Foto">
+                        {r.has_photo && r.photo_url ? (
+                          <button className="button button-sm button-secondary" type="button" onClick={() => openTaskPhotos(r)}>
+                            {typeof r.photo_count === 'number' && r.photo_count > 1 ? `Foto (${r.photo_count})` : 'Foto'}
+                          </button>
+                        ) : (
+                          <span className="muted">-</span>
+                        )}
+                      </td>
+                      <td data-label="Petugas">{r.created_by_name || '-'}</td>
+                      {canAdmin && (
+                        <td data-label="Aksi">
+                          <div className="card-actions">
+                            {r.status !== 'void' && (
+                              <>
+                                <button className="button button-sm button-secondary" type="button" onClick={() => doEdit(r)}>
+                                  ✎ Edit
+                                </button>
+                                <button className="button button-sm button-void" type="button" onClick={() => doVoid(r)}>
+                                  ✕ Void
+                                </button>
+                              </>
+                            )}
+                            {r.status === 'void' && <span className="muted">—</span>}
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
                 {viewItems.length === 0 && (
                   <tr>
                     <td className="muted" colSpan={canAdmin ? 9 : 8}>
