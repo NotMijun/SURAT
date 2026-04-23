@@ -1392,6 +1392,68 @@ def save_pom_catering_sheet(body: SavePomCateringSheetBody, request: Request, da
         return {"ok": True, "date": d, "shift": shift_key, "updated_at": now}
 
 
+@app.get("/api/pom_catering/history")
+def pom_catering_history(request: Request, limit: int = 60):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        default_staff = str(sess.get("display_name") or "")
+        limit_n = max(1, min(365, int(limit or 60)))
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT sheet_date, staff_name, data_json, updated_at
+                FROM pom_catering_sheets
+                ORDER BY sheet_date DESC
+                LIMIT %s
+                """,
+                (limit_n,),
+            )
+            rows = cur.fetchall()
+
+        items: list[dict[str, Any]] = []
+        for row in rows or []:
+            d = str(row.get("sheet_date") or "").strip()
+            updated_at = str(row.get("updated_at") or "").strip()
+            data_raw = str((row.get("data_json") or "")).strip()
+            parsed_all: dict[str, Any] = {}
+            if data_raw:
+                try:
+                    parsed_all = json.loads(data_raw)
+                except Exception:
+                    parsed_all = {}
+            if isinstance(parsed_all.get("rows"), list):
+                parsed_all = _pom_upgrade_legacy_data(row, parsed_all, default_staff or (row.get("staff_name") or ""))
+            parsed_all = _pom_ensure_all_shifts(parsed_all, (row.get("staff_name") or default_staff))
+            for shift_key in ("siang", "sore", "malam"):
+                block = parsed_all.get(shift_key) or {}
+                vendor_name = block.get("vendor_name")
+                total_boxes_in = _pom_total_boxes_in(block.get("total_boxes_in"))
+                rows_norm = _pom_rows_normalized(block.get("rows"))
+                total_jatah = 0
+                total_taken = 0
+                for r in rows_norm:
+                    try:
+                        total_jatah += int(r.get("jatah") or 0)
+                    except Exception:
+                        pass
+                    try:
+                        total_taken += int(r.get("taken") or 0)
+                    except Exception:
+                        pass
+                items.append(
+                    {
+                        "date": d,
+                        "shift": shift_key,
+                        "vendor_name": vendor_name,
+                        "total_boxes_in": total_boxes_in,
+                        "total_jatah": int(total_jatah),
+                        "total_taken": int(total_taken),
+                        "updated_at": updated_at,
+                    }
+                )
+        return {"items": items}
+
+
 @app.post("/api/logout")
 def logout(request: Request):
     with db_connect() as conn:

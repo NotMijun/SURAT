@@ -68,6 +68,15 @@ export default function TasksPage({ me }: { me: Me }) {
     updated_at: string
   }
   type CateringVendor = { id: number | null; name: string }
+  type PomHistoryItem = {
+    date: string
+    shift: PomShiftKey
+    vendor_name: string | null
+    total_boxes_in: number
+    total_jatah: number
+    total_taken: number
+    updated_at: string
+  }
   const [pomShift, setPomShift] = useState<PomShiftKey>('siang')
   const [pomStaffName, setPomStaffName] = useState(me.user.display_name)
   const [pomRows, setPomRows] = useState<PomRow[]>([])
@@ -79,6 +88,8 @@ export default function TasksPage({ me }: { me: Me }) {
   const [pomError, setPomError] = useState('')
   const [cateringVendors, setCateringVendors] = useState<CateringVendor[]>([])
   const [pomEditRowIdx, setPomEditRowIdx] = useState<number | null>(null)
+  const [pomHistoryItems, setPomHistoryItems] = useState<PomHistoryItem[]>([])
+  const [pomHistoryLoading, setPomHistoryLoading] = useState(false)
 
   const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number }) => {
     const { q, date, sort, limit } = opts
@@ -119,13 +130,14 @@ export default function TasksPage({ me }: { me: Me }) {
   }, [])
 
   const loadPomSheet = useCallback(
-    async (shift?: PomShiftKey) => {
-      const d = date || today
+    async (shift?: PomShiftKey, dateOverride?: string) => {
+      const d = dateOverride || date || today
       const s = shift || pomShift
       setPomLoading(true)
       try {
         const res = await apiGet<PomSheetRes>(`/api/pom_catering/sheet?date=${encodeURIComponent(d)}&shift=${encodeURIComponent(s)}`)
         const nextShift = (res.shift as PomShiftKey) || s
+        if (dateOverride) setDate(d)
         setPomShift(nextShift)
         setPomStaffName(String(res.staff_name || '').trim() || me.user.display_name)
         setPomRows(pomNormalizeRows(res.rows))
@@ -144,10 +156,36 @@ export default function TasksPage({ me }: { me: Me }) {
     [date, me.user.display_name, pomNormalizeRows, pomShift, today],
   )
 
+  const loadPomHistory = useCallback(async () => {
+    setPomHistoryLoading(true)
+    try {
+      const res = await apiGet<{ items: PomHistoryItem[] }>('/api/pom_catering/history?limit=60')
+      const list = Array.isArray(res.items) ? res.items : []
+      setPomHistoryItems(
+        list
+          .map((x) => ({
+            date: String((x as any).date || ''),
+            shift: (String((x as any).shift || '') as PomShiftKey) || 'siang',
+            vendor_name: (x as any).vendor_name != null ? String((x as any).vendor_name) : null,
+            total_boxes_in: Math.max(0, parseInt(String((x as any).total_boxes_in ?? 0), 10) || 0),
+            total_jatah: Math.max(0, parseInt(String((x as any).total_jatah ?? 0), 10) || 0),
+            total_taken: Math.max(0, parseInt(String((x as any).total_taken ?? 0), 10) || 0),
+            updated_at: String((x as any).updated_at || ''),
+          }))
+          .filter((x) => x.date && (x.shift === 'siang' || x.shift === 'sore' || x.shift === 'malam')),
+      )
+    } catch {
+      setPomHistoryItems([])
+    } finally {
+      setPomHistoryLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (tab !== 'pom') return
     loadPomSheet().catch(() => {})
-  }, [loadPomSheet, tab])
+    loadPomHistory().catch(() => {})
+  }, [loadPomHistory, loadPomSheet, tab])
 
   const setPomRow = useCallback((rowIdx: number, patch: Partial<PomRow>) => {
     setPomRows((prev) =>
@@ -186,6 +224,7 @@ export default function TasksPage({ me }: { me: Me }) {
       setPomUpdatedAt(String(res.updated_at || ''))
       toast.push('Sheet POM tersimpan', 'success')
       setPomEditRowIdx(null)
+      loadPomHistory().catch(() => {})
       setPomError('')
     } catch (err: any) {
       const msg = String(err?.message || err || 'Gagal menyimpan sheet POM')
@@ -194,7 +233,7 @@ export default function TasksPage({ me }: { me: Me }) {
     } finally {
       setPomSaving(false)
     }
-  }, [date, pomRows, pomSaving, pomShift, pomStaffName, pomTotalBoxesIn, pomVendorName, toast, today])
+  }, [date, loadPomHistory, pomRows, pomSaving, pomShift, pomStaffName, pomTotalBoxesIn, pomVendorName, toast, today])
 
   useEffect(() => {
     const loadVendors = async () => {
@@ -1060,9 +1099,74 @@ export default function TasksPage({ me }: { me: Me }) {
         </section>
       )}
 
+      {tab === 'pom' && (
+        <section className="card">
+          <header className="card-header">
+            <div className="card-title">Riwayat sheet POM</div>
+            <div className="muted">{pomHistoryLoading ? 'Memuat...' : `${pomHistoryItems.length} entri (per shift)`}</div>
+          </header>
+          <div className="card-body">
+            {pomHistoryLoading && <LoadingScreen mode="inline" label="Loading..." minHeight={260} />}
+            <div className="table-wrap" aria-hidden={pomHistoryLoading}>
+              <table className="table table-mobile-cards">
+                <thead>
+                  <tr>
+                    <th>Tanggal</th>
+                    <th>Shift</th>
+                    <th>Vendor</th>
+                    <th>Total datang</th>
+                    <th>Total jatah</th>
+                    <th>Total diambil</th>
+                    <th>Update</th>
+                    <th>Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pomHistoryItems.map((h) => (
+                    <tr key={`${h.date}:${h.shift}`}>
+                      <td data-label="Tanggal">{h.date}</td>
+                      <td data-label="Shift">{h.shift === 'siang' ? 'Siang' : h.shift === 'sore' ? 'Sore' : 'Malam'}</td>
+                      <td data-label="Vendor">{h.vendor_name || <span className="muted">-</span>}</td>
+                      <td data-label="Total datang">{h.total_boxes_in}</td>
+                      <td data-label="Total jatah">{h.total_jatah}</td>
+                      <td data-label="Total diambil">{h.total_taken}</td>
+                      <td data-label="Update">{h.updated_at ? fmtTime(h.updated_at) : <span className="muted">-</span>}</td>
+                      <td data-label="Aksi">
+                        <div className="card-actions">
+                          <button
+                            className="button button-sm button-secondary"
+                            type="button"
+                            onClick={() => loadPomSheet(h.shift, h.date).catch(() => {})}
+                            disabled={pomLoading || pomSaving}
+                          >
+                            Buka
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {pomHistoryItems.length === 0 && (
+                    <tr>
+                      <td className="muted" colSpan={8}>
+                        Belum ada data sheet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="row row-right" style={{ marginTop: 12 }}>
+              <button className="button button-secondary" type="button" onClick={() => loadPomHistory().catch(() => {})} disabled={pomHistoryLoading}>
+                Refresh
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
       <section className="card">
         <header className="card-header">
-          <div className="card-title">Daftar tugas</div>
+          <div className="card-title">{tab === 'pom' ? 'Daftar tugas (Log POM)' : 'Daftar tugas'}</div>
           <div className="muted">
             {loading ? 'Memuat...' : `${viewItems.length} entri`}
             {summary.kind === 'pom' ? ` · Total box: ${summary.totalBox}${summary.lastArrived ? ` · Terakhir datang: ${fmtTime(summary.lastArrived)}` : ''}${summary.bermasalah ? ` · Bermasalah: ${summary.bermasalah}` : ''}` : ''}
