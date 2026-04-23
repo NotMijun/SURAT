@@ -78,6 +78,7 @@ export default function TasksPage({ me }: { me: Me }) {
   const [pomSaving, setPomSaving] = useState(false)
   const [pomError, setPomError] = useState('')
   const [cateringVendors, setCateringVendors] = useState<CateringVendor[]>([])
+  const [pomEditRowIdx, setPomEditRowIdx] = useState<number | null>(null)
 
   const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number }) => {
     const { q, date, sort, limit } = opts
@@ -132,6 +133,7 @@ export default function TasksPage({ me }: { me: Me }) {
         setPomVendorName(String((res as any)?.vendor_name ?? '') || '')
         setPomUpdatedAt(String(res.updated_at || ''))
         setPomError('')
+        setPomEditRowIdx(null)
       } catch (err: any) {
         setPomError(String(err?.message || err || 'Gagal memuat sheet POM'))
         setPomRows([])
@@ -183,6 +185,7 @@ export default function TasksPage({ me }: { me: Me }) {
       if (res.shift) setPomShift(res.shift)
       setPomUpdatedAt(String(res.updated_at || ''))
       toast.push('Sheet POM tersimpan', 'success')
+      setPomEditRowIdx(null)
       setPomError('')
     } catch (err: any) {
       const msg = String(err?.message || err || 'Gagal menyimpan sheet POM')
@@ -716,54 +719,72 @@ export default function TasksPage({ me }: { me: Me }) {
                     <th>Jumlah Diambil</th>
                     <th>Penanggung jawab</th>
                     <th>Keterangan</th>
+                    <th>Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {pomRows.map((r, idx) => (
-                    <tr key={`${idx}:${r.unit}`}>
-                      <td>{idx + 1}</td>
-                      <td>{r.unit}</td>
-                      <td>
-                        <input
-                          className="input input-sm"
-                          type="number"
-                          min={0}
-                          step={1}
-                          value={r.jatah}
-                          onChange={(e) => setPomRow(idx, { jatah: Math.max(0, parseInt(e.target.value, 10) || 0) })}
-                          style={{ width: 90 }}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          className="input input-sm"
-                          type="number"
-                          min={0}
-                          step={1}
-                          value={r.taken}
-                          onChange={(e) => setPomRow(idx, { taken: Math.max(0, parseInt(e.target.value, 10) || 0) })}
-                          style={{ width: 110 }}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          className="input input-sm"
-                          value={r.person}
-                          onChange={(e) => setPomRow(idx, { person: e.target.value })}
-                          placeholder="Nama penanggung jawab"
-                        />
-                      </td>
-                      <td>
-                        <input className="input input-sm" value={r.note} onChange={(e) => setPomRow(idx, { note: e.target.value })} />
-                      </td>
-                    </tr>
-                  ))}
+                  {pomRows.map((r, idx) => {
+                    const isEditing = pomEditRowIdx === idx
+                    return (
+                      <tr key={`${idx}:${r.unit}`}>
+                        <td>{idx + 1}</td>
+                        <td>{r.unit}</td>
+                        <td>
+                          <input
+                            className="input input-sm"
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={r.jatah}
+                            onChange={(e) => setPomRow(idx, { jatah: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                            disabled={!isEditing}
+                            style={{ width: 90 }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="input input-sm"
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={r.taken}
+                            onChange={(e) => setPomRow(idx, { taken: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                            disabled={!isEditing}
+                            style={{ width: 110 }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="input input-sm"
+                            value={r.person}
+                            onChange={(e) => setPomRow(idx, { person: e.target.value })}
+                            disabled={!isEditing}
+                            placeholder="Nama penanggung jawab"
+                          />
+                        </td>
+                        <td>
+                          <input className="input input-sm" value={r.note} onChange={(e) => setPomRow(idx, { note: e.target.value })} disabled={!isEditing} />
+                        </td>
+                        <td>
+                          <button
+                            className={`button button-sm ${isEditing ? 'button-primary' : 'button-secondary'}`}
+                            type="button"
+                            onClick={() => setPomEditRowIdx((curr) => (curr === idx ? null : idx))}
+                            disabled={pomLoading || pomSaving}
+                          >
+                            {isEditing ? 'Selesai' : 'Edit'}
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
                   <tr>
                     <td colSpan={2} style={{ fontWeight: 800 }}>
                       TOTAL
                     </td>
                     <td style={{ fontWeight: 800 }}>{pomTotals.jatah}</td>
                     <td style={{ fontWeight: 800 }}>{pomTotals.taken}</td>
+                    <td />
                     <td />
                     <td />
                   </tr>
