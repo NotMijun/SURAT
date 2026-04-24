@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { apiGet } from '../../lib/api'
 import type { KeyTx, Me, ShiftReport } from '../../types'
 import { fmtTime, toYmd } from '../../lib/time'
@@ -14,6 +15,7 @@ type HandoverRes = {
 export default function DashboardPage({ me }: { me: Me }) {
   const toast = useToast()
   const confirm = useConfirm()
+  const nav = useNavigate()
   const today = useMemo(() => toYmd(new Date()), [])
   const [reportDate, setReportDate] = useState(today)
   const [report, setReport] = useState<ShiftReport | null>(null)
@@ -183,6 +185,33 @@ export default function DashboardPage({ me }: { me: Me }) {
           <div className="stat-meta">Kejadian khusus</div>
         </article>
       </div>
+
+      <section className="card">
+        <header className="card-header">
+          <div className="card-title">Aksi Cepat</div>
+          <div className="muted">Buka modul dan catat kejadian lebih cepat</div>
+        </header>
+        <div className="card-body">
+          <div className="quick-actions">
+            <button className="quick-action" type="button" onClick={() => nav('/tamu')}>
+              <div className="quick-action-title">Tamu</div>
+              <div className="quick-action-meta">Catat tamu masuk/keluar</div>
+            </button>
+            <button className="quick-action" type="button" onClick={() => nav('/kunci')}>
+              <div className="quick-action-title">Kunci</div>
+              <div className="quick-action-meta">Penitipan & pengambilan</div>
+            </button>
+            <button className="quick-action" type="button" onClick={() => nav('/mutasi')}>
+              <div className="quick-action-title">Mutasi</div>
+              <div className="quick-action-meta">Catat kejadian</div>
+            </button>
+            <button className="quick-action" type="button" onClick={() => nav('/tugas')}>
+              <div className="quick-action-title">Tugas</div>
+              <div className="quick-action-meta">Operasional & POM</div>
+            </button>
+          </div>
+        </div>
+      </section>
 
       <div className="grid grid-2">
         <section className="card">

@@ -640,7 +640,16 @@ html[data-focus="keyboard"] .button:focus-visible,html[data-focus="keyboard"] .t
 .table-wrap{overflow:auto;border-radius:var(--radius-sm);border:1px solid var(--border)}
 .table{width:100%;border-collapse:separate;border-spacing:0;background:var(--soft-bg)}
 .table th,.table td{padding:11px 12px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.table th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;background:var(--soft-bg)}
+.table th{
+  font-size:12px;
+  color:var(--muted);
+  text-transform:uppercase;
+  letter-spacing:.1em;
+  background:var(--soft-bg);
+  position:sticky;
+  top:0;
+  z-index:2;
+}
 .table tr:last-child td{border-bottom:0}
 .table tbody tr:nth-child(even){background:var(--zebra-bg)}
 .table-row-active{
@@ -708,6 +717,29 @@ html[data-focus="keyboard"] .button:focus-visible,html[data-focus="keyboard"] .t
   justify-content: center;
   font-weight: 600;
 }
+.quick-actions{
+  display:grid;
+  grid-template-columns:repeat(4, minmax(0, 1fr));
+  gap:12px;
+}
+.quick-action{
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  background:linear-gradient(180deg, var(--soft-bg), var(--soft-bg-2));
+  padding:14px;
+  text-align:left;
+  cursor:pointer;
+  color:var(--text);
+  transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+.quick-action:hover{
+  transform:translateY(-1px);
+  border-color:rgba(var(--primary-rgb),.55);
+  box-shadow:0 10px 22px rgba(0,0,0,.18);
+}
+.quick-action:active{transform:translateY(0)}
+.quick-action-title{font-weight:900;font-size:16px}
+.quick-action-meta{margin-top:6px;color:var(--muted);font-size:12px}
 .button-void {
   background: rgba(255, 91, 122, 0.1) !important;
   color: #ff5b7a !important;
@@ -964,6 +996,7 @@ html[data-focus="keyboard"] .button:focus-visible,html[data-focus="keyboard"] .t
   .table-mobile-cards td::before{content:attr(data-label);min-width:92px;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}
   .table-mobile-cards td[data-label="Aksi"]::before{content:""}
   .table-mobile-cards td[data-label="Aksi"]{justify-content:flex-end}
+  .quick-actions{grid-template-columns:repeat(2, minmax(0, 1fr))}
   .topbar,.tabsbar{
     backdrop-filter:none;
     -webkit-backdrop-filter:none;
