@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import { apiGet, apiPost } from '../lib/api'
 import { clearToken, compactKey, themeKey, tokenKey } from '../lib/storage'
@@ -25,7 +25,8 @@ export default function Shell() {
   const [theme, setTheme] = useState<'light' | 'dark'>(localStorage.getItem(themeKey) === 'light' ? 'light' : 'dark')
   const [compact] = useState(localStorage.getItem(compactKey) === 'true')
   const [menuOpen, setMenuOpen] = useState(false)
-  const [themeAnimKey, setThemeAnimKey] = useState(0)
+  const themeTimeoutRef = useRef<number | null>(null)
+  const themeRafRef = useRef<number | null>(null)
 
   useEffect(() => {
     const root = document.documentElement
@@ -53,19 +54,26 @@ export default function Shell() {
   const toggleTheme = () => {
     const root = document.documentElement
     root.classList.add('theme-transition')
-    setTheme((t) => (t === 'light' ? 'dark' : 'light'))
-    setThemeAnimKey((x) => x + 1)
+    if (themeTimeoutRef.current) window.clearTimeout(themeTimeoutRef.current)
+    if (themeRafRef.current) window.cancelAnimationFrame(themeRafRef.current)
+    themeRafRef.current = window.requestAnimationFrame(() => {
+      setTheme((t) => (t === 'light' ? 'dark' : 'light'))
+      themeRafRef.current = null
+    })
+    themeTimeoutRef.current = window.setTimeout(() => {
+      root.classList.remove('theme-transition')
+      themeTimeoutRef.current = null
+    }, 1100)
   }
 
   useEffect(() => {
-    if (!themeAnimKey) return
     const root = document.documentElement
-    const t = window.setTimeout(() => root.classList.remove('theme-transition'), 1600)
     return () => {
-      window.clearTimeout(t)
+      if (themeTimeoutRef.current) window.clearTimeout(themeTimeoutRef.current)
+      if (themeRafRef.current) window.cancelAnimationFrame(themeRafRef.current)
       root.classList.remove('theme-transition')
     }
-  }, [themeAnimKey])
+  }, [])
 
   useEffect(() => {
     document.documentElement.dataset.compact = compact ? 'true' : 'false'
