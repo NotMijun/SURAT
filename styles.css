@@ -110,7 +110,7 @@
 
 html.theme-transition,html.theme-transition *{
   transition-property:background-color,color,border-color,box-shadow,fill,stroke;
-  transition-duration:180ms;
+  transition-duration:1500ms;
   transition-timing-function:ease;
 }
 @media (prefers-reduced-motion: reduce){

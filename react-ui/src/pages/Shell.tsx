@@ -60,7 +60,7 @@ export default function Shell() {
   useEffect(() => {
     if (!themeAnimKey) return
     const root = document.documentElement
-    const t = window.setTimeout(() => root.classList.remove('theme-transition'), 220)
+    const t = window.setTimeout(() => root.classList.remove('theme-transition'), 1600)
     return () => {
       window.clearTimeout(t)
       root.classList.remove('theme-transition')
