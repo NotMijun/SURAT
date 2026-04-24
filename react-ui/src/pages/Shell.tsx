@@ -25,6 +25,7 @@ export default function Shell() {
   const [theme, setTheme] = useState<'light' | 'dark'>(localStorage.getItem(themeKey) === 'light' ? 'light' : 'dark')
   const [compact] = useState(localStorage.getItem(compactKey) === 'true')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [themeAnimKey, setThemeAnimKey] = useState(0)
 
   useEffect(() => {
     const root = document.documentElement
@@ -48,6 +49,23 @@ export default function Shell() {
     document.documentElement.dataset.theme = theme
     localStorage.setItem(themeKey, theme)
   }, [theme])
+
+  const toggleTheme = () => {
+    const root = document.documentElement
+    root.classList.add('theme-transition')
+    setTheme((t) => (t === 'light' ? 'dark' : 'light'))
+    setThemeAnimKey((x) => x + 1)
+  }
+
+  useEffect(() => {
+    if (!themeAnimKey) return
+    const root = document.documentElement
+    const t = window.setTimeout(() => root.classList.remove('theme-transition'), 220)
+    return () => {
+      window.clearTimeout(t)
+      root.classList.remove('theme-transition')
+    }
+  }, [themeAnimKey])
 
   useEffect(() => {
     document.documentElement.dataset.compact = compact ? 'true' : 'false'
@@ -202,7 +220,7 @@ export default function Shell() {
           <button className="button button-secondary button-sm topbar-menu" type="button" onClick={() => setMenuOpen(true)}>
             ⋯
           </button>
-          <button className="button button-secondary button-sm topbar-action" type="button" onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}>
+          <button className="button button-secondary button-sm topbar-action" type="button" onClick={toggleTheme}>
             {theme === 'light' ? 'Mode: Terang' : 'Mode: Gelap'}
           </button>
           <button className="button button-ghost topbar-logout" type="button" onClick={logoutAll}>
@@ -224,7 +242,7 @@ export default function Shell() {
             </div>
             <div className="modal-body">
               <div className="row" style={{ flexWrap: 'wrap' }}>
-                <button className="button button-secondary" type="button" onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}>
+                <button className="button button-secondary" type="button" onClick={toggleTheme}>
                   {theme === 'light' ? 'Mode: Terang' : 'Mode: Gelap'}
                 </button>
               </div>
