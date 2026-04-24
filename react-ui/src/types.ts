@@ -1,4 +1,4 @@
-﻿export type Role = 'guard' | 'supervisor' | 'admin'
+﻿﻿export type Role = 'guard' | 'supervisor' | 'admin'
 
 export type Me = {
   user: { id: number; username: string; display_name: string; role: Role }

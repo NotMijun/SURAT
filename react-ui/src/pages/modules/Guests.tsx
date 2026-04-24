@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+﻿import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { AttachmentItem, GuestEntry, Me } from '../../types'
 import { compressImageFile } from '../../lib/image'
@@ -34,6 +34,7 @@ export default function GuestsPage({ me }: { me: Me }) {
   const [editNotes, setEditNotes] = useState('')
   const [editDestinationRoom, setEditDestinationRoom] = useState('')
   const [editVisitorCardNo, setEditVisitorCardNo] = useState('')
+  const [editParaf, setEditParaf] = useState('')
 
   const [name, setName] = useState('')
   const [instansi, setInstansi] = useState('')
@@ -43,6 +44,7 @@ export default function GuestsPage({ me }: { me: Me }) {
   const [notes, setNotes] = useState('')
   const [destinationRoom, setDestinationRoom] = useState('')
   const [visitorCardNo, setVisitorCardNo] = useState('')
+  const [paraf, setParaf] = useState('')
   const [photos, setPhotos] = useState<Array<{ file: File; kind: string; previewUrl: string }>>([])
   const [photoKey, setPhotoKey] = useState(0)
   const [attachments, setAttachments] = useState<AttachmentItem[]>([])
@@ -100,6 +102,7 @@ export default function GuestsPage({ me }: { me: Me }) {
       if (typeof d.meet === 'string') setMeet(d.meet)
       if (typeof d.destinationRoom === 'string') setDestinationRoom(d.destinationRoom)
       if (typeof d.visitorCardNo === 'string') setVisitorCardNo(d.visitorCardNo)
+      if (typeof d.paraf === 'string') setParaf(d.paraf)
       if (typeof d.time === 'string') setTime(d.time || nowHm())
       if (typeof d.notes === 'string') setNotes(d.notes)
     } catch {
@@ -115,15 +118,16 @@ export default function GuestsPage({ me }: { me: Me }) {
 
   useEffect(() => {
     const t = window.setTimeout(() => {
-      const payload = { name, instansi, purpose, meet, destinationRoom, visitorCardNo, time, notes }
+      const payload = { name, instansi, purpose, meet, destinationRoom, visitorCardNo, paraf, time, notes }
       localStorage.setItem(draftKey, JSON.stringify(payload))
     }, 300)
     return () => window.clearTimeout(t)
-  }, [draftKey, destinationRoom, instansi, meet, name, notes, purpose, time, visitorCardNo])
+  }, [draftKey, destinationRoom, instansi, meet, name, notes, paraf, purpose, time, visitorCardNo])
 
   const downloadCsv = (filename: string, rows: Array<Array<string | number>>) => {
-    const lines = rows.map((r) => r.map((x) => `"${String(x ?? '').replace(/"/g, '""')}"`).join(','))
-    const csv = `\ufeff${lines.join('\n')}`
+    const sep = ';'
+    const lines = rows.map((r) => r.map((x) => `"${String(x ?? '').replace(/"/g, '""')}"`).join(sep))
+    const csv = `\ufeffsep=${sep}\n${lines.join('\n')}`
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -148,6 +152,7 @@ export default function GuestsPage({ me }: { me: Me }) {
         payload.instansi = instansi
         payload.purpose = purpose
         payload.meet_person = meet
+        payload.paraf = paraf
       }
       let createdId: number | null = null
       try {
@@ -186,6 +191,7 @@ export default function GuestsPage({ me }: { me: Me }) {
       setNotes('')
       setDestinationRoom('')
       setVisitorCardNo('')
+      setParaf('')
       for (const p of photos) URL.revokeObjectURL(p.previewUrl)
       setPhotos([])
       setPhotoKey((x) => x + 1)
@@ -215,6 +221,7 @@ export default function GuestsPage({ me }: { me: Me }) {
     setEditNotes(r.notes || '')
     setEditDestinationRoom(String(r.destination_room || ''))
     setEditVisitorCardNo(String(r.visitor_card_no || ''))
+    setEditParaf(String(r.paraf || ''))
   }
 
   const saveEdit = async () => {
@@ -229,6 +236,7 @@ export default function GuestsPage({ me }: { me: Me }) {
         patch.instansi = editInstansi
         patch.purpose = editPurpose
         patch.meet_person = editMeet
+        patch.paraf = editParaf
       }
       await apiPatch(`/api/guests/${editRow.id}`, patch)
       toast.push('Tamu diperbarui', 'success')
@@ -241,6 +249,7 @@ export default function GuestsPage({ me }: { me: Me }) {
                 instansi: editRow.post === 'Pintu Utama' || editRow.post === 'Lobby' ? '' : editInstansi,
                 purpose: editRow.post === 'Pintu Utama' || editRow.post === 'Lobby' ? x.purpose : editPurpose,
                 meet_person: editRow.post === 'Pintu Utama' || editRow.post === 'Lobby' ? x.meet_person : editMeet,
+                paraf: editRow.post === 'Pintu Utama' || editRow.post === 'Lobby' ? x.paraf : editParaf,
                 destination_room: editRow.post === 'Pintu Utama' || editRow.post === 'Lobby' ? editDestinationRoom : x.destination_room,
                 visitor_card_no: editRow.post === 'Pintu Utama' || editRow.post === 'Lobby' ? editVisitorCardNo : x.visitor_card_no,
                 ktp_exchanged: editRow.post === 'Pintu Utama' || editRow.post === 'Lobby' ? true : x.ktp_exchanged,
@@ -406,21 +415,21 @@ export default function GuestsPage({ me }: { me: Me }) {
             {postFilter !== 'Pintu Utama' && (
               <div className="field">
                 <label className="label" htmlFor="guestInstansi">
-                  Instansi
+                  {postFilter === 'IGD' ? 'Asal/Instansi' : 'Instansi'}
                 </label>
                 <input className="input" id="guestInstansi" value={instansi} onChange={(e) => setInstansi(e.target.value)} placeholder="mis. Vendor" required />
               </div>
             )}
             <div className="field">
               <label className="label" htmlFor="guestPurpose">
-                {postFilter === 'Pintu Utama' ? 'Ruang Tujuan' : 'Divisi Tujuan'}
+                {postFilter === 'Pintu Utama' ? 'Ruang Tujuan' : postFilter === 'IGD' ? 'Tujuan' : 'Divisi Tujuan'}
               </label>
               <input
                 className="input"
                 id="guestPurpose"
                 value={postFilter === 'Pintu Utama' ? destinationRoom : purpose}
                 onChange={(e) => (postFilter === 'Pintu Utama' ? setDestinationRoom(e.target.value) : setPurpose(e.target.value))}
-                placeholder={postFilter === 'Pintu Utama' ? 'mis. Ruang 204 / Anak / ICU' : 'mis. IT / HRD'}
+                placeholder={postFilter === 'Pintu Utama' ? 'mis. Ruang 204 / Anak / ICU' : postFilter === 'IGD' ? 'mis. Interview / Magang / MCU' : 'mis. IT / HRD'}
                 required
                 list={postFilter === 'Pintu Utama' && roomMaster.length ? 'roomMasterList' : undefined}
               />
@@ -459,6 +468,14 @@ export default function GuestsPage({ me }: { me: Me }) {
                   Orang yang ditemui
                 </label>
                 <input className="input" id="guestMeet" value={meet} onChange={(e) => setMeet(e.target.value)} placeholder="Nama staf/unit" required />
+              </div>
+            )}
+            {postFilter === 'IGD' && (
+              <div className="field grid-span-2">
+                <label className="label" htmlFor="guestParaf">
+                  Paraf
+                </label>
+                <input className="input" id="guestParaf" value={paraf} onChange={(e) => setParaf(e.target.value)} placeholder="opsional" />
               </div>
             )}
             <div className="field grid-span-2">
@@ -533,6 +550,7 @@ export default function GuestsPage({ me }: { me: Me }) {
                       setPurpose('')
                       setMeet('')
                       setNotes('')
+                      setParaf('')
                       setTime(nowHm())
                       setFormError('')
                       for (const p of photos) URL.revokeObjectURL(p.previewUrl)
@@ -604,31 +622,41 @@ export default function GuestsPage({ me }: { me: Me }) {
             <table className="table table-mobile-cards">
               <thead>
                 <tr>
+                  {view === 'riwayat' && postFilter === 'IGD' && <th>No</th>}
                   <th>Nama</th>
-                  {view === 'riwayat' && postFilter === 'IGD' && <th>Instansi</th>}
+                  {view === 'riwayat' && postFilter === 'IGD' && <th>Asal/Instansi</th>}
                   <th>Tujuan</th>
-                  {view === 'riwayat' && <th>Kartu</th>}
-                  {view === 'riwayat' && <th>Ditemui</th>}
+                  {view === 'riwayat' && postFilter !== 'IGD' && <th>Kartu</th>}
+                  {view === 'riwayat' && postFilter !== 'IGD' && <th>Ditemui</th>}
                   <th>Masuk</th>
                   {view === 'riwayat' && <th>Keluar</th>}
+                  {view === 'riwayat' && postFilter === 'IGD' && <th>Paraf</th>}
                   <th>Foto</th>
                   <th>Aksi</th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((r) => (
-                    <tr key={r.id} className={r.status === 'in' ? 'table-row-active' : r.status === 'void' ? 'table-row-void' : undefined}>
+                {items.map((r, idx) => (
+                  <tr key={r.id} className={r.status === 'in' ? 'table-row-active' : r.status === 'void' ? 'table-row-void' : undefined}>
+                    {view === 'riwayat' && postFilter === 'IGD' && <td data-label="No">{idx + 1}</td>}
                     <td data-label="Nama">{r.name}</td>
-                    {view === 'riwayat' && postFilter === 'IGD' && <td data-label="Instansi">{r.instansi}</td>}
-                    <td data-label="Tujuan">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? (r.destination_room || '-') : (r.purpose || '-')}</td>
-                    {view === 'riwayat' && (
+                    {view === 'riwayat' && postFilter === 'IGD' && <td data-label="Asal/Instansi">{r.instansi}</td>}
+                    <td data-label="Tujuan">
+                      {r.post === 'Pintu Utama' || r.post === 'Lobby'
+                        ? (r.destination_room || '-')
+                        : postFilter === 'IGD'
+                          ? [r.purpose || '-', r.meet_person || '', r.notes || ''].filter((x) => String(x || '').trim()).join(' · ')
+                          : (r.purpose || '-')}
+                    </td>
+                    {view === 'riwayat' && postFilter !== 'IGD' && (
                       <td data-label="Kartu">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? (r.visitor_card_no || '-') : '-'}</td>
                     )}
-                    {view === 'riwayat' && (
+                    {view === 'riwayat' && postFilter !== 'IGD' && (
                       <td data-label="Ditemui">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? '-' : (r.meet_person || '-')}</td>
                     )}
                     <td data-label="Masuk">{fmtTime(r.checkin_at)}</td>
                     {view === 'riwayat' && <td data-label="Keluar">{fmtTime(r.checkout_at)}</td>}
+                    {view === 'riwayat' && postFilter === 'IGD' && <td data-label="Paraf">{r.paraf || '-'}</td>}
                     <td data-label="Foto">
                       {r.has_photo && r.photo_url ? (
                         <button className="button button-sm button-secondary" type="button" onClick={() => openGuestPhotos(r)}>
@@ -736,21 +764,36 @@ export default function GuestsPage({ me }: { me: Me }) {
                   onClick={() =>
                     downloadCsv(
                       `tamu-${postFilter}-${date || 'semua'}.csv`,
-                  [['Nama', 'Instansi', 'Tujuan', 'Kartu', 'Ditemui', 'Masuk', 'Keluar', 'Keperluan', 'Foto', 'Petugas', 'Status']].concat(
-                        items.map((r) => [
-                          r.name,
-                          r.instansi,
-                          r.post === 'Pintu Utama' || r.post === 'Lobby' ? String(r.destination_room || '') : r.purpose,
-                          r.post === 'Pintu Utama' || r.post === 'Lobby' ? String(r.visitor_card_no || '') : '',
-                          r.post === 'Pintu Utama' || r.post === 'Lobby' ? '' : r.meet_person,
-                          fmtDateTime(r.checkin_at),
-                          fmtDateTime(r.checkout_at),
-                          r.notes || '',
-                          r.has_photo ? 'Ya' : 'Tidak',
-                          r.created_by_name || '-',
-                          r.status,
-                        ]),
-                      ),
+                      (postFilter === 'IGD'
+                        ? [['No', 'Nama', 'Asal/Instansi', 'Tujuan', 'Masuk', 'Keluar', 'Paraf', 'Foto', 'Petugas', 'Status']].concat(
+                            items.map((r, idx) => [
+                              String(idx + 1),
+                              r.name,
+                              r.instansi,
+                              [r.purpose || '-', r.meet_person || '', r.notes || ''].filter((x) => String(x || '').trim()).join(' · '),
+                              fmtDateTime(r.checkin_at),
+                              fmtDateTime(r.checkout_at),
+                              r.paraf || '',
+                              r.has_photo ? 'Ya' : 'Tidak',
+                              r.created_by_name || '-',
+                              r.status,
+                            ]),
+                          )
+                        : [['Nama', 'Instansi', 'Tujuan', 'Kartu', 'Ditemui', 'Masuk', 'Keluar', 'Keperluan', 'Foto', 'Petugas', 'Status']].concat(
+                            items.map((r) => [
+                              r.name,
+                              r.instansi,
+                              r.post === 'Pintu Utama' || r.post === 'Lobby' ? String(r.destination_room || '') : r.purpose,
+                              r.post === 'Pintu Utama' || r.post === 'Lobby' ? String(r.visitor_card_no || '') : '',
+                              r.post === 'Pintu Utama' || r.post === 'Lobby' ? '' : r.meet_person,
+                              fmtDateTime(r.checkin_at),
+                              fmtDateTime(r.checkout_at),
+                              r.notes || '',
+                              r.has_photo ? 'Ya' : 'Tidak',
+                              r.created_by_name || '-',
+                              r.status,
+                            ]),
+                          )),
                     )
                   }
                 >
@@ -835,9 +878,10 @@ export default function GuestsPage({ me }: { me: Me }) {
                   </>
                 ) : (
                   <>
-                    <input className="input" value={editInstansi} onChange={(e) => setEditInstansi(e.target.value)} placeholder="Instansi" />
-                    <input className="input" value={editPurpose} onChange={(e) => setEditPurpose(e.target.value)} placeholder="Divisi tujuan" />
+                    <input className="input" value={editInstansi} onChange={(e) => setEditInstansi(e.target.value)} placeholder={editRow.post === 'IGD' ? 'Asal/Instansi' : 'Instansi'} />
+                    <input className="input" value={editPurpose} onChange={(e) => setEditPurpose(e.target.value)} placeholder={editRow.post === 'IGD' ? 'Tujuan' : 'Divisi tujuan'} />
                     <input className="input" value={editMeet} onChange={(e) => setEditMeet(e.target.value)} placeholder="Ditemui" />
+                    {editRow.post === 'IGD' && <input className="input" value={editParaf} onChange={(e) => setEditParaf(e.target.value)} placeholder="Paraf" />}
                   </>
                 )}
                 <textarea className="textarea" value={editNotes} onChange={(e) => setEditNotes(e.target.value)} placeholder="Keperluan" />
