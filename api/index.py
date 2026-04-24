@@ -475,6 +475,7 @@ def _ensure_schema(conn) -> None:
                   checkin_at TEXT NOT NULL,
                   checkout_at TEXT,
                   notes TEXT NOT NULL,
+                  paraf TEXT,
                   status TEXT NOT NULL CHECK (status IN ('in','out','void')),
                   created_by BIGINT NOT NULL REFERENCES users(id),
                   shift TEXT NOT NULL,
@@ -501,6 +502,7 @@ def _ensure_schema(conn) -> None:
             cur.execute("ALTER TABLE guest_entries ADD COLUMN IF NOT EXISTS destination_room TEXT")
             cur.execute("ALTER TABLE guest_entries ADD COLUMN IF NOT EXISTS visitor_card_no TEXT")
             cur.execute("ALTER TABLE guest_entries ADD COLUMN IF NOT EXISTS ktp_exchanged BOOLEAN")
+            cur.execute("ALTER TABLE guest_entries ADD COLUMN IF NOT EXISTS paraf TEXT")
             cur.execute("ALTER TABLE guest_entries DROP CONSTRAINT IF EXISTS guest_entries_status_check")
             cur.execute("ALTER TABLE guest_entries ADD CONSTRAINT guest_entries_status_check CHECK (status IN ('in','out','void'))")
             cur.execute(
@@ -916,6 +918,7 @@ class PatchGuestBody(BaseModel):
     checkin_at: str | None = None
     checkout_at: str | None = None
     notes: str | None = None
+    paraf: str | None = None
     destination_room: str | None = None
     visitor_card_no: str | None = None
     ktp_exchanged: bool | None = None
@@ -935,6 +938,7 @@ class CreateGuestBody(BaseModel):
     meet_person: str | None = None
     checkin_at: str | None = None
     notes: str | None = None
+    paraf: str | None = None
     post: str | None = None
     force: bool | None = None
     destination_room: str | None = None
@@ -2507,7 +2511,7 @@ def list_guests(request: Request, status: str = "in", q: str = "", date: str = "
         if sort == "checkin_asc":
             order = "g.checkin_at ASC"
         sql = """
-          SELECT g.id, g.name, g.instansi, g.purpose, g.meet_person, g.checkin_at, g.checkout_at, g.notes, g.status, g.void_reason,
+          SELECT g.id, g.name, g.instansi, g.purpose, g.meet_person, g.checkin_at, g.checkout_at, g.notes, g.paraf, g.status, g.void_reason,
                  g.destination_room, g.visitor_card_no, g.ktp_exchanged,
                  (CASE WHEN g.photo_b64 IS NULL OR g.photo_b64='' THEN 0 ELSE 1 END + COALESCE(att.c,0))::int AS photo_count,
                  g.created_by, g.created_at,
@@ -2573,6 +2577,7 @@ def _create_guest(
     meet_person: str | None,
     checkin_at: str | None,
     notes: str | None,
+    paraf: str | None,
     post_override: str | None,
     force: bool,
     destination_room: str | None,
@@ -2588,6 +2593,7 @@ def _create_guest(
     purpose = _text_field(purpose, field="Divisi tujuan", max_len=80, default="-")
     meet = _text_field(meet_person, field="Orang yang ditemui", max_len=80, default="-")
     notes = _text_field(notes, field="Keperluan", max_len=240, default="")
+    paraf = _text_field(paraf, field="Paraf", max_len=40, default="")
     post_val = (sess.get("post") or "").strip()
     if post_override:
         pv = str(post_override).strip()
@@ -2637,11 +2643,11 @@ def _create_guest(
         cur.execute(
             """
             INSERT INTO guest_entries(
-              name, instansi, purpose, meet_person, checkin_at, checkout_at, notes, status, created_by, shift, post,
+              name, instansi, purpose, meet_person, checkin_at, checkout_at, notes, paraf, status, created_by, shift, post,
               destination_room, visitor_card_no, ktp_exchanged,
               photo_b64, photo_mime, photo_name, photo_uploaded_at, created_at, updated_at
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING id
             """,
             (
@@ -2652,6 +2658,7 @@ def _create_guest(
                 checkin_at,
                 None,
                 notes,
+                paraf or None,
                 "in",
                 sess["user_id"],
                 sess["shift"],
@@ -2682,6 +2689,7 @@ def _create_guest(
                 "meet_person": meet,
                 "checkin_at": checkin_at,
                 "notes": notes,
+                "paraf": paraf or None,
                 "status": "in",
                 "destination_room": dest_room or None,
                 "visitor_card_no": card_no or None,
@@ -2707,6 +2715,7 @@ def create_guest(body: CreateGuestBody, request: Request):
             body.meet_person,
             body.checkin_at,
             body.notes,
+            body.paraf,
             body.post,
             bool(body.force),
             body.destination_room,
@@ -2729,6 +2738,7 @@ def create_guest_with_photo(
     meet_person: str | None = Form(None),
     checkin_at: str | None = Form(None),
     notes: str | None = Form(None),
+    paraf: str | None = Form(None),
     post: str | None = Form(None),
     destination_room: str | None = Form(None),
     visitor_card_no: str | None = Form(None),
@@ -2748,6 +2758,7 @@ def create_guest_with_photo(
             meet_person,
             checkin_at,
             notes,
+            paraf,
             post,
             _parse_truthy(force),
             destination_room,
@@ -2865,6 +2876,8 @@ def patch_guest(guest_id: str, body: PatchGuestBody, request: Request):
                 updates["meet_person"] = _text_field(body.meet_person, field="Orang yang ditemui", max_len=80, default="-") or "-"
             if body.notes is not None:
                 updates["notes"] = _text_field(body.notes, field="Keperluan", max_len=240, default="")
+            if body.paraf is not None:
+                updates["paraf"] = _text_field(body.paraf, field="Paraf", max_len=40, default="") or None
             if body.destination_room is not None:
                 updates["destination_room"] = _text_field(body.destination_room, field="Ruang tujuan", max_len=80, default="") or None
             if body.visitor_card_no is not None:

@@ -1,4 +1,4 @@
-export type Role = 'guard' | 'supervisor' | 'admin'
+﻿export type Role = 'guard' | 'supervisor' | 'admin'
 
 export type Me = {
   user: { id: number; username: string; display_name: string; role: Role }
@@ -51,6 +51,7 @@ export type GuestEntry = {
   checkin_at: string
   checkout_at?: string | null
   notes?: string
+  paraf?: string | null
   status: 'in' | 'out' | 'void'
   void_reason?: string | null
   destination_room?: string | null
@@ -131,3 +132,4 @@ export type AuditRow = {
   record_id: string
   target_label?: string | null
 }
+
