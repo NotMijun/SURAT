@@ -443,7 +443,7 @@ export default function KeysPage({ me }: { me: Me }) {
             )}
             <div className="field">
               <label className="label" htmlFor="keyBorrower">
-                Instansi
+                Nama
               </label>
               <input className="input" id="keyBorrower" value={borrower} onChange={(e) => setBorrower(e.target.value)} placeholder="Instansi / Nama penitip" />
             </div>
