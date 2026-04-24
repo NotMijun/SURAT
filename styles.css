@@ -548,6 +548,28 @@ html[data-focus="keyboard"] .button:focus-visible,html[data-focus="keyboard"] .t
 .topbar-title .subtitle{font-size:12px;color:var(--muted)}
 .topbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
 .topbar-menu{display:none}
+.theme-toggle{gap:6px}
+.theme-toggle-swap{
+  position:relative;
+  width:1.2em;
+  height:1em;
+  display:inline-block;
+  line-height:1;
+}
+.theme-toggle-icon{
+  position:absolute;
+  inset:0;
+  display:grid;
+  place-items:center;
+  transform:translateY(0) scale(1);
+  opacity:0;
+  transition:opacity 250ms ease, transform 250ms ease;
+}
+html[data-theme="light"] .theme-toggle-icon-sun{opacity:1;transform:translateY(0) scale(1)}
+html[data-theme="light"] .theme-toggle-icon-moon{opacity:0;transform:translateY(20%) scale(.92)}
+html[data-theme="dark"] .theme-toggle-icon-moon{opacity:1;transform:translateY(0) scale(1)}
+html[data-theme="dark"] .theme-toggle-icon-sun{opacity:0;transform:translateY(-20%) scale(.92)}
+html.theme-transition .theme-toggle-icon{transition-duration:250ms}
 
 .icon-button{
   width:40px;height:40px;border-radius:var(--radius-sm);

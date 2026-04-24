@@ -27,6 +27,7 @@ export default function Shell() {
   const [menuOpen, setMenuOpen] = useState(false)
   const themeTimeoutRef = useRef<number | null>(null)
   const themeRafRef = useRef<number | null>(null)
+  const themeLabel = theme === 'light' ? 'Terang' : 'Gelap'
 
   useEffect(() => {
     const root = document.documentElement
@@ -228,8 +229,12 @@ export default function Shell() {
           <button className="button button-secondary button-sm topbar-menu" type="button" onClick={() => setMenuOpen(true)}>
             ⋯
           </button>
-          <button className="button button-secondary button-sm topbar-action" type="button" onClick={toggleTheme}>
-            {theme === 'light' ? 'Mode: Terang' : 'Mode: Gelap'}
+          <button className="button button-secondary button-sm topbar-action theme-toggle" type="button" onClick={toggleTheme} aria-label={`Mode: ${themeLabel}`} title={`Mode: ${themeLabel}`}>
+            <span className="theme-toggle-text">Mode:</span>
+            <span className="theme-toggle-swap" aria-hidden="true">
+              <span className="theme-toggle-icon theme-toggle-icon-sun">☀</span>
+              <span className="theme-toggle-icon theme-toggle-icon-moon">☾</span>
+            </span>
           </button>
           <button className="button button-ghost topbar-logout" type="button" onClick={logoutAll}>
             Keluar Semua
@@ -250,8 +255,12 @@ export default function Shell() {
             </div>
             <div className="modal-body">
               <div className="row" style={{ flexWrap: 'wrap' }}>
-                <button className="button button-secondary" type="button" onClick={toggleTheme}>
-                  {theme === 'light' ? 'Mode: Terang' : 'Mode: Gelap'}
+                <button className="button button-secondary theme-toggle" type="button" onClick={toggleTheme} aria-label={`Mode: ${themeLabel}`} title={`Mode: ${themeLabel}`}>
+                  <span className="theme-toggle-text">Mode:</span>
+                  <span className="theme-toggle-swap" aria-hidden="true">
+                    <span className="theme-toggle-icon theme-toggle-icon-sun">☀</span>
+                    <span className="theme-toggle-icon theme-toggle-icon-moon">☾</span>
+                  </span>
                 </button>
               </div>
               <div className="row" style={{ marginTop: 10, flexWrap: 'wrap' }}>
