@@ -219,10 +219,15 @@ export default function AdminPage({ me }: { me: Me }) {
     const name = newKeyName.trim()
     if (!name) return
     try {
-      await apiPost('/api/admin/keys/master', { name })
+      const res = await apiPost<{ ok: boolean; id: number; mode?: string }>('/api/admin/keys/master', { name })
       setNewKeyName('')
-      toast.push('Master kunci ditambahkan', 'success')
-      await refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })
+      toast.push(res.mode === 'reactivated' ? 'Master kunci diaktifkan kembali' : 'Master kunci ditambahkan', 'success')
+      try {
+        const km = await apiGet<{ items: Array<{ id: number; name: string; is_active?: boolean; created_at?: string; updated_at?: string }> }>('/api/admin/keys/master')
+        setKeyMaster(km.items || [])
+      } catch {
+        setKeyMaster((prev) => (prev.some((x) => x.id === res.id) ? prev : prev.concat([{ id: res.id, name, is_active: true }])))
+      }
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal menambah master kunci'), 'error')
     }
