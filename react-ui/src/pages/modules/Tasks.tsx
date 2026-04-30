@@ -57,7 +57,7 @@ export default function TasksPage({ me }: { me: Me }) {
   const [photoView, setPhotoView] = useState<string | null>(null)
 
   type PomShiftKey = 'siang' | 'sore' | 'malam'
-  type PomRow = { unit: string; jatah: number; taken: number; person: string; note: string }
+  type PomRow = { unit: string; jatah: number | ''; taken: number | ''; person: string; note: string }
   type PomSheetRes = {
     date: string
     shift: PomShiftKey
@@ -80,7 +80,7 @@ export default function TasksPage({ me }: { me: Me }) {
   const [pomShift, setPomShift] = useState<PomShiftKey>('siang')
   const [pomStaffName, setPomStaffName] = useState(me.user.display_name)
   const [pomRows, setPomRows] = useState<PomRow[]>([])
-  const [pomTotalBoxesIn, setPomTotalBoxesIn] = useState(0)
+  const [pomTotalBoxesIn, setPomTotalBoxesIn] = useState<number | ''>(0)
   const [pomVendorName, setPomVendorName] = useState('')
   const [pomUpdatedAt, setPomUpdatedAt] = useState('')
   const [pomLoading, setPomLoading] = useState(false)
@@ -245,8 +245,8 @@ export default function TasksPage({ me }: { me: Me }) {
     let jatah = 0
     let taken = 0
     for (const r of pomRows) {
-      jatah += r.jatah || 0
-      taken += r.taken || 0
+      jatah += Number(r.jatah) || 0
+      taken += Number(r.taken) || 0
     }
     return { jatah, taken }
   }, [pomRows])
@@ -259,7 +259,7 @@ export default function TasksPage({ me }: { me: Me }) {
     return 0
   }, [pomPrevLeftovers.siang, pomPrevLeftovers.sore, pomShift])
 
-  const pomAvailableBoxes = useMemo(() => pomTotalBoxesIn + pomPrevAvailable, [pomPrevAvailable, pomTotalBoxesIn])
+  const pomAvailableBoxes = useMemo(() => (Number(pomTotalBoxesIn) || 0) + pomPrevAvailable, [pomPrevAvailable, pomTotalBoxesIn])
 
   const pomRemaining = useMemo(() => pomAvailableBoxes - pomUsedTotal, [pomAvailableBoxes, pomUsedTotal])
 
@@ -285,11 +285,14 @@ export default function TasksPage({ me }: { me: Me }) {
       setPomRows((prev) => {
         const curr = prev[rowIdx]
         if (!curr) return prev
-        let nextJatah = patch.jatah != null ? Math.max(0, Math.min(9999, Number(patch.jatah) || 0)) : curr.jatah
-        let nextTaken = patch.taken != null ? Math.max(0, Math.min(9999, Number(patch.taken) || 0)) : curr.taken
+        if (patch.jatah === '' || patch.taken === '') {
+          return prev.map((r, i) => (i === rowIdx ? { ...r, ...patch } : r))
+        }
+        let nextJatah = patch.jatah != null ? Math.max(0, Math.min(9999, Number(patch.jatah) || 0)) : Number(curr.jatah) || 0
+        let nextTaken = patch.taken != null ? Math.max(0, Math.min(9999, Number(patch.taken) || 0)) : Number(curr.taken) || 0
 
         if (patch.jatah != null) {
-          const other = prev.reduce((sum, r, i) => sum + (i === rowIdx ? 0 : r.jatah || 0), 0)
+          const other = prev.reduce((sum, r, i) => sum + (i === rowIdx ? 0 : Number(r.jatah) || 0), 0)
           const cap = Math.max(0, pomAvailableBoxes - other)
           if (nextJatah > cap) {
             nextJatah = cap
@@ -298,7 +301,7 @@ export default function TasksPage({ me }: { me: Me }) {
         }
 
         if (patch.taken != null) {
-          const other = prev.reduce((sum, r, i) => sum + (i === rowIdx ? 0 : r.taken || 0), 0)
+          const other = prev.reduce((sum, r, i) => sum + (i === rowIdx ? 0 : Number(r.taken) || 0), 0)
           const cap = Math.max(0, pomAvailableBoxes - other)
           if (nextTaken > cap) {
             nextTaken = cap
@@ -326,7 +329,13 @@ export default function TasksPage({ me }: { me: Me }) {
     setPomSaving(true)
     try {
       const d = date || today
-      const payload = { staff_name: pomStaffName, rows: pomRows, total_boxes_in: pomTotalBoxesIn, vendor_name: pomVendorName, date: d }
+      const payload = {
+        staff_name: pomStaffName,
+        rows: pomRows.map((r) => ({ ...r, jatah: Number(r.jatah) || 0, taken: Number(r.taken) || 0 })),
+        total_boxes_in: Number(pomTotalBoxesIn) || 0,
+        vendor_name: pomVendorName,
+        date: d,
+      }
       const res = await apiPost<{ ok: boolean; shift: PomShiftKey; updated_at: string }>(
         `/api/pom_catering/sheet?date=${encodeURIComponent(d)}&shift=${encodeURIComponent(pomShift)}`,
         payload,
@@ -852,7 +861,7 @@ export default function TasksPage({ me }: { me: Me }) {
                     min={0}
                     step={1}
                     value={pomTotalBoxesIn}
-                    onChange={(e) => setPomTotalBoxesIn(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    onChange={(e) => (e.target.value === '' ? setPomTotalBoxesIn('') : setPomTotalBoxesIn(Math.max(0, parseInt(e.target.value, 10) || 0)))}
                     disabled={pomLoading || pomSaving}
                   />
                   <button
@@ -928,7 +937,7 @@ export default function TasksPage({ me }: { me: Me }) {
                               min={0}
                               step={1}
                               value={r.jatah}
-                              onChange={(e) => setPomRowCapped(idx, { jatah: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                              onChange={(e) => (e.target.value === '' ? setPomRowCapped(idx, { jatah: '' }) : setPomRowCapped(idx, { jatah: Math.max(0, parseInt(e.target.value, 10) || 0) }))}
                               disabled={!isEditing}
                             />
                             <button
@@ -959,7 +968,7 @@ export default function TasksPage({ me }: { me: Me }) {
                               min={0}
                               step={1}
                               value={r.taken}
-                              onChange={(e) => setPomRowCapped(idx, { taken: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                              onChange={(e) => (e.target.value === '' ? setPomRowCapped(idx, { taken: '' }) : setPomRowCapped(idx, { taken: Math.max(0, parseInt(e.target.value, 10) || 0) }))}
                               disabled={!isEditing}
                             />
                             <button
@@ -989,7 +998,14 @@ export default function TasksPage({ me }: { me: Me }) {
                           <button
                             className={`button button-sm ${isEditing ? 'button-primary' : 'button-secondary'}`}
                             type="button"
-                            onClick={() => setPomEditRowIdx((curr) => (curr === idx ? null : idx))}
+                            onClick={() => {
+                              if (isEditing) {
+                                setPomRowCapped(idx, { jatah: r.jatah === '' ? 0 : r.jatah, taken: r.taken === '' ? 0 : r.taken })
+                                setPomEditRowIdx(null)
+                                return
+                              }
+                              setPomEditRowIdx(idx)
+                            }}
                             disabled={pomLoading || pomSaving}
                           >
                             {isEditing ? 'Selesai' : 'Edit'}
