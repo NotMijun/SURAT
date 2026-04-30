@@ -453,6 +453,87 @@ export default function MutasiPage({ me }: { me: Me }) {
         </header>
         <div className="card-body">
           {loading && <LoadingScreen mode="inline" label="Loading..." minHeight={320} />}
+          <div className="table-footer-filters">
+            <div className="filter-group">
+              <label className="label-sm">Cari</label>
+              <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari kejadian..." />
+            </div>
+            <div className="filter-group">
+              <label className="label-sm">Kategori</label>
+              <select
+                className="select select-sm"
+                value={filterKategori}
+                onChange={(e) => {
+                  setFilterKategori(e.target.value)
+                  setFilterSub('')
+                }}
+              >
+                <option value="">Semua Kategori</option>
+                {Object.keys(KATEGORI_OPTS).map((k) => (
+                  <option key={k} value={k}>
+                    {k}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {filterKategori && filterKategori !== 'Lainnya' && (
+              <div className="filter-group">
+                <label className="label-sm">Sub-Kategori</label>
+                <select className="select select-sm" value={filterSub} onChange={(e) => setFilterSub(e.target.value)}>
+                  <option value="">Semua Sub</option>
+                  {KATEGORI_OPTS[filterKategori].map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="filter-group">
+              <label className="label-sm">Tanggal</label>
+              <input className="input input-sm" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            </div>
+            <div className="filter-group">
+              <label className="label-sm">Urutan</label>
+              <select className="select select-sm" value={sort} onChange={(e) => setSort(e.target.value as any)}>
+                <option value="occurred_desc">Terbaru</option>
+                <option value="occurred_asc">Terlama</option>
+              </select>
+            </div>
+            <div className="filter-group">
+              <label className="label-sm">Limit</label>
+              <select className="select select-sm" value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))}>
+                <option value={50}>50</option>
+                <option value={200}>200</option>
+                <option value={500}>500</option>
+              </select>
+            </div>
+            <div className="filter-actions">
+              <button className="button button-secondary button-sm" type="button" onClick={() => setDate(today)}>
+                Hari ini
+              </button>
+              <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
+                Semua
+              </button>
+              <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub })}>
+                Refresh
+              </button>
+              <button
+                className="button button-secondary button-sm"
+                type="button"
+                onClick={() =>
+                  downloadCsv(
+                    `mutasi-${date || 'semua'}.csv`,
+                    [['Jam', 'Jenis', 'Deskripsi', 'Foto', 'Petugas', 'Shift', 'Pos']].concat(
+                      items.map((r) => [fmtWhen(r.occurred_at), r.kind, r.description, r.has_photo ? 'Ya' : 'Tidak', r.created_by_name || '-', r.shift || '-', r.post || '-']),
+                    ),
+                  )
+                }
+              >
+                Export CSV
+              </button>
+            </div>
+          </div>
           <div className="table-wrap" aria-hidden={loading}>
             <table className="table table-mobile-cards">
               <thead>
@@ -515,73 +596,6 @@ export default function MutasiPage({ me }: { me: Me }) {
                 )}
               </tbody>
             </table>
-          </div>
-
-          <div className="table-footer-filters">
-            <div className="filter-group">
-              <label className="label-sm">Cari</label>
-              <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari kejadian..." />
-            </div>
-            <div className="filter-group">
-              <label className="label-sm">Kategori</label>
-              <select className="select select-sm" value={filterKategori} onChange={(e) => { setFilterKategori(e.target.value); setFilterSub('') }}>
-                <option value="">Semua Kategori</option>
-                {Object.keys(KATEGORI_OPTS).map(k => <option key={k} value={k}>{k}</option>)}
-              </select>
-            </div>
-            {filterKategori && filterKategori !== 'Lainnya' && (
-              <div className="filter-group">
-                <label className="label-sm">Sub-Kategori</label>
-                <select className="select select-sm" value={filterSub} onChange={(e) => setFilterSub(e.target.value)}>
-                  <option value="">Semua Sub</option>
-                  {KATEGORI_OPTS[filterKategori].map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-            )}
-            <div className="filter-group">
-              <label className="label-sm">Tanggal</label>
-              <input className="input input-sm" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-            </div>
-            <div className="filter-group">
-              <label className="label-sm">Urutan</label>
-              <select className="select select-sm" value={sort} onChange={(e) => setSort(e.target.value as any)}>
-                <option value="occurred_desc">Terbaru</option>
-                <option value="occurred_asc">Terlama</option>
-              </select>
-            </div>
-            <div className="filter-group">
-              <label className="label-sm">Limit</label>
-              <select className="select select-sm" value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))}>
-                <option value={50}>50</option>
-                <option value={200}>200</option>
-                <option value={500}>500</option>
-              </select>
-            </div>
-            <div className="filter-actions">
-              <button className="button button-secondary button-sm" type="button" onClick={() => setDate(today)}>
-                Hari ini
-              </button>
-              <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
-                Semua
-              </button>
-              <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub })}>
-                Refresh
-              </button>
-              <button
-                className="button button-secondary button-sm"
-                type="button"
-                onClick={() =>
-                  downloadCsv(
-                    `mutasi-${date || 'semua'}.csv`,
-                    [['Jam', 'Jenis', 'Deskripsi', 'Foto', 'Petugas', 'Shift', 'Pos']].concat(
-                      items.map((r) => [fmtWhen(r.occurred_at), r.kind, r.description, r.has_photo ? 'Ya' : 'Tidak', r.created_by_name || '-', r.shift || '-', r.post || '-']),
-                    ),
-                  )
-                }
-              >
-                Export CSV
-              </button>
-            </div>
           </div>
         </div>
       </section>

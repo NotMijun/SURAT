@@ -618,94 +618,6 @@ export default function GuestsPage({ me }: { me: Me }) {
         </header>
         <div className="card-body">
           {loading && <LoadingScreen mode="inline" label="Loading..." minHeight={320} />}
-          <div className="table-wrap" aria-hidden={loading}>
-            <table className="table table-mobile-cards">
-              <thead>
-                <tr>
-                  {view === 'riwayat' && postFilter === 'IGD' && <th>No</th>}
-                  <th>Nama</th>
-                  {view === 'riwayat' && postFilter === 'IGD' && <th>Asal/Instansi</th>}
-                  <th>Tujuan</th>
-                  {view === 'riwayat' && postFilter !== 'IGD' && <th>Kartu</th>}
-                  {view === 'riwayat' && postFilter !== 'IGD' && <th>Ditemui</th>}
-                  <th>Masuk</th>
-                  {view === 'riwayat' && <th>Keluar</th>}
-                  {view === 'riwayat' && postFilter === 'IGD' && <th>Paraf</th>}
-                  <th>Foto</th>
-                  <th>Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((r, idx) => (
-                  <tr key={r.id} className={r.status === 'in' ? 'table-row-active' : r.status === 'void' ? 'table-row-void' : undefined}>
-                    {view === 'riwayat' && postFilter === 'IGD' && <td data-label="No">{idx + 1}</td>}
-                    <td data-label="Nama">{r.name}</td>
-                    {view === 'riwayat' && postFilter === 'IGD' && <td data-label="Asal/Instansi">{r.instansi}</td>}
-                    <td data-label="Tujuan">
-                      {r.post === 'Pintu Utama' || r.post === 'Lobby'
-                        ? (r.destination_room || '-')
-                        : postFilter === 'IGD'
-                          ? [r.purpose || '-', r.meet_person || '', r.notes || ''].filter((x) => String(x || '').trim()).join(' · ')
-                          : (r.purpose || '-')}
-                    </td>
-                    {view === 'riwayat' && postFilter !== 'IGD' && (
-                      <td data-label="Kartu">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? (r.visitor_card_no || '-') : '-'}</td>
-                    )}
-                    {view === 'riwayat' && postFilter !== 'IGD' && (
-                      <td data-label="Ditemui">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? '-' : (r.meet_person || '-')}</td>
-                    )}
-                    <td data-label="Masuk">{fmtTime(r.checkin_at)}</td>
-                    {view === 'riwayat' && <td data-label="Keluar">{fmtTime(r.checkout_at)}</td>}
-                    {view === 'riwayat' && postFilter === 'IGD' && <td data-label="Paraf">{r.paraf || '-'}</td>}
-                    <td data-label="Foto">
-                      {r.has_photo && r.photo_url ? (
-                        <button className="button button-sm button-secondary" type="button" onClick={() => openGuestPhotos(r)}>
-                          {typeof r.photo_count === 'number' && r.photo_count > 1 ? `Foto (${r.photo_count})` : 'Foto'}
-                        </button>
-                      ) : (
-                        <span className="muted">-</span>
-                      )}
-                    </td>
-                    <td data-label="Aksi">
-                      {r.status === 'void' ? (
-                        <span className="muted">Deleted</span>
-                      ) : (
-                        <div className="card-actions">
-                          {r.status === 'in' ? (
-                            <button className="button button-sm button-primary" type="button" onClick={() => checkout(r)} style={view === 'inhouse' ? { minHeight: 46, fontSize: 15 } : undefined}>
-                              Checkout
-                            </button>
-                          ) : canCorrect(r) ? (
-                            <button className="button button-sm button-secondary" type="button" onClick={() => undoCheckout(r)}>
-                              ↩ Batal checkout
-                            </button>
-                          ) : null}
-                          {canCorrect(r) ? (
-                            <button className="button button-sm button-secondary" type="button" onClick={() => openEdit(r)}>
-                              ✎ Edit
-                            </button>
-                          ) : null}
-                          {canCorrect(r) ? (
-                            <button className="button button-sm button-danger" type="button" onClick={() => deleteGuest(r)}>
-                              Delete
-                            </button>
-                          ) : null}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-                {items.length === 0 && (
-                  <tr>
-                    <td className="muted" colSpan={view === 'riwayat' ? (postFilter === 'IGD' ? 9 : 8) : 5}>
-                      Tidak ada data.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
           <div className="table-footer-filters">
             <div className="filter-group">
               <label className="label-sm">Cari</label>
@@ -802,9 +714,96 @@ export default function GuestsPage({ me }: { me: Me }) {
               )}
             </div>
           </div>
+          <div className="table-wrap" aria-hidden={loading}>
+            <table className="table table-mobile-cards">
+              <thead>
+                <tr>
+                  {view === 'riwayat' && postFilter === 'IGD' && <th>No</th>}
+                  <th>Nama</th>
+                  {view === 'riwayat' && postFilter === 'IGD' && <th>Asal/Instansi</th>}
+                  <th>Tujuan</th>
+                  {view === 'riwayat' && postFilter !== 'IGD' && <th>Kartu</th>}
+                  {view === 'riwayat' && postFilter !== 'IGD' && <th>Ditemui</th>}
+                  <th>Masuk</th>
+                  {view === 'riwayat' && <th>Keluar</th>}
+                  {view === 'riwayat' && postFilter === 'IGD' && <th>Paraf</th>}
+                  <th>Foto</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((r, idx) => (
+                  <tr key={r.id} className={r.status === 'in' ? 'table-row-active' : r.status === 'void' ? 'table-row-void' : undefined}>
+                    {view === 'riwayat' && postFilter === 'IGD' && <td data-label="No">{idx + 1}</td>}
+                    <td data-label="Nama">{r.name}</td>
+                    {view === 'riwayat' && postFilter === 'IGD' && <td data-label="Asal/Instansi">{r.instansi}</td>}
+                    <td data-label="Tujuan">
+                      {r.post === 'Pintu Utama' || r.post === 'Lobby'
+                        ? (r.destination_room || '-')
+                        : postFilter === 'IGD'
+                          ? [r.purpose || '-', r.meet_person || '', r.notes || ''].filter((x) => String(x || '').trim()).join(' · ')
+                          : (r.purpose || '-')}
+                    </td>
+                    {view === 'riwayat' && postFilter !== 'IGD' && (
+                      <td data-label="Kartu">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? (r.visitor_card_no || '-') : '-'}</td>
+                    )}
+                    {view === 'riwayat' && postFilter !== 'IGD' && (
+                      <td data-label="Ditemui">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? '-' : (r.meet_person || '-')}</td>
+                    )}
+                    <td data-label="Masuk">{fmtTime(r.checkin_at)}</td>
+                    {view === 'riwayat' && <td data-label="Keluar">{fmtTime(r.checkout_at)}</td>}
+                    {view === 'riwayat' && postFilter === 'IGD' && <td data-label="Paraf">{r.paraf || '-'}</td>}
+                    <td data-label="Foto">
+                      {r.has_photo && r.photo_url ? (
+                        <button className="button button-sm button-secondary" type="button" onClick={() => openGuestPhotos(r)}>
+                          {typeof r.photo_count === 'number' && r.photo_count > 1 ? `Foto (${r.photo_count})` : 'Foto'}
+                        </button>
+                      ) : (
+                        <span className="muted">-</span>
+                      )}
+                    </td>
+                    <td data-label="Aksi">
+                      {r.status === 'void' ? (
+                        <span className="muted">Deleted</span>
+                      ) : (
+                        <div className="card-actions">
+                          {r.status === 'in' ? (
+                            <button className="button button-sm button-primary" type="button" onClick={() => checkout(r)} style={view === 'inhouse' ? { minHeight: 46, fontSize: 15 } : undefined}>
+                              Checkout
+                            </button>
+                          ) : canCorrect(r) ? (
+                            <button className="button button-sm button-secondary" type="button" onClick={() => undoCheckout(r)}>
+                              ↩ Batal checkout
+                            </button>
+                          ) : null}
+                          {canCorrect(r) ? (
+                            <button className="button button-sm button-secondary" type="button" onClick={() => openEdit(r)}>
+                              ✎ Edit
+                            </button>
+                          ) : null}
+                          {canCorrect(r) ? (
+                            <button className="button button-sm button-danger" type="button" onClick={() => deleteGuest(r)}>
+                              Delete
+                            </button>
+                          ) : null}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {items.length === 0 && (
+                  <tr>
+                    <td className="muted" colSpan={view === 'riwayat' ? (postFilter === 'IGD' ? 9 : 8) : 5}>
+                      Tidak ada data.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
 
           {view === 'riwayat' && hasMore && (
-            <div className="row" style={{ justifyContent: 'center', marginTop: 12 }}>
+            <div className="row row-right" style={{ marginTop: 12 }}>
               <button
                 className="button button-secondary"
                 type="button"

@@ -666,7 +666,7 @@ export default function KeysPage({ me }: { me: Me }) {
               </table>
             </div>
             {openHasMore && (
-              <div className="row" style={{ justifyContent: 'center', marginTop: 12 }}>
+              <div className="row row-right" style={{ marginTop: 12 }}>
                 <button className="button button-secondary" type="button" disabled={loading || loadingMoreOpen} onClick={loadMoreOpen}>
                   {loadingMoreOpen ? 'Memuat...' : 'Muat lebih banyak'}
                 </button>
@@ -682,6 +682,95 @@ export default function KeysPage({ me }: { me: Me }) {
           </header>
           <div className="card-body">
             {loading && <LoadingScreen mode="inline" label="Loading..." minHeight={280} />}
+            <div className="table-footer-filters">
+              <div className="filter-group">
+                <label className="label-sm">Cari</label>
+                <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nama, kunci, jam..." />
+              </div>
+              <div className="filter-group">
+                <label className="label-sm">Tanggal</label>
+                <input className="input input-sm" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              </div>
+              <div className="filter-group">
+                <label className="label-sm">Urutan</label>
+                <select className="select select-sm" value={sort} onChange={(e) => setSort(e.target.value as any)}>
+                  <option value="checkout_desc">Titip terbaru</option>
+                  <option value="checkout_asc">Titip terlama</option>
+                  <option value="checkin_desc">Ambil terbaru</option>
+                  <option value="checkin_asc">Ambil terlama</option>
+                </select>
+              </div>
+              <div className="filter-group">
+                <label className="label-sm">Limit</label>
+                <select className="select select-sm" value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))}>
+                  <option value={50}>50</option>
+                  <option value={200}>200</option>
+                  <option value={500}>500</option>
+                </select>
+              </div>
+              {date === today && (
+                <>
+                  <div className="filter-group">
+                    <label className="label-sm">Filter Jam</label>
+                    <select className="select select-sm" value={filterBy} onChange={(e) => setFilterBy(e.target.value as any)}>
+                      <option value="titip">Jam titip</option>
+                      <option value="ambil">Jam ambil</option>
+                    </select>
+                  </div>
+                  <div className="filter-group">
+                    <label className="label-sm">Dari</label>
+                    <input className="input input-sm" type="time" value={fromHm} onChange={(e) => setFromHm(e.target.value)} />
+                  </div>
+                  <div className="filter-group">
+                    <label className="label-sm">Sampai</label>
+                    <input className="input input-sm" type="time" value={toHm} onChange={(e) => setToHm(e.target.value)} />
+                  </div>
+                </>
+              )}
+              <div className="filter-actions">
+                <button className="button button-secondary button-sm" type="button" onClick={() => setDate(today)}>
+                  Hari ini
+                </button>
+                <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
+                  Semua
+                </button>
+                <button
+                  className="button button-secondary button-sm"
+                  type="button"
+                  onClick={() => {
+                    const closedDateField = date === today && filterBy === 'ambil' ? 'checkin' : 'checkout'
+                    refresh({ q, date, sort, limit, closedDateField })
+                  }}
+                >
+                  Refresh
+                </button>
+                <button
+                  className="button button-secondary button-sm"
+                  type="button"
+                  onClick={() => {
+                    const allRows = [...openView, ...closedView].sort((a, b) => Date.parse(b.checkout_at || '') - Date.parse(a.checkout_at || ''))
+                    downloadCsv(
+                      `kunci-${date || 'semua'}.csv`,
+                      [['Instansi', 'Unit', 'Ruangan/Kunci', 'Jam titip', 'Jam ambil', 'Catatan', 'Foto', 'Petugas', 'Status']].concat(
+                        allRows.map((r) => [
+                          String(r.borrower_name || ''),
+                          String(r.unit || ''),
+                          String(r.key_name || ''),
+                          String(fmtDateTime(r.checkout_at)),
+                          String(fmtDateTime(r.checkin_at || '')),
+                          String(r.notes || ''),
+                          r.has_photo ? 'Ya' : 'Tidak',
+                          petugasName(r),
+                          String(r.status || ''),
+                        ]),
+                      ),
+                    )
+                  }}
+                >
+                  Export CSV
+                </button>
+              </div>
+            </div>
             <div className="table-wrap" aria-hidden={loading}>
               <table className="table table-mobile-cards">
                 <thead>
@@ -751,7 +840,7 @@ export default function KeysPage({ me }: { me: Me }) {
               </table>
             </div>
             {closedHasMore && (
-              <div className="row" style={{ justifyContent: 'center', marginTop: 12 }}>
+              <div className="row row-right" style={{ marginTop: 12 }}>
                 <button
                   className="button button-secondary"
                   type="button"
@@ -762,96 +851,6 @@ export default function KeysPage({ me }: { me: Me }) {
                 </button>
               </div>
             )}
-          </div>
-
-          <div className="table-footer-filters">
-            <div className="filter-group">
-              <label className="label-sm">Cari</label>
-              <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nama, kunci, jam..." />
-            </div>
-            <div className="filter-group">
-              <label className="label-sm">Tanggal</label>
-              <input className="input input-sm" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-            </div>
-            <div className="filter-group">
-              <label className="label-sm">Urutan</label>
-              <select className="select select-sm" value={sort} onChange={(e) => setSort(e.target.value as any)}>
-                <option value="checkout_desc">Titip terbaru</option>
-                <option value="checkout_asc">Titip terlama</option>
-                <option value="checkin_desc">Ambil terbaru</option>
-                <option value="checkin_asc">Ambil terlama</option>
-              </select>
-            </div>
-            <div className="filter-group">
-              <label className="label-sm">Limit</label>
-              <select className="select select-sm" value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))}>
-                <option value={50}>50</option>
-                <option value={200}>200</option>
-                <option value={500}>500</option>
-              </select>
-            </div>
-            {date === today && (
-              <>
-                <div className="filter-group">
-                  <label className="label-sm">Filter Jam</label>
-                  <select className="select select-sm" value={filterBy} onChange={(e) => setFilterBy(e.target.value as any)}>
-                    <option value="titip">Jam titip</option>
-                    <option value="ambil">Jam ambil</option>
-                  </select>
-                </div>
-                <div className="filter-group">
-                  <label className="label-sm">Dari</label>
-                  <input className="input input-sm" type="time" value={fromHm} onChange={(e) => setFromHm(e.target.value)} />
-                </div>
-                <div className="filter-group">
-                  <label className="label-sm">Sampai</label>
-                  <input className="input input-sm" type="time" value={toHm} onChange={(e) => setToHm(e.target.value)} />
-                </div>
-              </>
-            )}
-            <div className="filter-actions">
-              <button className="button button-secondary button-sm" type="button" onClick={() => setDate(today)}>
-                Hari ini
-              </button>
-              <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
-                Semua
-              </button>
-              <button
-                className="button button-secondary button-sm"
-                type="button"
-                onClick={() => {
-                  const closedDateField = date === today && filterBy === 'ambil' ? 'checkin' : 'checkout'
-                  refresh({ q, date, sort, limit, closedDateField })
-                }}
-              >
-                Refresh
-              </button>
-              <button
-                className="button button-secondary button-sm"
-                type="button"
-                onClick={() => {
-                  const allRows = [...openView, ...closedView].sort((a, b) => Date.parse(b.checkout_at || '') - Date.parse(a.checkout_at || ''))
-                  downloadCsv(
-                    `kunci-${date || 'semua'}.csv`,
-                    [['Instansi', 'Unit', 'Ruangan/Kunci', 'Jam titip', 'Jam ambil', 'Catatan', 'Foto', 'Petugas', 'Status']].concat(
-                      allRows.map((r) => [
-                        String(r.borrower_name || ''),
-                        String(r.unit || ''),
-                        String(r.key_name || ''),
-                        String(fmtDateTime(r.checkout_at)),
-                        String(fmtDateTime(r.checkin_at || '')),
-                        String(r.notes || ''),
-                        r.has_photo ? 'Ya' : 'Tidak',
-                        petugasName(r),
-                        String(r.status || ''),
-                      ]),
-                    ),
-                  )
-                }}
-              >
-                Export CSV
-              </button>
-            </div>
           </div>
         </section>
       </div>

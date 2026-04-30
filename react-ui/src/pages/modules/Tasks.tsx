@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { AttachmentItem, Me, TaskEntry } from '../../types'
 import { compressImageFile } from '../../lib/image'
@@ -90,6 +90,10 @@ export default function TasksPage({ me }: { me: Me }) {
   const [pomEditRowIdx, setPomEditRowIdx] = useState<number | null>(null)
   const [pomHistoryItems, setPomHistoryItems] = useState<PomHistoryItem[]>([])
   const [pomHistoryLoading, setPomHistoryLoading] = useState(false)
+  const [pomPrevLeftovers, setPomPrevLeftovers] = useState<{ siang: number; sore: number }>({ siang: 0, sore: 0 })
+  const [pomOverCapRowIdx, setPomOverCapRowIdx] = useState<number | null>(null)
+  const pomOverCapTimerRef = useRef<number | null>(null)
+  const pomOverCapLastToastAtRef = useRef<number>(0)
 
   const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number }) => {
     const { q, date, sort, limit } = opts
@@ -144,6 +148,25 @@ export default function TasksPage({ me }: { me: Me }) {
         setPomTotalBoxesIn(Math.max(0, parseInt(String((res as any)?.total_boxes_in ?? 0), 10) || 0))
         setPomVendorName(String((res as any)?.vendor_name ?? '') || '')
         setPomUpdatedAt(String(res.updated_at || ''))
+        try {
+          if (nextShift === 'sore' || nextShift === 'malam') {
+            const si = await apiGet<PomSheetRes>(`/api/pom_catering/sheet?date=${encodeURIComponent(d)}&shift=siang`)
+            const siTaken = pomNormalizeRows(si.rows).reduce((sum, r) => sum + (r.taken || 0), 0)
+            const siLeft = Math.max(0, (Number(si.total_boxes_in) || 0) - siTaken)
+            if (nextShift === 'malam') {
+              const so = await apiGet<PomSheetRes>(`/api/pom_catering/sheet?date=${encodeURIComponent(d)}&shift=sore`)
+              const soTaken = pomNormalizeRows(so.rows).reduce((sum, r) => sum + (r.taken || 0), 0)
+              const soLeft = Math.max(0, (Number(so.total_boxes_in) || 0) - soTaken)
+              setPomPrevLeftovers({ siang: siLeft, sore: soLeft })
+            } else {
+              setPomPrevLeftovers({ siang: siLeft, sore: 0 })
+            }
+          } else {
+            setPomPrevLeftovers({ siang: 0, sore: 0 })
+          }
+        } catch {
+          setPomPrevLeftovers({ siang: 0, sore: 0 })
+        }
         setPomError('')
         setPomEditRowIdx(null)
       } catch (err: any) {
@@ -209,12 +232,13 @@ export default function TasksPage({ me }: { me: Me }) {
   }, [loadPomHistory, loadPomSheet, tab])
 
   const setPomRow = useCallback((rowIdx: number, patch: Partial<PomRow>) => {
-    setPomRows((prev) =>
-      prev.map((r, i) => {
-        if (i !== rowIdx) return r
-        return { ...r, ...patch }
-      }),
-    )
+    setPomRows((prev) => prev.map((r, i) => (i === rowIdx ? { ...r, ...patch } : r)))
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (pomOverCapTimerRef.current) window.clearTimeout(pomOverCapTimerRef.current)
+    }
   }, [])
 
   const pomTotals = useMemo(() => {
@@ -229,7 +253,73 @@ export default function TasksPage({ me }: { me: Me }) {
 
   const pomUsedTotal = useMemo(() => pomTotals.taken, [pomTotals.taken])
 
-  const pomRemaining = useMemo(() => pomTotalBoxesIn - pomUsedTotal, [pomTotalBoxesIn, pomUsedTotal])
+  const pomPrevAvailable = useMemo(() => {
+    if (pomShift === 'sore') return pomPrevLeftovers.siang
+    if (pomShift === 'malam') return pomPrevLeftovers.siang + pomPrevLeftovers.sore
+    return 0
+  }, [pomPrevLeftovers.siang, pomPrevLeftovers.sore, pomShift])
+
+  const pomAvailableBoxes = useMemo(() => pomTotalBoxesIn + pomPrevAvailable, [pomPrevAvailable, pomTotalBoxesIn])
+
+  const pomRemaining = useMemo(() => pomAvailableBoxes - pomUsedTotal, [pomAvailableBoxes, pomUsedTotal])
+
+  const bumpPomOverCap = useCallback(
+    (rowIdx: number) => {
+      setPomOverCapRowIdx(rowIdx)
+      if (pomOverCapTimerRef.current) window.clearTimeout(pomOverCapTimerRef.current)
+      pomOverCapTimerRef.current = window.setTimeout(() => {
+        setPomOverCapRowIdx(null)
+        pomOverCapTimerRef.current = null
+      }, 650)
+      const now = Date.now()
+      if (now - pomOverCapLastToastAtRef.current > 900) {
+        pomOverCapLastToastAtRef.current = now
+        toast.push('Melebihi kuota total box', 'warn')
+      }
+    },
+    [toast],
+  )
+
+  const setPomRowCapped = useCallback(
+    (rowIdx: number, patch: Partial<PomRow>) => {
+      setPomRows((prev) => {
+        const curr = prev[rowIdx]
+        if (!curr) return prev
+        let nextJatah = patch.jatah != null ? Math.max(0, Math.min(9999, Number(patch.jatah) || 0)) : curr.jatah
+        let nextTaken = patch.taken != null ? Math.max(0, Math.min(9999, Number(patch.taken) || 0)) : curr.taken
+
+        if (patch.jatah != null) {
+          const other = prev.reduce((sum, r, i) => sum + (i === rowIdx ? 0 : r.jatah || 0), 0)
+          const cap = Math.max(0, pomAvailableBoxes - other)
+          if (nextJatah > cap) {
+            nextJatah = cap
+            bumpPomOverCap(rowIdx)
+          }
+        }
+
+        if (patch.taken != null) {
+          const other = prev.reduce((sum, r, i) => sum + (i === rowIdx ? 0 : r.taken || 0), 0)
+          const cap = Math.max(0, pomAvailableBoxes - other)
+          if (nextTaken > cap) {
+            nextTaken = cap
+            bumpPomOverCap(rowIdx)
+          }
+        }
+
+        return prev.map((r, i) =>
+          i === rowIdx
+            ? {
+                ...r,
+                ...patch,
+                jatah: patch.jatah != null ? nextJatah : r.jatah,
+                taken: patch.taken != null ? nextTaken : r.taken,
+              }
+            : r,
+        )
+      })
+    },
+    [bumpPomOverCap, pomAvailableBoxes],
+  )
 
   const savePomSheet = useCallback(async () => {
     if (pomSaving) return
@@ -775,6 +865,11 @@ export default function TasksPage({ me }: { me: Me }) {
                     +
                   </button>
                 </div>
+                {pomShift !== 'siang' && (
+                  <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+                    {pomShift === 'sore' ? `Sisa box (Siang): ${pomPrevLeftovers.siang}` : `Sisa box (Siang): ${pomPrevLeftovers.siang} · Sisa box (Sore): ${pomPrevLeftovers.sore}`}
+                  </div>
+                )}
               </div>
               <div className="card" style={{ padding: 12, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--soft-bg)' }}>
                 <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Ringkasan shift ini</div>
@@ -817,11 +912,11 @@ export default function TasksPage({ me }: { me: Me }) {
                         <td>{idx + 1}</td>
                         <td>{r.unit}</td>
                         <td>
-                          <div className="number-stepper number-stepper-sm">
+                          <div className={`number-stepper number-stepper-sm${pomOverCapRowIdx === idx ? ' stepper-overcap' : ''}`}>
                             <button
                               className="stepper-btn stepper-btn-sm"
                               type="button"
-                              onClick={() => setPomRow(idx, { jatah: Math.max(0, (parseInt(String(r.jatah), 10) || 0) - 1) })}
+                              onClick={() => setPomRowCapped(idx, { jatah: Math.max(0, (parseInt(String(r.jatah), 10) || 0) - 1) })}
                               disabled={!isEditing}
                               aria-label={`Kurangi jatah ${r.unit}`}
                             >
@@ -833,13 +928,13 @@ export default function TasksPage({ me }: { me: Me }) {
                               min={0}
                               step={1}
                               value={r.jatah}
-                              onChange={(e) => setPomRow(idx, { jatah: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                              onChange={(e) => setPomRowCapped(idx, { jatah: Math.max(0, parseInt(e.target.value, 10) || 0) })}
                               disabled={!isEditing}
                             />
                             <button
                               className="stepper-btn stepper-btn-sm"
                               type="button"
-                              onClick={() => setPomRow(idx, { jatah: Math.max(0, (parseInt(String(r.jatah), 10) || 0) + 1) })}
+                              onClick={() => setPomRowCapped(idx, { jatah: Math.max(0, (parseInt(String(r.jatah), 10) || 0) + 1) })}
                               disabled={!isEditing}
                               aria-label={`Tambah jatah ${r.unit}`}
                             >
@@ -848,11 +943,11 @@ export default function TasksPage({ me }: { me: Me }) {
                           </div>
                         </td>
                         <td>
-                          <div className="number-stepper number-stepper-sm">
+                          <div className={`number-stepper number-stepper-sm${pomOverCapRowIdx === idx ? ' stepper-overcap' : ''}`}>
                             <button
                               className="stepper-btn stepper-btn-sm"
                               type="button"
-                              onClick={() => setPomRow(idx, { taken: Math.max(0, (parseInt(String(r.taken), 10) || 0) - 1) })}
+                              onClick={() => setPomRowCapped(idx, { taken: Math.max(0, (parseInt(String(r.taken), 10) || 0) - 1) })}
                               disabled={!isEditing}
                               aria-label={`Kurangi jumlah diambil ${r.unit}`}
                             >
@@ -864,13 +959,13 @@ export default function TasksPage({ me }: { me: Me }) {
                               min={0}
                               step={1}
                               value={r.taken}
-                              onChange={(e) => setPomRow(idx, { taken: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                              onChange={(e) => setPomRowCapped(idx, { taken: Math.max(0, parseInt(e.target.value, 10) || 0) })}
                               disabled={!isEditing}
                             />
                             <button
                               className="stepper-btn stepper-btn-sm"
                               type="button"
-                              onClick={() => setPomRow(idx, { taken: Math.max(0, (parseInt(String(r.taken), 10) || 0) + 1) })}
+                              onClick={() => setPomRowCapped(idx, { taken: Math.max(0, (parseInt(String(r.taken), 10) || 0) + 1) })}
                               disabled={!isEditing}
                               aria-label={`Tambah jumlah diambil ${r.unit}`}
                             >
@@ -1288,6 +1383,66 @@ export default function TasksPage({ me }: { me: Me }) {
         </header>
         <div className="card-body">
           {loading && <LoadingScreen mode="inline" label="Loading..." minHeight={320} />}
+          <div className="table-footer-filters">
+            <div className="filter-group">
+              <label className="label-sm">Cari</label>
+              <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari tugas..." />
+            </div>
+            <div className="filter-group">
+              <label className="label-sm">Tanggal</label>
+              <input className="input input-sm" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            </div>
+            <div className="filter-group">
+              <label className="label-sm">Urutan</label>
+              <select className="select select-sm" value={sort} onChange={(e) => setSort(e.target.value as any)}>
+                <option value="occurred_desc">Terbaru</option>
+                <option value="occurred_asc">Terlama</option>
+              </select>
+            </div>
+            <div className="filter-group">
+              <label className="label-sm">Limit</label>
+              <select className="select select-sm" value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))}>
+                <option value={50}>50</option>
+                <option value={200}>200</option>
+                <option value={500}>500</option>
+              </select>
+            </div>
+            <div className="filter-actions">
+              <button className="button button-secondary button-sm" type="button" onClick={() => setDate(today)}>
+                Hari ini
+              </button>
+              <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
+                Semua
+              </button>
+              <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ q, date, sort, limit })}>
+                Refresh
+              </button>
+              <button
+                className="button button-secondary button-sm"
+                type="button"
+                onClick={() =>
+                  downloadCsv(
+                    `tugas-${tab}-${date || 'semua'}.csv`,
+                    [['Waktu', 'Jenis', 'Tujuan', 'Detail', 'Catatan', 'Foto', 'Petugas', 'Shift', 'Pos']].concat(
+                      viewItems.map((r) => [
+                        fmtDateTime(r.occurred_at),
+                        r.kind,
+                        r.destination,
+                        renderDetails(r),
+                        r.notes || '',
+                        r.has_photo ? 'Ya' : 'Tidak',
+                        r.created_by_name || '-',
+                        r.shift || '-',
+                        r.post || '-',
+                      ]),
+                    ),
+                  )
+                }
+              >
+                Export CSV
+              </button>
+            </div>
+          </div>
           <div className="table-wrap" aria-hidden={loading}>
             <table className="table table-mobile-cards">
               <thead>
@@ -1368,67 +1523,6 @@ export default function TasksPage({ me }: { me: Me }) {
                 )}
               </tbody>
             </table>
-          </div>
-
-          <div className="table-footer-filters">
-            <div className="filter-group">
-              <label className="label-sm">Cari</label>
-              <input className="input input-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari tugas..." />
-            </div>
-            <div className="filter-group">
-              <label className="label-sm">Tanggal</label>
-              <input className="input input-sm" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-            </div>
-            <div className="filter-group">
-              <label className="label-sm">Urutan</label>
-              <select className="select select-sm" value={sort} onChange={(e) => setSort(e.target.value as any)}>
-                <option value="occurred_desc">Terbaru</option>
-                <option value="occurred_asc">Terlama</option>
-              </select>
-            </div>
-            <div className="filter-group">
-              <label className="label-sm">Limit</label>
-              <select className="select select-sm" value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))}>
-                <option value={50}>50</option>
-                <option value={200}>200</option>
-                <option value={500}>500</option>
-              </select>
-            </div>
-            <div className="filter-actions">
-              <button className="button button-secondary button-sm" type="button" onClick={() => setDate(today)}>
-                Hari ini
-              </button>
-              <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
-                Semua
-              </button>
-              <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ q, date, sort, limit })}>
-                Refresh
-              </button>
-              <button
-                className="button button-secondary button-sm"
-                type="button"
-                onClick={() =>
-                  downloadCsv(
-                    `tugas-${tab}-${date || 'semua'}.csv`,
-                    [['Waktu', 'Jenis', 'Tujuan', 'Detail', 'Catatan', 'Foto', 'Petugas', 'Shift', 'Pos']].concat(
-                      viewItems.map((r) => [
-                        fmtDateTime(r.occurred_at),
-                        r.kind,
-                        r.destination,
-                        renderDetails(r),
-                        r.notes || '',
-                        r.has_photo ? 'Ya' : 'Tidak',
-                        r.created_by_name || '-',
-                        r.shift || '-',
-                        r.post || '-',
-                      ]),
-                    ),
-                  )
-                }
-              >
-                Export CSV
-              </button>
-            </div>
           </div>
         </div>
       </section>
