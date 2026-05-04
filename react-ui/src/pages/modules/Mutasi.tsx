@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { AttachmentItem, Me, MutasiEntry } from '../../types'
 import { compressImageFile } from '../../lib/image'
@@ -45,6 +45,104 @@ export default function MutasiPage({ me }: { me: Me }) {
   const [attachments, setAttachments] = useState<AttachmentItem[]>([])
   const [activeAttachment, setActiveAttachment] = useState<AttachmentItem | null>(null)
   const [photoView, setPhotoView] = useState<string | null>(null)
+  const photoModalRef = useRef<HTMLDivElement | null>(null)
+  const editModalRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!photoView) return
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const modalEl = photoModalRef.current
+    const doClose = () => {
+      if (photoView) URL.revokeObjectURL(photoView)
+      setPhotoView(null)
+      setAttachments([])
+      setActiveAttachment(null)
+    }
+    const focusables = () =>
+      Array.from(
+        (modalEl || document).querySelectorAll<HTMLElement>(
+          'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => !el.hasAttribute('disabled') && el.tabIndex !== -1)
+    window.setTimeout(() => {
+      const first = focusables()[0]
+      first?.focus()
+    }, 0)
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        doClose()
+        return
+      }
+      if (e.key !== 'Tab') return
+      const list = focusables()
+      if (!list.length) return
+      const first = list[0]
+      const last = list[list.length - 1]
+      const active = document.activeElement as HTMLElement | null
+      if (e.shiftKey) {
+        if (!active || active === first || !modalEl?.contains(active)) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else {
+        if (!active || active === last || !modalEl?.contains(active)) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    }
+    window.addEventListener('keydown', onKeyDown, { capture: true })
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, { capture: true } as any)
+      previous?.focus()
+    }
+  }, [photoView])
+
+  useEffect(() => {
+    if (!editRow) return
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const modalEl = editModalRef.current
+    const focusables = () =>
+      Array.from(
+        (modalEl || document).querySelectorAll<HTMLElement>(
+          'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => !el.hasAttribute('disabled') && el.tabIndex !== -1)
+    window.setTimeout(() => {
+      const first = focusables()[0]
+      first?.focus()
+    }, 0)
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setEditRow(null)
+        return
+      }
+      if (e.key !== 'Tab') return
+      const list = focusables()
+      if (!list.length) return
+      const first = list[0]
+      const last = list[list.length - 1]
+      const active = document.activeElement as HTMLElement | null
+      if (e.shiftKey) {
+        if (!active || active === first || !modalEl?.contains(active)) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else {
+        if (!active || active === last || !modalEl?.contains(active)) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    }
+    window.addEventListener('keydown', onKeyDown, { capture: true })
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, { capture: true } as any)
+      previous?.focus()
+    }
+  }, [editRow])
 
   useEffect(() => {
     const raw = localStorage.getItem(draftKey)
@@ -602,7 +700,7 @@ export default function MutasiPage({ me }: { me: Me }) {
 
       {photoView && (
         <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Foto" onClick={(e) => e.currentTarget === e.target && closePhoto()}>
-          <div className="modal">
+          <div className="modal" ref={photoModalRef}>
             <div className="modal-header">
               <div className="modal-title">{activeAttachment?.kind ? `Foto · ${activeAttachment.kind}` : 'Foto'}</div>
               <button className="button button-secondary button-sm" type="button" onClick={closePhoto}>
@@ -637,7 +735,7 @@ export default function MutasiPage({ me }: { me: Me }) {
 
       {editRow && (
         <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Edit mutasi" onClick={(e) => e.currentTarget === e.target && setEditRow(null)}>
-          <div className="modal">
+          <div className="modal" ref={editModalRef}>
             <div className="modal-header">
               <div className="modal-title">Edit Mutasi</div>
               <button className="button button-secondary button-sm" type="button" onClick={() => setEditRow(null)}>

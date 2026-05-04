@@ -25,6 +25,8 @@ export default function Shell() {
   const [theme, setTheme] = useState<'light' | 'dark'>(localStorage.getItem(themeKey) === 'light' ? 'light' : 'dark')
   const [compact] = useState(localStorage.getItem(compactKey) === 'true')
   const [menuOpen, setMenuOpen] = useState(false)
+  const menuModalRef = useRef<HTMLDivElement | null>(null)
+  const menuBtnRef = useRef<HTMLButtonElement | null>(null)
   const themeTimeoutRef = useRef<number | null>(null)
   const themeRafRef = useRef<number | null>(null)
   const themeLabel = theme === 'light' ? 'Terang' : 'Gelap'
@@ -75,6 +77,51 @@ export default function Shell() {
       root.classList.remove('theme-transition')
     }
   }, [])
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const modalEl = menuModalRef.current
+    const focusables = () =>
+      Array.from(
+        (modalEl || document).querySelectorAll<HTMLElement>(
+          'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => !el.hasAttribute('disabled') && el.tabIndex !== -1)
+    window.setTimeout(() => {
+      const first = focusables()[0]
+      first?.focus()
+    }, 0)
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setMenuOpen(false)
+        return
+      }
+      if (e.key !== 'Tab') return
+      const list = focusables()
+      if (!list.length) return
+      const first = list[0]
+      const last = list[list.length - 1]
+      const active = document.activeElement as HTMLElement | null
+      if (e.shiftKey) {
+        if (!active || active === first || !modalEl?.contains(active)) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else {
+        if (!active || active === last || !modalEl?.contains(active)) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    }
+    window.addEventListener('keydown', onKeyDown, { capture: true })
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, { capture: true } as any)
+      previous?.focus()
+    }
+  }, [menuOpen])
 
   useEffect(() => {
     document.documentElement.dataset.compact = compact ? 'true' : 'false'
@@ -226,7 +273,7 @@ export default function Shell() {
               Sesi: {sessionLabel}
             </div>
           )}
-          <button className="button button-secondary button-sm topbar-menu" type="button" onClick={() => setMenuOpen(true)}>
+          <button className="button button-secondary button-sm topbar-menu" type="button" onClick={() => setMenuOpen(true)} ref={menuBtnRef} aria-haspopup="dialog" aria-expanded={menuOpen}>
             ⋯
           </button>
           <button className="button button-secondary button-sm topbar-action theme-toggle" type="button" onClick={toggleTheme} aria-label={`Mode: ${themeLabel}`} title={`Mode: ${themeLabel}`}>
@@ -246,7 +293,7 @@ export default function Shell() {
       </div>
       {menuOpen && (
         <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Menu" onClick={(e) => (e.currentTarget === e.target ? setMenuOpen(false) : null)}>
-          <div className="modal">
+          <div className="modal" ref={menuModalRef}>
             <div className="modal-header">
               <div className="modal-title">Menu</div>
               <button className="button button-secondary button-sm" type="button" onClick={() => setMenuOpen(false)}>
