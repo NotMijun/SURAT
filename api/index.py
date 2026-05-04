@@ -332,15 +332,54 @@ def db_connect():
             raise HTTPException(status_code=500, detail=f"{hint} Detail: {_psycopg2_import_error}")
         raise HTTPException(status_code=500, detail=hint)
     hostaddr = (os.getenv("DATABASE_HOSTADDR") or "").strip()
-    if hostaddr:
-        conn = psycopg2.connect(_database_url(), connect_timeout=5, hostaddr=hostaddr)
-    else:
-        conn = psycopg2.connect(_database_url(), connect_timeout=5)
     try:
-        _ensure_schema(conn)
+        if hostaddr:
+            conn = psycopg2.connect(_database_url(), connect_timeout=5, hostaddr=hostaddr)
+        else:
+            conn = psycopg2.connect(_database_url(), connect_timeout=5)
+    except Exception as e:
+        if (os.getenv("DEBUG") or "").strip() == "1":
+            raise HTTPException(status_code=500, detail=f"DB connect error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Tidak bisa konek ke database")
+    try:
+        try:
+            _ensure_schema(conn)
+        except Exception as e:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            if (os.getenv("DEBUG") or "").strip() == "1":
+                raise HTTPException(status_code=500, detail=f"DB schema error: {str(e)}")
+            raise HTTPException(status_code=500, detail="Kesalahan migrasi database")
         yield conn
     finally:
         conn.close()
+
+
+@app.get("/api/diag")
+def api_diag():
+    info: dict[str, Any] = {
+        "backend": "fastapi",
+        "debug": (os.getenv("DEBUG") or "").strip() == "1",
+        "has_psycopg2": psycopg2 is not None,
+        "has_database_url": bool((os.getenv("DATABASE_URL") or "").strip() or (os.getenv("DATABASE_URL_POOLER") or "").strip()),
+    }
+    if psycopg2 is None:
+        return info
+    try:
+        with db_connect() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='key_master' ORDER BY ordinal_position"
+                )
+                cols = cur.fetchall()
+            info["key_master_columns"] = [f"{c.get('column_name')}:{c.get('data_type')}" for c in (cols or [])]
+    except HTTPException as e:
+        info["db_error"] = str(e.detail)
+    except Exception:
+        info["db_error"] = "unknown"
+    return info
 
 
 def _ensure_schema(conn) -> None:
@@ -3527,86 +3566,43 @@ def admin_list_key_master(request: Request):
 
 @app.post("/api/admin/keys/master")
 def admin_create_key_master(body: CreateKeyMasterBody, request: Request):
-    with db_connect() as conn:
-        sess = _require_session(conn, request)
-        _require_role(sess, ("admin",))
-        name = _text_field(body.name, field="Nama kunci", max_len=80)
-        if not name:
-            raise HTTPException(status_code=400, detail="Nama kunci wajib diisi")
-        norm = normalize_text(name)
-        now = utc_now_iso()
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='key_master'"
-            )
-            meta_rows = cur.fetchall()
-            col_type = {str(r["column_name"]): str(r["data_type"]) for r in (meta_rows or []) if r.get("column_name")}
+    try:
+        with db_connect() as conn:
+            sess = _require_session(conn, request)
+            _require_role(sess, ("admin",))
+            name = _text_field(body.name, field="Nama kunci", max_len=80)
+            if not name:
+                raise HTTPException(status_code=400, detail="Nama kunci wajib diisi")
+            norm = normalize_text(name)
+            now = utc_now_iso()
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='key_master'"
+                )
+                meta_rows = cur.fetchall()
+                col_type = {str(r["column_name"]): str(r["data_type"]) for r in (meta_rows or []) if r.get("column_name")}
 
-            has_name_norm = "name_norm" in col_type
-            has_is_active = "is_active" in col_type
-            has_created_by = "created_by" in col_type
-            has_created_at = "created_at" in col_type
-            has_updated_at = "updated_at" in col_type
+                has_name_norm = "name_norm" in col_type
+                has_is_active = "is_active" in col_type
+                has_created_by = "created_by" in col_type
+                has_created_at = "created_at" in col_type
+                has_updated_at = "updated_at" in col_type
 
-            active_true: Any = True
-            active_false: Any = False
-            if has_is_active and col_type.get("is_active") in ("integer", "smallint", "bigint"):
-                active_true = 1
-                active_false = 0
+                active_true: Any = True
+                active_false: Any = False
+                if has_is_active and col_type.get("is_active") in ("integer", "smallint", "bigint"):
+                    active_true = 1
+                    active_false = 0
 
-            before = None
-            try:
+                before = None
                 if has_name_norm:
                     cur.execute("SELECT id, name, is_active, created_at, updated_at FROM key_master WHERE name_norm=%s LIMIT 1", (norm,))
                 else:
                     cur.execute("SELECT id, name FROM key_master WHERE lower(name)=%s LIMIT 1", (normalize_text(name),))
                 before_row = cur.fetchone()
                 before = dict(before_row) if before_row else None
-            except psycopg2.Error as e:
-                conn.rollback()
-                code = getattr(e, "pgcode", None)
-                raise HTTPException(status_code=500, detail=f"DB error {code or ''}".strip())
-
-            insert_cols: list[str] = ["name"]
-            insert_vals: list[Any] = [name]
-            if has_name_norm:
-                insert_cols.append("name_norm")
-                insert_vals.append(norm)
-            if has_is_active:
-                insert_cols.append("is_active")
-                insert_vals.append(active_true)
-            if has_created_by:
-                insert_cols.append("created_by")
-                insert_vals.append(int(sess["user_id"]))
-            if has_created_at:
-                insert_cols.append("created_at")
-                insert_vals.append(now)
-            if has_updated_at:
-                insert_cols.append("updated_at")
-                insert_vals.append(now)
-
-            insert_sql = f"INSERT INTO key_master({', '.join(insert_cols)}) VALUES ({', '.join(['%s'] * len(insert_cols))})"
-            if has_name_norm:
-                sets = ["name=EXCLUDED.name"]
-                if has_is_active:
-                    sets.append("is_active=EXCLUDED.is_active")
-                if has_updated_at:
-                    sets.append("updated_at=EXCLUDED.updated_at")
-                insert_sql += " ON CONFLICT (name_norm) DO UPDATE SET " + ", ".join(sets)
-            insert_sql += " RETURNING id"
-
-            try:
-                cur.execute(insert_sql, tuple(insert_vals))
-                kid = int(cur.fetchone()["id"])
-            except psycopg2.Error as e:
-                conn.rollback()
-                code = getattr(e, "pgcode", None)
-                if code == "23505":
-                    raise HTTPException(status_code=409, detail="Nama kunci sudah ada")
-                if code == "42P10" and has_name_norm:
+                try:
                     if before is not None:
-                        if has_is_active and bool(before.get("is_active")):
-                            raise HTTPException(status_code=409, detail=f"Nama kunci sudah ada: {before.get('name') or ''}".strip())
                         updates: list[str] = ["name=%s"]
                         params: list[Any] = [name]
                         if has_name_norm:
@@ -3619,48 +3615,68 @@ def admin_create_key_master(body: CreateKeyMasterBody, request: Request):
                             updates.append("updated_at=%s")
                             params.append(now)
                         params.append(int(before["id"]))
-                        cur.execute(f"UPDATE key_master SET {', '.join(updates)} WHERE id=%s", tuple(params))
-                        kid = int(before["id"])
+                        cur.execute(f"UPDATE key_master SET {', '.join(updates)} WHERE id=%s RETURNING id", tuple(params))
+                        kid = int(cur.fetchone()["id"])
                     else:
-                        try:
-                            cur.execute(f"INSERT INTO key_master({', '.join(insert_cols)}) VALUES ({', '.join(['%s'] * len(insert_cols))}) RETURNING id", tuple(insert_vals))
-                            kid = int(cur.fetchone()["id"])
-                        except psycopg2.Error as e2:
-                            conn.rollback()
-                            code2 = getattr(e2, "pgcode", None)
-                            if code2 == "23505":
-                                raise HTTPException(status_code=409, detail="Nama kunci sudah ada")
-                            raise HTTPException(status_code=500, detail=f"DB error {code2 or ''}".strip())
-                else:
+                        insert_cols: list[str] = ["name"]
+                        insert_vals: list[Any] = [name]
+                        if has_name_norm:
+                            insert_cols.append("name_norm")
+                            insert_vals.append(norm)
+                        if has_is_active:
+                            insert_cols.append("is_active")
+                            insert_vals.append(active_true)
+                        if has_created_by:
+                            insert_cols.append("created_by")
+                            insert_vals.append(int(sess["user_id"]))
+                        if has_created_at:
+                            insert_cols.append("created_at")
+                            insert_vals.append(now)
+                        if has_updated_at:
+                            insert_cols.append("updated_at")
+                            insert_vals.append(now)
+                        cur.execute(
+                            f"INSERT INTO key_master({', '.join(insert_cols)}) VALUES ({', '.join(['%s'] * len(insert_cols))}) RETURNING id",
+                            tuple(insert_vals),
+                        )
+                        kid = int(cur.fetchone()["id"])
+                except psycopg2.Error as e:
+                    conn.rollback()
+                    code = getattr(e, "pgcode", None)
+                    if code == "23505":
+                        raise HTTPException(status_code=409, detail="Nama kunci sudah ada")
                     raise HTTPException(status_code=500, detail=f"DB error {code or ''}".strip())
 
-            after = {}
-            try:
                 if has_is_active or has_created_at or has_updated_at:
                     cur.execute("SELECT id, name, is_active, created_at, updated_at FROM key_master WHERE id=%s", (kid,))
                 else:
                     cur.execute("SELECT id, name FROM key_master WHERE id=%s", (kid,))
                 after_row = cur.fetchone()
                 after = dict(after_row) if after_row else {"id": kid, "name": name}
-            except psycopg2.Error:
-                after = {"id": kid, "name": name}
-            if before is None:
-                _audit(conn, sess, "auth", str(kid), "key_master_create", None, {"id": kid, "name": after.get("name"), "is_active": True})
-                mode = "created"
-            else:
-                was_active = bool(before.get("is_active"))
-                now_active = bool(after.get("is_active"))
-                name_changed = str(before.get("name") or "") != str(after.get("name") or "")
-                if (not was_active) and now_active:
-                    _audit(conn, sess, "auth", str(kid), "key_master_reactivate", before, after)
-                    mode = "reactivated"
-                elif name_changed:
-                    _audit(conn, sess, "auth", str(kid), "key_master_update", before, after)
-                    mode = "updated"
+
+                if before is None:
+                    _audit(conn, sess, "auth", str(kid), "key_master_create", None, {"id": kid, "name": after.get("name"), "is_active": True})
+                    mode = "created"
                 else:
-                    mode = "exists"
-        conn.commit()
-        return {"ok": True, "id": kid, "mode": mode}
+                    was_active = bool(before.get("is_active")) if has_is_active else True
+                    now_active = bool(after.get("is_active")) if has_is_active else True
+                    name_changed = str(before.get("name") or "") != str(after.get("name") or "")
+                    if (not was_active) and now_active:
+                        _audit(conn, sess, "auth", str(kid), "key_master_reactivate", before, after)
+                        mode = "reactivated"
+                    elif name_changed:
+                        _audit(conn, sess, "auth", str(kid), "key_master_update", before, after)
+                        mode = "updated"
+                    else:
+                        mode = "exists"
+            conn.commit()
+            return {"ok": True, "id": kid, "mode": mode}
+    except HTTPException:
+        raise
+    except Exception as e:
+        if (os.getenv("DEBUG") or "").strip() == "1":
+            raise HTTPException(status_code=500, detail=f"Unhandled: {str(e)}")
+        raise HTTPException(status_code=500, detail="Kesalahan server")
 
 
 @app.patch("/api/admin/keys/master/{key_id}")
@@ -3669,6 +3685,15 @@ def admin_patch_key_master(key_id: int, body: PatchKeyMasterBody, request: Reque
         sess = _require_session(conn, request)
         _require_role(sess, ("admin",))
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='key_master'"
+            )
+            meta_rows = cur.fetchall()
+            col_type = {str(r["column_name"]): str(r["data_type"]) for r in (meta_rows or []) if r.get("column_name")}
+            has_name_norm = "name_norm" in col_type
+            has_is_active = "is_active" in col_type
+            has_updated_at = "updated_at" in col_type
+
             cur.execute(
                 "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='key_master' AND column_name='is_active'"
             )
@@ -3689,12 +3714,14 @@ def admin_patch_key_master(key_id: int, body: PatchKeyMasterBody, request: Reque
                 if not nm:
                     raise HTTPException(status_code=400, detail="Nama kunci wajib diisi")
                 updates["name"] = nm
-                updates["name_norm"] = normalize_text(nm)
-            if body.is_active is not None:
+                if has_name_norm:
+                    updates["name_norm"] = normalize_text(nm)
+            if body.is_active is not None and has_is_active:
                 updates["is_active"] = active_true if bool(body.is_active) else active_false
             if not updates:
                 return {"ok": True}
-            updates["updated_at"] = utc_now_iso()
+            if has_updated_at:
+                updates["updated_at"] = utc_now_iso()
             cols = ", ".join([f"{k}=%s" for k in updates.keys()])
             params = list(updates.values()) + [int(key_id)]
             try:
@@ -3727,10 +3754,15 @@ def admin_delete_key_master(key_id: int, request: Request):
                 raise HTTPException(status_code=404, detail="Kunci tidak ditemukan")
             before = dict(row)
             now = utc_now_iso()
-            cur.execute("UPDATE key_master SET is_active=%s, updated_at=%s WHERE id=%s", (active_false, now, int(key_id)))
-            cur.execute("SELECT * FROM key_master WHERE id=%s", (int(key_id),))
-            after = dict(cur.fetchone())
-            _audit(conn, sess, "auth", str(key_id), "key_master_disable", before, after)
+            if is_active_row:
+                cur.execute("UPDATE key_master SET is_active=%s, updated_at=%s WHERE id=%s", (active_false, now, int(key_id)))
+                cur.execute("SELECT * FROM key_master WHERE id=%s", (int(key_id),))
+                after = dict(cur.fetchone())
+                _audit(conn, sess, "auth", str(key_id), "key_master_disable", before, after)
+            else:
+                cur.execute("DELETE FROM key_master WHERE id=%s", (int(key_id),))
+                after = {"id": int(key_id), "deleted": True}
+                _audit(conn, sess, "auth", str(key_id), "key_master_delete", before, after)
         conn.commit()
         return {"ok": True}
 
