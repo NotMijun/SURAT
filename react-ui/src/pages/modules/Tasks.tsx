@@ -5,6 +5,8 @@ import { compressImageFile } from '../../lib/image'
 import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useConfirm, useToast } from '../../components/ToastHost'
 import LoadingScreen from '../../components/LoadingScreen'
+import Modal from '../../components/Modal'
+import PhotoModal from '../../components/PhotoModal'
 
 export default function TasksPage({ me }: { me: Me }) {
   const toast = useToast()
@@ -55,8 +57,6 @@ export default function TasksPage({ me }: { me: Me }) {
   const [attachments, setAttachments] = useState<AttachmentItem[]>([])
   const [activeAttachment, setActiveAttachment] = useState<AttachmentItem | null>(null)
   const [photoView, setPhotoView] = useState<string | null>(null)
-  const photoModalRef = useRef<HTMLDivElement | null>(null)
-  const editModalRef = useRef<HTMLDivElement | null>(null)
 
   type PomShiftKey = 'siang' | 'sore' | 'malam'
   type PomRow = { unit: string; jatah: number | ''; taken: number | ''; person: string; note: string }
@@ -691,95 +691,13 @@ export default function TasksPage({ me }: { me: Me }) {
     setActiveAttachment(null)
   }, [photoView])
 
-  useEffect(() => {
-    if (!photoView) return
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const modalEl = photoModalRef.current
-    const focusables = () =>
-      Array.from(
-        (modalEl || document).querySelectorAll<HTMLElement>(
-          'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter((el) => !el.hasAttribute('disabled') && el.tabIndex !== -1)
-    window.setTimeout(() => {
-      const first = focusables()[0]
-      first?.focus()
-    }, 0)
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        closePhoto()
-        return
-      }
-      if (e.key !== 'Tab') return
-      const list = focusables()
-      if (!list.length) return
-      const first = list[0]
-      const last = list[list.length - 1]
-      const active = document.activeElement as HTMLElement | null
-      if (e.shiftKey) {
-        if (!active || active === first || !modalEl?.contains(active)) {
-          e.preventDefault()
-          last.focus()
-        }
-      } else {
-        if (!active || active === last || !modalEl?.contains(active)) {
-          e.preventDefault()
-          first.focus()
-        }
-      }
-    }
-    window.addEventListener('keydown', onKeyDown, { capture: true })
-    return () => {
-      window.removeEventListener('keydown', onKeyDown, { capture: true } as any)
-      previous?.focus()
-    }
-  }, [closePhoto, photoView])
-
-  useEffect(() => {
-    if (!editRow) return
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const modalEl = editModalRef.current
-    const focusables = () =>
-      Array.from(
-        (modalEl || document).querySelectorAll<HTMLElement>(
-          'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter((el) => !el.hasAttribute('disabled') && el.tabIndex !== -1)
-    window.setTimeout(() => {
-      const first = focusables()[0]
-      first?.focus()
-    }, 0)
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        setEditRow(null)
-        return
-      }
-      if (e.key !== 'Tab') return
-      const list = focusables()
-      if (!list.length) return
-      const first = list[0]
-      const last = list[list.length - 1]
-      const active = document.activeElement as HTMLElement | null
-      if (e.shiftKey) {
-        if (!active || active === first || !modalEl?.contains(active)) {
-          e.preventDefault()
-          last.focus()
-        }
-      } else {
-        if (!active || active === last || !modalEl?.contains(active)) {
-          e.preventDefault()
-          first.focus()
-        }
-      }
-    }
-    window.addEventListener('keydown', onKeyDown, { capture: true })
-    return () => {
-      window.removeEventListener('keydown', onKeyDown, { capture: true } as any)
-      previous?.focus()
-    }
-  }, [editRow])
+  const photoTabs = useMemo(
+    () =>
+      (attachments || [])
+        .filter((a) => a && typeof a.id === 'number')
+        .map((a) => ({ id: a.id as number, label: a.kind || 'Foto' })),
+    [attachments],
+  )
 
   const loadPhotoUrl = useCallback(async (url: string) => {
     const blob = await apiGetBlob(url)
@@ -1636,43 +1554,26 @@ export default function TasksPage({ me }: { me: Me }) {
       </section>
 
       {photoView && (
-        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Foto" onClick={(e) => e.currentTarget === e.target && closePhoto()}>
-          <div className="modal" ref={photoModalRef}>
-            <div className="modal-header">
-              <div className="modal-title">{activeAttachment?.kind ? `Foto · ${activeAttachment.kind}` : 'Foto'}</div>
-              <button className="button button-secondary button-sm" type="button" onClick={closePhoto}>
-                Tutup
-              </button>
-            </div>
-            <div className="modal-body">
-              {attachments.length > 1 && (
-                <div className="attachment-strip">
-                  {attachments.map((a) => (
-                    <button
-                      key={a.id}
-                      className={`button button-sm button-secondary${activeAttachment?.id === a.id ? ' button-active' : ''}`}
-                      type="button"
-                      onClick={() => {
-                        ;(async () => {
-                          setActiveAttachment(a)
-                          await loadPhotoUrl(a.url)
-                        })().catch(() => {})
-                      }}
-                    >
-                      {a.kind}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <img className="modal-photo" src={photoView} alt="Foto" />
-            </div>
-          </div>
-        </div>
+        <PhotoModal
+          open={true}
+          title={activeAttachment?.kind ? `Foto · ${activeAttachment.kind}` : 'Foto'}
+          photoUrl={photoView}
+          attachments={photoTabs}
+          activeAttachmentId={activeAttachment?.id ?? null}
+          onSelectAttachment={(id) => {
+            const a = attachments.find((x) => x.id === id)
+            if (!a) return
+            ;(async () => {
+              setActiveAttachment(a)
+              await loadPhotoUrl(a.url)
+            })().catch(() => {})
+          }}
+          onClose={closePhoto}
+        />
       )}
 
       {editRow && (
-        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Edit tugas" onClick={(e) => e.currentTarget === e.target && setEditRow(null)}>
-          <div className="modal" ref={editModalRef}>
+        <Modal open={true} ariaLabel="Edit tugas" onClose={() => setEditRow(null)}>
             <div className="modal-header">
               <div className="modal-title">Edit Tugas</div>
               <button className="button button-secondary button-sm" type="button" onClick={() => setEditRow(null)}>
@@ -1866,8 +1767,7 @@ export default function TasksPage({ me }: { me: Me }) {
                 <button className="button button-primary" type="button" onClick={saveEdit} disabled={busy}>{busy ? 'Menyimpan...' : 'Simpan Perubahan'}</button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       <button className="fab" type="button" onClick={() => document.getElementById('tasksForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>

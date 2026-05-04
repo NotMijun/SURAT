@@ -4,6 +4,7 @@ import { apiGet, apiPost } from '../lib/api'
 import { clearToken, compactKey, themeKey, tokenKey } from '../lib/storage'
 import type { Me } from '../types'
 import { useConfirm, useToast } from '../components/ToastHost'
+import Modal from '../components/Modal'
 import LoadingScreen from '../components/LoadingScreen'
 import DashboardPage from './modules/Dashboard'
 import KeysPage from './modules/Keys'
@@ -25,8 +26,6 @@ export default function Shell() {
   const [theme, setTheme] = useState<'light' | 'dark'>(localStorage.getItem(themeKey) === 'light' ? 'light' : 'dark')
   const [compact] = useState(localStorage.getItem(compactKey) === 'true')
   const [menuOpen, setMenuOpen] = useState(false)
-  const menuModalRef = useRef<HTMLDivElement | null>(null)
-  const menuBtnRef = useRef<HTMLButtonElement | null>(null)
   const themeTimeoutRef = useRef<number | null>(null)
   const themeRafRef = useRef<number | null>(null)
   const themeLabel = theme === 'light' ? 'Terang' : 'Gelap'
@@ -77,51 +76,6 @@ export default function Shell() {
       root.classList.remove('theme-transition')
     }
   }, [])
-
-  useEffect(() => {
-    if (!menuOpen) return
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const modalEl = menuModalRef.current
-    const focusables = () =>
-      Array.from(
-        (modalEl || document).querySelectorAll<HTMLElement>(
-          'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter((el) => !el.hasAttribute('disabled') && el.tabIndex !== -1)
-    window.setTimeout(() => {
-      const first = focusables()[0]
-      first?.focus()
-    }, 0)
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        setMenuOpen(false)
-        return
-      }
-      if (e.key !== 'Tab') return
-      const list = focusables()
-      if (!list.length) return
-      const first = list[0]
-      const last = list[list.length - 1]
-      const active = document.activeElement as HTMLElement | null
-      if (e.shiftKey) {
-        if (!active || active === first || !modalEl?.contains(active)) {
-          e.preventDefault()
-          last.focus()
-        }
-      } else {
-        if (!active || active === last || !modalEl?.contains(active)) {
-          e.preventDefault()
-          first.focus()
-        }
-      }
-    }
-    window.addEventListener('keydown', onKeyDown, { capture: true })
-    return () => {
-      window.removeEventListener('keydown', onKeyDown, { capture: true } as any)
-      previous?.focus()
-    }
-  }, [menuOpen])
 
   useEffect(() => {
     document.documentElement.dataset.compact = compact ? 'true' : 'false'
@@ -273,7 +227,7 @@ export default function Shell() {
               Sesi: {sessionLabel}
             </div>
           )}
-          <button className="button button-secondary button-sm topbar-menu" type="button" onClick={() => setMenuOpen(true)} ref={menuBtnRef} aria-haspopup="dialog" aria-expanded={menuOpen}>
+          <button className="button button-secondary button-sm topbar-menu" type="button" onClick={() => setMenuOpen(true)} aria-haspopup="dialog" aria-expanded={menuOpen}>
             ⋯
           </button>
           <button className="button button-secondary button-sm topbar-action theme-toggle" type="button" onClick={toggleTheme} aria-label={`Mode: ${themeLabel}`} title={`Mode: ${themeLabel}`}>
@@ -291,37 +245,33 @@ export default function Shell() {
           </button>
         </div>
       </div>
-      {menuOpen && (
-        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Menu" onClick={(e) => (e.currentTarget === e.target ? setMenuOpen(false) : null)}>
-          <div className="modal" ref={menuModalRef}>
-            <div className="modal-header">
-              <div className="modal-title">Menu</div>
-              <button className="button button-secondary button-sm" type="button" onClick={() => setMenuOpen(false)}>
-                Tutup
-              </button>
-            </div>
-            <div className="modal-body">
-              <div className="row" style={{ flexWrap: 'wrap' }}>
-                <button className="button button-secondary theme-toggle" type="button" onClick={toggleTheme} aria-label={`Mode: ${themeLabel}`} title={`Mode: ${themeLabel}`}>
-                  <span className="theme-toggle-text">Mode:</span>
-                  <span className="theme-toggle-swap" aria-hidden="true">
-                    <span className="theme-toggle-icon theme-toggle-icon-sun">☀</span>
-                    <span className="theme-toggle-icon theme-toggle-icon-moon">☾</span>
-                  </span>
-                </button>
-              </div>
-              <div className="row" style={{ marginTop: 10, flexWrap: 'wrap' }}>
-                <button className="button button-secondary" type="button" onClick={() => logoutAll().finally(() => setMenuOpen(false))}>
-                  Keluar Semua
-                </button>
-                <button className="button button-danger" type="button" onClick={() => logout().finally(() => setMenuOpen(false))}>
-                  Keluar
-                </button>
-              </div>
-            </div>
+      <Modal open={menuOpen} ariaLabel="Menu" onClose={() => setMenuOpen(false)}>
+        <div className="modal-header">
+          <div className="modal-title">Menu</div>
+          <button className="button button-secondary button-sm" type="button" onClick={() => setMenuOpen(false)}>
+            Tutup
+          </button>
+        </div>
+        <div className="modal-body">
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <button className="button button-secondary theme-toggle" type="button" onClick={toggleTheme} aria-label={`Mode: ${themeLabel}`} title={`Mode: ${themeLabel}`}>
+              <span className="theme-toggle-text">Mode:</span>
+              <span className="theme-toggle-swap" aria-hidden="true">
+                <span className="theme-toggle-icon theme-toggle-icon-sun">☀</span>
+                <span className="theme-toggle-icon theme-toggle-icon-moon">☾</span>
+              </span>
+            </button>
+          </div>
+          <div className="row" style={{ marginTop: 10, flexWrap: 'wrap' }}>
+            <button className="button button-secondary" type="button" onClick={() => logoutAll().finally(() => setMenuOpen(false))}>
+              Keluar Semua
+            </button>
+            <button className="button button-danger" type="button" onClick={() => logout().finally(() => setMenuOpen(false))}>
+              Keluar
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
 
       <div className="tabsbar">
         <div className="tabs">
