@@ -55,22 +55,25 @@ export default function DashboardPage({ me }: { me: Me }) {
 
   useEffect(() => {
     let cancelled = false
-    setLoadingKeys(true)
-    apiGet<{ items: KeyTx[] }>(`/api/keys?status=open&q=${encodeURIComponent(q)}`)
-      .then((k) => {
-        if (cancelled) return
-        setKeysOpen(k.items || [])
-      })
-      .catch((err: any) => {
-        if (cancelled) return
-        toast.push(String(err?.message || err || 'Gagal memuat data kunci'), 'error')
-      })
-      .finally(() => {
-        if (cancelled) return
-        setLoadingKeys(false)
-      })
+    const t = window.setTimeout(() => {
+      setLoadingKeys(true)
+      apiGet<{ items: KeyTx[] }>(`/api/keys?status=open&q=${encodeURIComponent(q)}`)
+        .then((k) => {
+          if (cancelled) return
+          setKeysOpen(k.items || [])
+        })
+        .catch((err: any) => {
+          if (cancelled) return
+          toast.push(String(err?.message || err || 'Gagal memuat data kunci'), 'error')
+        })
+        .finally(() => {
+          if (cancelled) return
+          setLoadingKeys(false)
+        })
+    }, 250)
     return () => {
       cancelled = true
+      window.clearTimeout(t)
     }
   }, [q, toast])
 
