@@ -3507,39 +3507,46 @@ def admin_create_key_master(body: CreateKeyMasterBody, request: Request):
             raise HTTPException(status_code=400, detail="Nama kunci wajib diisi")
         norm = normalize_text(name)
         now = utc_now_iso()
-        try:
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("SELECT id, name, is_active, created_at, updated_at FROM key_master WHERE name_norm=%s LIMIT 1", (norm,))
-                existing = cur.fetchone()
-                if existing:
-                    if bool(existing.get("is_active")):
-                        raise HTTPException(status_code=409, detail=f"Nama kunci sudah ada: {existing.get('name') or ''}".strip())
-                    before = dict(existing)
-                    cur.execute("UPDATE key_master SET name=%s, name_norm=%s, is_active=TRUE, updated_at=%s WHERE id=%s", (name, norm, now, int(existing["id"])))
-                    cur.execute("SELECT id, name, is_active, created_at, updated_at FROM key_master WHERE id=%s", (int(existing["id"]),))
-                    after = dict(cur.fetchone())
-                    _audit(conn, sess, "auth", str(existing["id"]), "key_master_reactivate", before, after)
-                    conn.commit()
-                    return {"ok": True, "id": int(existing["id"]), "mode": "reactivated"}
-
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT id, name, is_active, created_at, updated_at FROM key_master WHERE name_norm=%s LIMIT 1", (norm,))
+            before_row = cur.fetchone()
+            before = dict(before_row) if before_row else None
+            try:
                 cur.execute(
-                    "INSERT INTO key_master(name, name_norm, is_active, created_by, created_at, updated_at) VALUES (%s,%s,TRUE,%s,%s,%s) RETURNING id",
+                    """
+                    INSERT INTO key_master(name, name_norm, is_active, created_by, created_at, updated_at)
+                    VALUES (%s,%s,TRUE,%s,%s,%s)
+                    ON CONFLICT (name_norm) DO UPDATE SET
+                      name = EXCLUDED.name,
+                      is_active = TRUE,
+                      updated_at = EXCLUDED.updated_at
+                    RETURNING id
+                    """,
                     (name, norm, int(sess["user_id"]), now, now),
                 )
-                kid = int(cur.fetchone()["id"])
-                _audit(conn, sess, "auth", str(kid), "key_master_create", None, {"id": kid, "name": name, "is_active": True})
-                conn.commit()
-                return {"ok": True, "id": kid}
-        except psycopg2.IntegrityError:
-            conn.rollback()
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("SELECT id, name, is_active FROM key_master WHERE name_norm=%s LIMIT 1", (norm,))
-                existing = cur.fetchone()
-                if existing:
-                    if bool(existing.get("is_active")):
-                        raise HTTPException(status_code=409, detail=f"Nama kunci sudah ada: {existing.get('name') or ''}".strip())
-                    raise HTTPException(status_code=409, detail=f"Nama kunci sudah ada (nonaktif): {existing.get('name') or ''}".strip())
-            raise HTTPException(status_code=409, detail="Nama kunci sudah ada")
+            except psycopg2.IntegrityError:
+                conn.rollback()
+                raise HTTPException(status_code=409, detail="Nama kunci sudah ada")
+            kid = int(cur.fetchone()["id"])
+            cur.execute("SELECT id, name, is_active, created_at, updated_at FROM key_master WHERE id=%s", (kid,))
+            after = dict(cur.fetchone())
+            if before is None:
+                _audit(conn, sess, "auth", str(kid), "key_master_create", None, {"id": kid, "name": after.get("name"), "is_active": True})
+                mode = "created"
+            else:
+                was_active = bool(before.get("is_active"))
+                now_active = bool(after.get("is_active"))
+                name_changed = str(before.get("name") or "") != str(after.get("name") or "")
+                if (not was_active) and now_active:
+                    _audit(conn, sess, "auth", str(kid), "key_master_reactivate", before, after)
+                    mode = "reactivated"
+                elif name_changed:
+                    _audit(conn, sess, "auth", str(kid), "key_master_update", before, after)
+                    mode = "updated"
+                else:
+                    mode = "exists"
+        conn.commit()
+        return {"ok": True, "id": kid, "mode": mode}
 
 
 @app.patch("/api/admin/keys/master/{key_id}")

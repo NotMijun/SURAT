@@ -255,7 +255,16 @@ export default function AdminPage({ me }: { me: Me }) {
     try {
       const res = await apiPost<{ ok: boolean; id: number; mode?: string }>('/api/admin/keys/master', { name })
       setNewKeyName('')
-      toast.push(res.mode === 'reactivated' ? 'Master kunci diaktifkan kembali' : 'Master kunci ditambahkan', 'success')
+      toast.push(
+        res.mode === 'reactivated'
+          ? 'Master kunci diaktifkan kembali'
+          : res.mode === 'exists'
+            ? 'Master kunci sudah ada'
+            : res.mode === 'updated'
+              ? 'Master kunci diperbarui'
+              : 'Master kunci ditambahkan',
+        'success',
+      )
       try {
         const km = await apiGet<{ items: Array<{ id: number; name: string; is_active?: boolean; created_at?: string; updated_at?: string }> }>('/api/admin/keys/master')
         setKeyMaster(km.items || [])
