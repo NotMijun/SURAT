@@ -1755,8 +1755,12 @@ def list_key_master(request: Request):
     with db_connect() as conn:
         _require_session(conn, request)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT id, name FROM key_master WHERE is_active=TRUE ORDER BY name ASC")
-            rows = cur.fetchall()
+            try:
+                cur.execute("SELECT id, name FROM key_master WHERE is_active=TRUE ORDER BY name ASC")
+                rows = cur.fetchall()
+            except psycopg2.Error:
+                cur.execute("SELECT id, name FROM key_master ORDER BY name ASC")
+                rows = cur.fetchall()
         return {"items": rows}
 
 
@@ -3512,8 +3516,12 @@ def admin_list_key_master(request: Request):
         sess = _require_session(conn, request)
         _require_role(sess, ("admin",))
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT id, name, is_active, created_at, updated_at FROM key_master ORDER BY name ASC")
-            rows = cur.fetchall()
+            try:
+                cur.execute("SELECT id, name, is_active, created_at, updated_at FROM key_master ORDER BY name ASC")
+                rows = cur.fetchall()
+            except psycopg2.Error:
+                cur.execute("SELECT id, name FROM key_master ORDER BY name ASC")
+                rows = cur.fetchall()
         return {"items": rows}
 
 
@@ -3528,22 +3536,42 @@ def admin_create_key_master(body: CreateKeyMasterBody, request: Request):
         norm = normalize_text(name)
         now = utc_now_iso()
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT id, name, is_active, created_at, updated_at FROM key_master WHERE name_norm=%s LIMIT 1", (norm,))
-            before_row = cur.fetchone()
-            before = dict(before_row) if before_row else None
+            before = None
+            has_name_norm = True
             try:
-                cur.execute(
-                    """
-                    INSERT INTO key_master(name, name_norm, is_active, created_by, created_at, updated_at)
-                    VALUES (%s,%s,TRUE,%s,%s,%s)
-                    ON CONFLICT (name_norm) DO UPDATE SET
-                      name = EXCLUDED.name,
-                      is_active = TRUE,
-                      updated_at = EXCLUDED.updated_at
-                    RETURNING id
-                    """,
-                    (name, norm, int(sess["user_id"]), now, now),
-                )
+                cur.execute("SELECT id, name, is_active, created_at, updated_at FROM key_master WHERE name_norm=%s LIMIT 1", (norm,))
+                before_row = cur.fetchone()
+                before = dict(before_row) if before_row else None
+            except psycopg2.Error as e:
+                conn.rollback()
+                code = getattr(e, "pgcode", None)
+                if code == "42703":
+                    has_name_norm = False
+                else:
+                    raise HTTPException(status_code=500, detail="Kesalahan server")
+            try:
+                if has_name_norm:
+                    cur.execute(
+                        """
+                        INSERT INTO key_master(name, name_norm, is_active, created_by, created_at, updated_at)
+                        VALUES (%s,%s,TRUE,%s,%s,%s)
+                        ON CONFLICT (name_norm) DO UPDATE SET
+                          name = EXCLUDED.name,
+                          is_active = TRUE,
+                          updated_at = EXCLUDED.updated_at
+                        RETURNING id
+                        """,
+                        (name, norm, int(sess["user_id"]), now, now),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        INSERT INTO key_master(name)
+                        VALUES (%s)
+                        RETURNING id
+                        """,
+                        (name,),
+                    )
             except psycopg2.Error as e:
                 conn.rollback()
                 code = getattr(e, "pgcode", None)
@@ -3570,11 +3598,21 @@ def admin_create_key_master(body: CreateKeyMasterBody, request: Request):
                     except psycopg2.IntegrityError:
                         conn.rollback()
                         raise HTTPException(status_code=409, detail="Nama kunci sudah ada")
+                if code == "42703":
+                    try:
+                        cur.execute("INSERT INTO key_master(name) VALUES (%s) RETURNING id", (name,))
+                    except psycopg2.IntegrityError:
+                        conn.rollback()
+                        raise HTTPException(status_code=409, detail="Nama kunci sudah ada")
                 else:
                     raise HTTPException(status_code=500, detail="Kesalahan server")
             kid = int(cur.fetchone()["id"])
-            cur.execute("SELECT id, name, is_active, created_at, updated_at FROM key_master WHERE id=%s", (kid,))
-            after = dict(cur.fetchone())
+            try:
+                cur.execute("SELECT id, name, is_active, created_at, updated_at FROM key_master WHERE id=%s", (kid,))
+                after = dict(cur.fetchone())
+            except psycopg2.Error:
+                cur.execute("SELECT id, name FROM key_master WHERE id=%s", (kid,))
+                after = dict(cur.fetchone())
             if before is None:
                 _audit(conn, sess, "auth", str(kid), "key_master_create", None, {"id": kid, "name": after.get("name"), "is_active": True})
                 mode = "created"
