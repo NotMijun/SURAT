@@ -352,6 +352,7 @@ def _ensure_schema(conn) -> None:
     with _schema_lock:
         if _schema_ready:
             return
+        now = utc_now_iso()
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -597,7 +598,26 @@ def _ensure_schema(conn) -> None:
                 )
                 """
             )
+            cur.execute("ALTER TABLE key_master ADD COLUMN IF NOT EXISTS name_norm TEXT")
+            cur.execute("ALTER TABLE key_master ADD COLUMN IF NOT EXISTS is_active BOOLEAN")
+            cur.execute("ALTER TABLE key_master ADD COLUMN IF NOT EXISTS created_by BIGINT")
+            cur.execute("ALTER TABLE key_master ADD COLUMN IF NOT EXISTS created_at TEXT")
+            cur.execute("ALTER TABLE key_master ADD COLUMN IF NOT EXISTS updated_at TEXT")
+            cur.execute(
+                """
+                UPDATE key_master
+                SET name_norm = lower(regexp_replace(btrim(name), '\\s+', ' ', 'g'))
+                WHERE name_norm IS NULL OR name_norm=''
+                """
+            )
+            cur.execute("UPDATE key_master SET is_active=TRUE WHERE is_active IS NULL")
+            cur.execute("UPDATE key_master SET created_at=%s WHERE created_at IS NULL OR created_at=''", (now,))
+            cur.execute("UPDATE key_master SET updated_at=%s WHERE updated_at IS NULL OR updated_at=''", (now,))
             cur.execute("CREATE INDEX IF NOT EXISTS idx_key_master_active ON key_master(is_active, name)")
+            try:
+                cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_key_master_name_norm_uq ON key_master(name_norm)")
+            except Exception:
+                pass
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS room_master (
@@ -3524,9 +3544,34 @@ def admin_create_key_master(body: CreateKeyMasterBody, request: Request):
                     """,
                     (name, norm, int(sess["user_id"]), now, now),
                 )
-            except psycopg2.IntegrityError:
+            except psycopg2.Error as e:
                 conn.rollback()
-                raise HTTPException(status_code=409, detail="Nama kunci sudah ada")
+                code = getattr(e, "pgcode", None)
+                if code == "23505":
+                    raise HTTPException(status_code=409, detail="Nama kunci sudah ada")
+                if code == "42P10":
+                    if before is not None:
+                        if bool(before.get("is_active")):
+                            raise HTTPException(status_code=409, detail=f"Nama kunci sudah ada: {before.get('name') or ''}".strip())
+                        cur.execute(
+                            "UPDATE key_master SET name=%s, name_norm=%s, is_active=TRUE, updated_at=%s WHERE id=%s",
+                            (name, norm, now, int(before["id"])),
+                        )
+                        cur.execute("SELECT id, name, is_active, created_at, updated_at FROM key_master WHERE id=%s", (int(before["id"]),))
+                        after = dict(cur.fetchone())
+                        _audit(conn, sess, "auth", str(before["id"]), "key_master_reactivate", before, after)
+                        conn.commit()
+                        return {"ok": True, "id": int(before["id"]), "mode": "reactivated"}
+                    try:
+                        cur.execute(
+                            "INSERT INTO key_master(name, name_norm, is_active, created_by, created_at, updated_at) VALUES (%s,%s,TRUE,%s,%s,%s) RETURNING id",
+                            (name, norm, int(sess["user_id"]), now, now),
+                        )
+                    except psycopg2.IntegrityError:
+                        conn.rollback()
+                        raise HTTPException(status_code=409, detail="Nama kunci sudah ada")
+                else:
+                    raise HTTPException(status_code=500, detail="Kesalahan server")
             kid = int(cur.fetchone()["id"])
             cur.execute("SELECT id, name, is_active, created_at, updated_at FROM key_master WHERE id=%s", (kid,))
             after = dict(cur.fetchone())
