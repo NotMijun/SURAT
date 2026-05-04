@@ -7,6 +7,7 @@ import { useConfirm, useToast } from '../../components/ToastHost'
 import LoadingScreen from '../../components/LoadingScreen'
 import Modal from '../../components/Modal'
 import PhotoModal from '../../components/PhotoModal'
+import Pagination from '../../components/Pagination'
 
 export default function TasksPage({ me }: { me: Me }) {
   const toast = useToast()
@@ -18,6 +19,8 @@ export default function TasksPage({ me }: { me: Me }) {
   const [formDate, setFormDate] = useState(today)
   const [sort, setSort] = useState<'occurred_desc' | 'occurred_asc'>('occurred_desc')
   const [limit, setLimit] = useState(200)
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
   const [items, setItems] = useState<TaskEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -97,15 +100,16 @@ export default function TasksPage({ me }: { me: Me }) {
   const pomOverCapTimerRef = useRef<number | null>(null)
   const pomOverCapLastToastAtRef = useRef<number>(0)
 
-  const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number }) => {
-    const { q, date, sort, limit } = opts
+  const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number; tab: TaskTab; offset: number }) => {
+    const { q, date, sort, limit, tab, offset } = opts
     setLoading(true)
     try {
-      const res = await apiGet<{ items: TaskEntry[] }>(
-        `/api/tasks?q=${encodeURIComponent(q.trim())}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&status=active&offset=0`,
+      const res = await apiGet<{ items: TaskEntry[]; total: number }>(
+        `/api/tasks?q=${encodeURIComponent(q.trim())}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&offset=${encodeURIComponent(String(Math.max(0, offset)))}&status=active&tab=${encodeURIComponent(tab)}`,
       )
       const nextItems = res.items || []
       setItems(nextItems)
+      setTotal(typeof res.total === 'number' ? res.total : 0)
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal memuat tugas'), 'error')
     } finally {
@@ -114,9 +118,14 @@ export default function TasksPage({ me }: { me: Me }) {
   }, [toast])
 
   useEffect(() => {
-    const t = window.setTimeout(() => refresh({ q, date, sort, limit }).catch(() => {}), 250)
+    setPage(1)
+  }, [date, limit, q, sort, tab])
+
+  useEffect(() => {
+    const offset = Math.max(0, (page - 1) * limit)
+    const t = window.setTimeout(() => refresh({ q, date, sort, limit, tab, offset }).catch(() => {}), 250)
     return () => window.clearTimeout(t)
-  }, [date, limit, q, refresh, sort])
+  }, [date, limit, page, q, refresh, sort, tab])
 
   const pomNormalizeRows = useCallback((rows: any): PomRow[] => {
     const list = Array.isArray(rows) ? rows : []
@@ -347,7 +356,8 @@ export default function TasksPage({ me }: { me: Me }) {
       toast.push('Sheet POM tersimpan', 'success')
       setPomEditRowIdx(null)
       loadPomHistory().catch(() => {})
-      refresh({ q, date: d, sort, limit }).catch(() => {})
+      setPage(1)
+      refresh({ q, date: d, sort, limit, tab, offset: 0 }).catch(() => {})
       setPomError('')
     } catch (err: any) {
       const msg = String(err?.message || err || 'Gagal menyimpan sheet POM')
@@ -356,7 +366,7 @@ export default function TasksPage({ me }: { me: Me }) {
     } finally {
       setPomSaving(false)
     }
-  }, [date, limit, loadPomHistory, pomRows, pomSaving, pomShift, pomStaffName, pomTotalBoxesIn, pomVendorName, q, refresh, sort, toast, today])
+  }, [date, limit, loadPomHistory, pomRows, pomSaving, pomShift, pomStaffName, pomTotalBoxesIn, pomVendorName, q, refresh, sort, tab, toast, today])
 
   useEffect(() => {
     const loadVendors = async () => {
@@ -419,11 +429,7 @@ export default function TasksPage({ me }: { me: Me }) {
 
   const isPom = (k: string) => /pom/i.test(k || '') && /cater/i.test(k || '')
   const isGalon = (k: string) => /galon/i.test(k || '')
-  const viewItems = useMemo(() => {
-    if (tab === 'pom') return items.filter((r) => isPom(r.kind))
-    if (tab === 'galon') return items.filter((r) => isGalon(r.kind))
-    return items.filter((r) => !isPom(r.kind) && !isGalon(r.kind))
-  }, [items, tab])
+  const viewItems = items
 
   const renderDetails = (r: TaskEntry) => {
     const e = r.extra || {}
@@ -543,7 +549,7 @@ export default function TasksPage({ me }: { me: Me }) {
       
       toast.push('Tugas diperbarui', 'success')
       setEditRow(null)
-      await refresh({ q, date, sort, limit })
+      await refresh({ q, date, sort, limit, tab, offset: Math.max(0, (page - 1) * limit) })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal mengubah'), 'error')
     } finally {
@@ -563,7 +569,7 @@ export default function TasksPage({ me }: { me: Me }) {
     try {
       await apiPost(`/api/tasks/${r.id}/delete`, {})
       toast.push('Tugas dihapus', 'success')
-      await refresh({ q, date, sort, limit })
+      await refresh({ q, date, sort, limit, tab, offset: Math.max(0, (page - 1) * limit) })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal delete'), 'error')
     }
@@ -674,7 +680,8 @@ export default function TasksPage({ me }: { me: Me }) {
       setPhotoKey((x) => x + 1)
       localStorage.removeItem(draftKey)
       toast.push('Tugas dicatat', 'success')
-      await refresh({ q, date, sort, limit })
+      setPage(1)
+      await refresh({ q, date, sort, limit, tab, offset: 0 })
     } catch (err: any) {
       const msg = String(err?.message || err || 'Gagal menyimpan')
       setFormError(msg)
@@ -1440,7 +1447,14 @@ export default function TasksPage({ me }: { me: Me }) {
               <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
                 Semua
               </button>
-              <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ q, date, sort, limit })}>
+              <button
+                className="button button-secondary button-sm"
+                type="button"
+                onClick={() => {
+                  setPage(1)
+                  refresh({ q, date, sort, limit, tab, offset: 0 }).catch(() => {})
+                }}
+              >
                 Refresh
               </button>
               <button
@@ -1550,6 +1564,7 @@ export default function TasksPage({ me }: { me: Me }) {
               </tbody>
             </table>
           </div>
+          <Pagination page={page} pageSize={limit} total={total} onPageChange={setPage} />
         </div>
       </section>
 

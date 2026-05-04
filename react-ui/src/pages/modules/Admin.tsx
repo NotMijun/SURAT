@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../lib/api'
 import type { AdminUser, AuditRow, Me } from '../../types'
 import { useConfirm, useToast } from '../../components/ToastHost'
+import Pagination from '../../components/Pagination'
 
 type SecurityHistoryRow = {
   id: number
@@ -46,9 +47,30 @@ export default function AdminPage({ me }: { me: Me }) {
   const [history, setHistory] = useState<SecurityHistoryRow[]>([])
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
   const [historyLimit, setHistoryLimit] = useState(50)
+  const [usersPage, setUsersPage] = useState(1)
+  const [vendorsPage, setVendorsPage] = useState(1)
+  const [keyMasterPage, setKeyMasterPage] = useState(1)
+  const [roomMasterPage, setRoomMasterPage] = useState(1)
+  const [pomUnitsPage, setPomUnitsPage] = useState(1)
+  const [auditPage, setAuditPage] = useState(1)
+  const [historyPage, setHistoryPage] = useState(1)
   const [loading, setLoading] = useState(true)
 
+  const usersPageSize = 20
+  const vendorsPageSize = 20
+  const keyMasterPageSize = 20
+  const roomMasterPageSize = 20
+  const pomUnitsPageSize = 20
+  const auditPageSize = 50
+
   const selectedUser = useMemo(() => users.find((u) => u.id === selectedUserId) || null, [selectedUserId, users])
+  const usersView = useMemo(() => users.slice(Math.max(0, (usersPage - 1) * usersPageSize), Math.max(0, usersPage * usersPageSize)), [users, usersPage])
+  const vendorsView = useMemo(() => vendors.slice(Math.max(0, (vendorsPage - 1) * vendorsPageSize), Math.max(0, vendorsPage * vendorsPageSize)), [vendors, vendorsPage])
+  const keyMasterView = useMemo(() => keyMaster.slice(Math.max(0, (keyMasterPage - 1) * keyMasterPageSize), Math.max(0, keyMasterPage * keyMasterPageSize)), [keyMaster, keyMasterPage])
+  const roomMasterView = useMemo(() => roomMaster.slice(Math.max(0, (roomMasterPage - 1) * roomMasterPageSize), Math.max(0, roomMasterPage * roomMasterPageSize)), [roomMaster, roomMasterPage])
+  const pomUnitsView = useMemo(() => pomUnits.slice(Math.max(0, (pomUnitsPage - 1) * pomUnitsPageSize), Math.max(0, pomUnitsPage * pomUnitsPageSize)), [pomUnits, pomUnitsPage])
+  const auditView = useMemo(() => audit.slice(Math.max(0, (auditPage - 1) * auditPageSize), Math.max(0, auditPage * auditPageSize)), [audit, auditPage])
+  const historyView = useMemo(() => history.slice(Math.max(0, (historyPage - 1) * historyLimit), Math.max(0, historyPage * historyLimit)), [history, historyLimit, historyPage])
   const loadHistory = useCallback(
     async (userId: number | null, limitValue: number) => {
       if (!userId) {
@@ -132,6 +154,18 @@ export default function AdminPage({ me }: { me: Me }) {
   useEffect(() => {
     loadHistory(selectedUserId, historyLimit).catch(() => {})
   }, [historyLimit, loadHistory, selectedUserId])
+
+  useEffect(() => {
+    setUsersPage(1)
+  }, [userQ])
+
+  useEffect(() => {
+    setAuditPage(1)
+  }, [auditActorUserId, auditDateFrom, auditDateTo, auditQ, auditTable])
+
+  useEffect(() => {
+    setHistoryPage(1)
+  }, [historyLimit, selectedUserId])
 
   const selectUser = (id: number) => {
     setSelectedUserId(id)
@@ -387,7 +421,7 @@ export default function AdminPage({ me }: { me: Me }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((u) => (
+                  {usersView.map((u) => (
                     <tr key={u.id} style={u.id === selectedUserId ? { background: 'rgba(212,175,55,.10)' } : undefined}>
                       <td>
                         <button className="button button-ghost" type="button" onClick={() => selectUser(u.id)} style={{ padding: 0, borderRadius: 10 }}>
@@ -403,7 +437,7 @@ export default function AdminPage({ me }: { me: Me }) {
                       <td>{u.is_active === 1 ? <span className="badge badge-ok">Aktif</span> : <span className="badge badge-danger">Nonaktif</span>}</td>
                     </tr>
                   ))}
-                  {users.length === 0 && (
+                  {usersView.length === 0 && (
                     <tr>
                       <td className="muted" colSpan={3}>
                         Tidak ada data.
@@ -413,6 +447,7 @@ export default function AdminPage({ me }: { me: Me }) {
                 </tbody>
               </table>
             </div>
+            <Pagination page={usersPage} pageSize={usersPageSize} total={users.length} onPageChange={setUsersPage} />
           </div>
         </section>
 
@@ -445,7 +480,7 @@ export default function AdminPage({ me }: { me: Me }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {history.map((h) => (
+                  {historyView.map((h) => (
                     <tr key={h.id}>
                       <td>{h.created_at || '-'}</td>
                       <td>{`${h.actor_shift || '-'} / ${h.actor_post || '-'}`}</td>
@@ -453,7 +488,7 @@ export default function AdminPage({ me }: { me: Me }) {
                       <td>{h.target_label ? `${h.target_label} (${h.table_name}:${h.record_id})` : `${h.table_name}:${h.record_id}`}</td>
                     </tr>
                   ))}
-                  {history.length === 0 && (
+                  {historyView.length === 0 && (
                     <tr>
                       <td className="muted" colSpan={4}>
                         Belum ada riwayat.
@@ -463,6 +498,7 @@ export default function AdminPage({ me }: { me: Me }) {
                 </tbody>
               </table>
             </div>
+            <Pagination page={historyPage} pageSize={historyLimit} total={history.length} onPageChange={setHistoryPage} />
           </div>
         </section>
       </div>
@@ -486,10 +522,10 @@ export default function AdminPage({ me }: { me: Me }) {
                 </tr>
               </thead>
               <tbody>
-                {users.map((u) => (
+                {usersView.map((u) => (
                   <AdminUserRow key={u.id} u={u} isSelf={u.id === me.user.id} onSave={saveUser} onReset={resetPassword} onDelete={deleteUser} />
                 ))}
-                {users.length === 0 && (
+                {usersView.length === 0 && (
                   <tr>
                     <td className="muted" colSpan={6}>
                       Tidak ada data.
@@ -499,6 +535,7 @@ export default function AdminPage({ me }: { me: Me }) {
               </tbody>
             </table>
           </div>
+          <Pagination page={usersPage} pageSize={usersPageSize} total={users.length} onPageChange={setUsersPage} />
         </div>
       </section>
 
@@ -529,10 +566,10 @@ export default function AdminPage({ me }: { me: Me }) {
                 </tr>
               </thead>
               <tbody>
-                {vendors.map((v) => (
+                {vendorsView.map((v) => (
                   <VendorRow key={v.id} v={v} onSave={updateVendor} onDelete={deleteVendor} />
                 ))}
-                {vendors.length === 0 && (
+                {vendorsView.length === 0 && (
                   <tr>
                     <td className="muted" colSpan={3}>
                       Belum ada vendor.
@@ -542,6 +579,7 @@ export default function AdminPage({ me }: { me: Me }) {
               </tbody>
             </table>
           </div>
+          <Pagination page={vendorsPage} pageSize={vendorsPageSize} total={vendors.length} onPageChange={setVendorsPage} />
         </div>
       </section>
 
@@ -572,10 +610,10 @@ export default function AdminPage({ me }: { me: Me }) {
                 </tr>
               </thead>
               <tbody>
-                {keyMaster.map((k) => (
+                {keyMasterView.map((k) => (
                   <KeyMasterRow key={k.id} k={k} onSave={updateKeyMaster} onDisable={disableKeyMaster} />
                 ))}
-                {keyMaster.length === 0 && (
+                {keyMasterView.length === 0 && (
                   <tr>
                     <td className="muted" colSpan={3}>
                       Belum ada data.
@@ -585,6 +623,7 @@ export default function AdminPage({ me }: { me: Me }) {
               </tbody>
             </table>
           </div>
+          <Pagination page={keyMasterPage} pageSize={keyMasterPageSize} total={keyMaster.length} onPageChange={setKeyMasterPage} />
         </div>
       </section>
 
@@ -630,7 +669,7 @@ export default function AdminPage({ me }: { me: Me }) {
                 </tr>
               </thead>
               <tbody>
-                {roomMaster.map((r) => (
+                {roomMasterView.map((r) => (
                   <RoomMasterRow
                     key={r.id}
                     r={r}
@@ -656,7 +695,7 @@ export default function AdminPage({ me }: { me: Me }) {
                     }}
                   />
                 ))}
-                {roomMaster.length === 0 && (
+                {roomMasterView.length === 0 && (
                   <tr>
                     <td className="muted" colSpan={3}>
                       Belum ada data.
@@ -666,6 +705,7 @@ export default function AdminPage({ me }: { me: Me }) {
               </tbody>
             </table>
           </div>
+          <Pagination page={roomMasterPage} pageSize={roomMasterPageSize} total={roomMaster.length} onPageChange={setRoomMasterPage} />
         </div>
       </section>
 
@@ -718,7 +758,7 @@ export default function AdminPage({ me }: { me: Me }) {
                 </tr>
               </thead>
               <tbody>
-                {pomUnits.map((p) => (
+                {pomUnitsView.map((p) => (
                   <PomUnitRow
                     key={p.id}
                     p={p}
@@ -744,7 +784,7 @@ export default function AdminPage({ me }: { me: Me }) {
                     }}
                   />
                 ))}
-                {pomUnits.length === 0 && (
+                {pomUnitsView.length === 0 && (
                   <tr>
                     <td className="muted" colSpan={4}>
                       Belum ada data.
@@ -754,6 +794,7 @@ export default function AdminPage({ me }: { me: Me }) {
               </tbody>
             </table>
           </div>
+          <Pagination page={pomUnitsPage} pageSize={pomUnitsPageSize} total={pomUnits.length} onPageChange={setPomUnitsPage} />
         </div>
       </section>
 
@@ -809,7 +850,7 @@ export default function AdminPage({ me }: { me: Me }) {
                 </tr>
               </thead>
               <tbody>
-                {audit.map((a) => (
+                {auditView.map((a) => (
                   <tr key={a.id}>
                     <td>{a.id}</td>
                     <td>{a.created_at || '-'}</td>
@@ -818,7 +859,7 @@ export default function AdminPage({ me }: { me: Me }) {
                     <td>{a.target_label ? `${a.target_label} (${a.table_name}:${a.record_id})` : `${a.table_name}:${a.record_id}`}</td>
                   </tr>
                 ))}
-                {audit.length === 0 && (
+                {auditView.length === 0 && (
                   <tr>
                     <td className="muted" colSpan={5}>
                       Tidak ada data.
@@ -828,6 +869,7 @@ export default function AdminPage({ me }: { me: Me }) {
               </tbody>
             </table>
           </div>
+          <Pagination page={auditPage} pageSize={auditPageSize} total={audit.length} onPageChange={setAuditPage} />
         </div>
       </section>
 

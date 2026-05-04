@@ -4,6 +4,7 @@ import { apiGet } from '../../lib/api'
 import type { KeyTx, Me, ShiftReport } from '../../types'
 import { fmtTime, toYmd } from '../../lib/time'
 import { useConfirm, useToast } from '../../components/ToastHost'
+import Pagination from '../../components/Pagination'
 
 type HandoverRes = {
   open_keys: Array<{ id: number; borrower_name: string; unit: string; key_name: string; checkout_at: string; notes: string | null; status: string }>
@@ -24,9 +25,12 @@ export default function DashboardPage({ me }: { me: Me }) {
   const [overdueCount, setOverdueCount] = useState(0)
   const [guestsOverdueCount, setGuestsOverdueCount] = useState(0)
   const [q, setQ] = useState('')
+  const [keysPage, setKeysPage] = useState(1)
+  const [keysTotal, setKeysTotal] = useState(0)
   const [loadingMeta, setLoadingMeta] = useState(true)
   const [loadingKeys, setLoadingKeys] = useState(true)
   const loading = loadingMeta || loadingKeys
+  const keysPageSize = 10
 
   useEffect(() => {
     let cancelled = false
@@ -57,10 +61,14 @@ export default function DashboardPage({ me }: { me: Me }) {
     let cancelled = false
     const t = window.setTimeout(() => {
       setLoadingKeys(true)
-      apiGet<{ items: KeyTx[] }>(`/api/keys?status=open&q=${encodeURIComponent(q)}`)
+      const offset = Math.max(0, (keysPage - 1) * keysPageSize)
+      apiGet<{ items: KeyTx[]; total: number }>(
+        `/api/keys?status=open&q=${encodeURIComponent(q)}&limit=${encodeURIComponent(String(keysPageSize))}&offset=${encodeURIComponent(String(offset))}`,
+      )
         .then((k) => {
           if (cancelled) return
           setKeysOpen(k.items || [])
+          setKeysTotal(typeof k.total === 'number' ? k.total : 0)
         })
         .catch((err: any) => {
           if (cancelled) return
@@ -75,7 +83,7 @@ export default function DashboardPage({ me }: { me: Me }) {
       cancelled = true
       window.clearTimeout(t)
     }
-  }, [q, toast])
+  }, [keysPage, keysPageSize, q, toast])
 
   useEffect(() => {
     const rows = handover?.open_keys || []
@@ -158,7 +166,15 @@ export default function DashboardPage({ me }: { me: Me }) {
             <span className="search-icon" aria-hidden="true">
               ⌕
             </span>
-            <input className="search-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nama / ruangan / kegiatan..." />
+            <input
+              className="search-input"
+              value={q}
+              onChange={(e) => {
+                setKeysPage(1)
+                setQ(e.target.value)
+              }}
+              placeholder="Cari nama / ruangan / kegiatan..."
+            />
           </div>
           <button className="button button-secondary" type="button" onClick={() => window.print()}>
             Cetak
@@ -233,7 +249,7 @@ export default function DashboardPage({ me }: { me: Me }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {keysOpen.slice(0, 10).map((r) => (
+                  {keysOpen.map((r) => (
                     <tr key={r.id} className="table-row-active">
                       <td data-label="Nama">{r.borrower_name}</td>
                       <td data-label="Ruangan/Kunci">{r.key_name}</td>
@@ -253,6 +269,7 @@ export default function DashboardPage({ me }: { me: Me }) {
                 </tbody>
               </table>
             </div>
+            <Pagination page={keysPage} pageSize={keysPageSize} total={keysTotal} onPageChange={setKeysPage} />
           </div>
         </section>
 

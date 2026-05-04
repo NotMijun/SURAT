@@ -7,6 +7,7 @@ import { useConfirm, useToast } from '../../components/ToastHost'
 import LoadingScreen from '../../components/LoadingScreen'
 import Modal from '../../components/Modal'
 import PhotoModal from '../../components/PhotoModal'
+import Pagination from '../../components/Pagination'
 
 export default function GuestsPage({ me }: { me: Me }) {
   const toast = useToast()
@@ -25,9 +26,8 @@ export default function GuestsPage({ me }: { me: Me }) {
   const [limit, setLimit] = useState(200)
   const [loading, setLoading] = useState(true)
   const [items, setItems] = useState<GuestEntry[]>([])
-  const [offset, setOffset] = useState(0)
-  const [hasMore, setHasMore] = useState(false)
-  const [loadingMore, setLoadingMore] = useState(false)
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
   const [editRow, setEditRow] = useState<GuestEntry | null>(null)
   const [editName, setEditName] = useState('')
   const [editInstansi, setEditInstansi] = useState('')
@@ -55,30 +55,20 @@ export default function GuestsPage({ me }: { me: Me }) {
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string>('')
 
-  const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number; post: string; status: string; offset?: number; append?: boolean }) => {
+  const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number; post: string; status: string; offset: number }) => {
     const { q, date, sort, limit, post, status } = opts
     const nextOffset = Math.max(0, opts.offset || 0)
-    const append = Boolean(opts.append)
-    if (append) setLoadingMore(true)
-    else setLoading(true)
+    setLoading(true)
     try {
-      const res = await apiGet<{ items: GuestEntry[] }>(
+      const res = await apiGet<{ items: GuestEntry[]; total: number }>(
         `/api/guests?status=${encodeURIComponent(status)}&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&post=${encodeURIComponent(post)}&offset=${encodeURIComponent(String(nextOffset))}`,
       )
-      const nextItems = res.items || []
-      setHasMore(nextItems.length >= limit)
-      if (append) {
-        setItems((prev) => prev.concat(nextItems))
-        setOffset((prev) => prev + nextItems.length)
-      } else {
-        setItems(nextItems)
-        setOffset(nextItems.length)
-      }
+      setItems(res.items || [])
+      setTotal(typeof res.total === 'number' ? res.total : 0)
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal memuat tamu'), 'error')
     } finally {
       setLoading(false)
-      setLoadingMore(false)
     }
   }, [toast])
 
@@ -91,15 +81,20 @@ export default function GuestsPage({ me }: { me: Me }) {
   )
 
   useEffect(() => {
+    setPage(1)
+  }, [date, limit, postFilter, q, sort, view])
+
+  useEffect(() => {
     const status = view === 'inhouse' ? 'in' : 'all'
     const effectiveDate = view === 'inhouse' ? '' : date
     const effectiveSort = view === 'inhouse' ? 'checkin_asc' : sort
+    const offset = Math.max(0, (page - 1) * limit)
     const t = window.setTimeout(
-      () => refresh({ q, date: effectiveDate, sort: effectiveSort, limit, post: postFilter, status, offset: 0, append: false }).catch(() => {}),
+      () => refresh({ q, date: effectiveDate, sort: effectiveSort, limit, post: postFilter, status, offset }).catch(() => {}),
       250,
     )
     return () => window.clearTimeout(t)
-  }, [date, limit, q, refresh, sort, postFilter, view])
+  }, [date, limit, page, q, refresh, sort, postFilter, view])
 
   useEffect(() => {
     const raw = localStorage.getItem(draftKey)
@@ -210,7 +205,8 @@ export default function GuestsPage({ me }: { me: Me }) {
       const status = view === 'inhouse' ? 'in' : 'all'
       const effectiveDate = view === 'inhouse' ? '' : date
       const effectiveSort = view === 'inhouse' ? 'checkin_asc' : sort
-      await refresh({ q, date: effectiveDate, sort: effectiveSort, limit, post: postFilter, status })
+      setPage(1)
+      await refresh({ q, date: effectiveDate, sort: effectiveSort, limit, post: postFilter, status, offset: 0 })
     } catch (err: any) {
       const msg = String(err?.message || err || 'Gagal menyimpan')
       setFormError(msg)
@@ -321,7 +317,7 @@ export default function GuestsPage({ me }: { me: Me }) {
       const status = view === 'inhouse' ? 'in' : 'all'
       const effectiveDate = view === 'inhouse' ? '' : date
       const effectiveSort = view === 'inhouse' ? 'checkin_asc' : sort
-      await refresh({ q, date: effectiveDate, sort: effectiveSort, limit, post: postFilter, status })
+      await refresh({ q, date: effectiveDate, sort: effectiveSort, limit, post: postFilter, status, offset: Math.max(0, (page - 1) * limit) })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal memproses'), 'error')
     }
@@ -609,7 +605,7 @@ export default function GuestsPage({ me }: { me: Me }) {
               type="button"
               onClick={() => {
                 setView('inhouse')
-                setOffset(0)
+                setPage(1)
               }}
             >
               Masih di dalam
@@ -619,7 +615,7 @@ export default function GuestsPage({ me }: { me: Me }) {
               type="button"
               onClick={() => {
                 setView('riwayat')
-                setOffset(0)
+                setPage(1)
               }}
             >
               Riwayat
@@ -674,7 +670,8 @@ export default function GuestsPage({ me }: { me: Me }) {
                   const status = view === 'inhouse' ? 'in' : 'all'
                   const effectiveDate = view === 'inhouse' ? '' : date
                   const effectiveSort = view === 'inhouse' ? 'checkin_asc' : sort
-                  refresh({ q, date: effectiveDate, sort: effectiveSort, limit, post: postFilter, status, offset: 0, append: false }).catch(() => {})
+                  setPage(1)
+                  refresh({ q, date: effectiveDate, sort: effectiveSort, limit, post: postFilter, status, offset: 0 }).catch(() => {})
                 }}
               >
                 Refresh
@@ -812,18 +809,7 @@ export default function GuestsPage({ me }: { me: Me }) {
             </table>
           </div>
 
-          {view === 'riwayat' && hasMore && (
-            <div className="row row-right" style={{ marginTop: 12 }}>
-              <button
-                className="button button-secondary"
-                type="button"
-                disabled={loading || loadingMore}
-                onClick={() => refresh({ q, date, sort, limit, post: postFilter, status: 'all', offset, append: true })}
-              >
-                {loadingMore ? 'Memuat...' : 'Muat lebih banyak'}
-              </button>
-            </div>
-          )}
+          <Pagination page={page} pageSize={limit} total={total} onPageChange={setPage} />
         </div>
       </section>
 

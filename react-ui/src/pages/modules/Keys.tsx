@@ -7,6 +7,7 @@ import { useConfirm, useToast } from '../../components/ToastHost'
 import LoadingScreen from '../../components/LoadingScreen'
 import Modal from '../../components/Modal'
 import PhotoModal from '../../components/PhotoModal'
+import Pagination from '../../components/Pagination'
 
 const badge = (s: KeyTx['status']) => {
   if (s === 'closed') return <span className="badge badge-ok">Diambil</span>
@@ -27,12 +28,10 @@ export default function KeysPage({ me }: { me: Me }) {
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState<KeyTx[]>([])
   const [closed, setClosed] = useState<KeyTx[]>([])
-  const [openOffset, setOpenOffset] = useState(0)
-  const [closedOffset, setClosedOffset] = useState(0)
-  const [openHasMore, setOpenHasMore] = useState(false)
-  const [closedHasMore, setClosedHasMore] = useState(false)
-  const [loadingMoreOpen, setLoadingMoreOpen] = useState(false)
-  const [loadingMoreClosed, setLoadingMoreClosed] = useState(false)
+  const [openPage, setOpenPage] = useState(1)
+  const [closedPage, setClosedPage] = useState(1)
+  const [openTotal, setOpenTotal] = useState(0)
+  const [closedTotal, setClosedTotal] = useState(0)
   const [editRow, setEditRow] = useState<KeyTx | null>(null)
   const [editBorrower, setEditBorrower] = useState('')
   const [editUnit, setEditUnit] = useState('')
@@ -78,67 +77,33 @@ export default function KeysPage({ me }: { me: Me }) {
       .catch(() => setKeyMaster([]))
   }, [])
 
-  const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number; closedDateField?: 'checkout' | 'checkin' }) => {
-    const { q, date, sort, limit } = opts
-    const closedDateField = opts.closedDateField || 'checkout'
+  const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number; closedDateField: 'checkout' | 'checkin' }) => {
+    const { q, date, sort, limit, closedDateField } = opts
     setLoading(true)
     try {
       const [a, b] = await Promise.all([
-        apiGet<{ items: KeyTx[] }>(
-          `/api/keys?status=open&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&date_field=checkout&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&offset=0`,
+        apiGet<{ items: KeyTx[]; total: number }>(
+          `/api/keys?status=open&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&date_field=checkout&from_hm=${encodeURIComponent(date === today ? fromHm : '')}&to_hm=${encodeURIComponent(date === today ? toHm : '')}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&offset=${encodeURIComponent(String(Math.max(0, (openPage - 1) * limit)))}`,
         ),
-        apiGet<{ items: KeyTx[] }>(
-          `/api/keys?status=closed&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&date_field=${encodeURIComponent(closedDateField)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&offset=0`,
+        apiGet<{ items: KeyTx[]; total: number }>(
+          `/api/keys?status=closed&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&date_field=${encodeURIComponent(closedDateField)}&from_hm=${encodeURIComponent(date === today ? fromHm : '')}&to_hm=${encodeURIComponent(date === today ? toHm : '')}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&offset=${encodeURIComponent(String(Math.max(0, (closedPage - 1) * limit)))}`,
         ),
       ])
-      const openItems = a.items || []
-      const closedItems = b.items || []
-      setOpen(openItems)
-      setClosed(closedItems)
-      setOpenOffset(openItems.length)
-      setClosedOffset(closedItems.length)
-      setOpenHasMore(openItems.length >= limit)
-      setClosedHasMore(closedItems.length >= limit)
+      setOpen(a.items || [])
+      setClosed(b.items || [])
+      setOpenTotal(typeof a.total === 'number' ? a.total : 0)
+      setClosedTotal(typeof b.total === 'number' ? b.total : 0)
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal memuat data kunci'), 'error')
     } finally {
       setLoading(false)
     }
-  }, [toast])
+  }, [closedPage, fromHm, openPage, toHm, toast, today])
 
-  const loadMoreOpen = useCallback(async () => {
-    setLoadingMoreOpen(true)
-    try {
-      const res = await apiGet<{ items: KeyTx[] }>(
-        `/api/keys?status=open&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&date_field=checkout&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&offset=${encodeURIComponent(String(openOffset))}`,
-      )
-      const next = res.items || []
-      setOpenHasMore(next.length >= limit)
-      setOpen((prev) => prev.concat(next))
-      setOpenOffset((prev) => prev + next.length)
-    } catch (err: any) {
-      toast.push(String(err?.message || err || 'Gagal memuat data kunci'), 'error')
-    } finally {
-      setLoadingMoreOpen(false)
-    }
-  }, [date, limit, openOffset, q, sort, toast])
-
-  const loadMoreClosed = useCallback(async (closedDateField: 'checkout' | 'checkin') => {
-    setLoadingMoreClosed(true)
-    try {
-      const res = await apiGet<{ items: KeyTx[] }>(
-        `/api/keys?status=closed&q=${encodeURIComponent(q)}&date=${encodeURIComponent(date)}&date_field=${encodeURIComponent(closedDateField)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&offset=${encodeURIComponent(String(closedOffset))}`,
-      )
-      const next = res.items || []
-      setClosedHasMore(next.length >= limit)
-      setClosed((prev) => prev.concat(next))
-      setClosedOffset((prev) => prev + next.length)
-    } catch (err: any) {
-      toast.push(String(err?.message || err || 'Gagal memuat data kunci'), 'error')
-    } finally {
-      setLoadingMoreClosed(false)
-    }
-  }, [closedOffset, date, limit, q, sort, toast])
+  useEffect(() => {
+    setOpenPage(1)
+    setClosedPage(1)
+  }, [date, filterBy, fromHm, limit, q, sort, toHm, today])
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -146,7 +111,7 @@ export default function KeysPage({ me }: { me: Me }) {
       refresh({ q, date, sort, limit, closedDateField }).catch(() => {})
     }, 250)
     return () => window.clearTimeout(t)
-  }, [date, limit, q, refresh, sort, filterBy, today])
+  }, [date, limit, q, refresh, sort, filterBy, today, openPage, closedPage, fromHm, toHm])
 
   useEffect(() => {
     const raw = localStorage.getItem(draftKey)
@@ -173,34 +138,6 @@ export default function KeysPage({ me }: { me: Me }) {
     }, 300)
     return () => window.clearTimeout(t)
   }, [borrower, draftKey, keyName, notes, petugasId, time, unit])
-
-  const hmToMinutes = (hm: string) => {
-    const [h, m] = String(hm || '').split(':', 2)
-    const hh = Number(h)
-    const mm = Number(m)
-    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null
-    return hh * 60 + mm
-  }
-
-  const inTimeWindow = useCallback((iso: string | null | undefined) => {
-    if (!iso) return false
-    if (date !== today) return true
-    const d = new Date(iso)
-    if (isNaN(d.getTime())) return true
-    const mins = d.getHours() * 60 + d.getMinutes()
-    const f = hmToMinutes(fromHm)
-    const t = hmToMinutes(toHm)
-    if (f == null && t == null) return true
-    if (f != null && mins < f) return false
-    if (t != null && mins > t) return false
-    return true
-  }, [date, fromHm, toHm, today])
-
-  const openView = useMemo(() => open.filter((r) => inTimeWindow(r.checkout_at)), [inTimeWindow, open])
-  const closedView = useMemo(() => {
-    const field = filterBy === 'ambil' ? 'checkin_at' : 'checkout_at'
-    return closed.filter((r) => inTimeWindow((r as any)[field]))
-  }, [closed, filterBy, inTimeWindow])
 
   const petugasName = useCallback((r: KeyTx) => String(r.created_by_name || '').trim() || me.user.display_name, [me.user.display_name])
 
@@ -589,9 +526,9 @@ export default function KeysPage({ me }: { me: Me }) {
           <div className="list" style={{ marginTop: 12 }}>
             <div className="list-item">
               <div className="list-title">Terakhir dicatat</div>
-              <div className="list-meta">{(openView.length || closedView.length) ? '' : '—'}</div>
+              <div className="list-meta">{(open.length || closed.length) ? '' : '—'}</div>
             </div>
-            {[...openView, ...closedView]
+            {[...open, ...closed]
               .sort((a, b) => new Date(b.checkout_at).getTime() - new Date(a.checkout_at).getTime())
               .slice(0, 3)
               .map((r) => (
@@ -612,7 +549,7 @@ export default function KeysPage({ me }: { me: Me }) {
         <section className="card">
           <header className="card-header">
             <div className="card-title">Penitipan aktif</div>
-            <div className="muted">{loading ? 'Memuat...' : `${openView.length} entri`}</div>
+            <div className="muted">{loading ? 'Memuat...' : `${openTotal} entri`}</div>
           </header>
           <div className="card-body">
             {loading && <LoadingScreen mode="inline" label="Loading..." minHeight={280} />}
@@ -630,7 +567,7 @@ export default function KeysPage({ me }: { me: Me }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {openView.map((r) => (
+                  {open.map((r) => (
                     <tr key={r.id} className="table-row-active">
                       <td data-label="Nama">{r.borrower_name}</td>
                       <td data-label="Ruangan">{r.key_name}</td>
@@ -665,7 +602,7 @@ export default function KeysPage({ me }: { me: Me }) {
                       </td>
                     </tr>
                   ))}
-                  {openView.length === 0 && (
+                  {open.length === 0 && (
                     <tr>
                       <td className="muted" colSpan={7}>
                         Tidak ada data.
@@ -675,20 +612,14 @@ export default function KeysPage({ me }: { me: Me }) {
                 </tbody>
               </table>
             </div>
-            {openHasMore && (
-              <div className="row row-right" style={{ marginTop: 12 }}>
-                <button className="button button-secondary" type="button" disabled={loading || loadingMoreOpen} onClick={loadMoreOpen}>
-                  {loadingMoreOpen ? 'Memuat...' : 'Muat lebih banyak'}
-                </button>
-              </div>
-            )}
+            <Pagination page={openPage} pageSize={limit} total={openTotal} onPageChange={setOpenPage} />
           </div>
         </section>
 
         <section className="card">
           <header className="card-header">
             <div className="card-title">Riwayat (closed)</div>
-            <div className="muted">{loading ? 'Memuat...' : `${closedView.length} entri`}</div>
+            <div className="muted">{loading ? 'Memuat...' : `${closedTotal} entri`}</div>
           </header>
           <div className="card-body">
             {loading && <LoadingScreen mode="inline" label="Loading..." minHeight={280} />}
@@ -758,7 +689,7 @@ export default function KeysPage({ me }: { me: Me }) {
                   className="button button-secondary button-sm"
                   type="button"
                   onClick={() => {
-                    const allRows = [...openView, ...closedView].sort((a, b) => Date.parse(b.checkout_at || '') - Date.parse(a.checkout_at || ''))
+                    const allRows = [...open, ...closed].sort((a, b) => Date.parse(b.checkout_at || '') - Date.parse(a.checkout_at || ''))
                     downloadCsv(
                       `kunci-${date || 'semua'}.csv`,
                       [['Instansi', 'Unit', 'Ruangan/Kunci', 'Jam titip', 'Jam ambil', 'Catatan', 'Foto', 'Petugas', 'Status']].concat(
@@ -795,7 +726,7 @@ export default function KeysPage({ me }: { me: Me }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {closedView.map((r) => (
+                  {closed.map((r) => (
                     <tr key={r.id} className={r.status === 'void' ? 'table-row-void' : undefined}>
                       <td data-label="Nama">{r.borrower_name}</td>
                       <td data-label="Ruangan">{r.key_name}</td>
@@ -839,7 +770,7 @@ export default function KeysPage({ me }: { me: Me }) {
                       </td>
                     </tr>
                   ))}
-                  {closedView.length === 0 && (
+                  {closed.length === 0 && (
                     <tr>
                       <td className="muted" colSpan={7}>
                         Tidak ada data.
@@ -849,18 +780,7 @@ export default function KeysPage({ me }: { me: Me }) {
                 </tbody>
               </table>
             </div>
-            {closedHasMore && (
-              <div className="row row-right" style={{ marginTop: 12 }}>
-                <button
-                  className="button button-secondary"
-                  type="button"
-                  disabled={loading || loadingMoreClosed}
-                  onClick={() => loadMoreClosed(date === today && filterBy === 'ambil' ? 'checkin' : 'checkout')}
-                >
-                  {loadingMoreClosed ? 'Memuat...' : 'Muat lebih banyak'}
-                </button>
-              </div>
-            )}
+            <Pagination page={closedPage} pageSize={limit} total={closedTotal} onPageChange={setClosedPage} />
           </div>
         </section>
       </div>

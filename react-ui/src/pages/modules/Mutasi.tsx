@@ -7,6 +7,7 @@ import { useConfirm, useToast } from '../../components/ToastHost'
 import LoadingScreen from '../../components/LoadingScreen'
 import Modal from '../../components/Modal'
 import PhotoModal from '../../components/PhotoModal'
+import Pagination from '../../components/Pagination'
 
 const KATEGORI_OPTS: Record<string, string[]> = {
   'Kejadian Operasional': ['Catering', 'Galon', 'Patroli/Ronda', 'Pemeliharaan', 'Lainnya'],
@@ -26,6 +27,8 @@ export default function MutasiPage({ me }: { me: Me }) {
   const [formDate, setFormDate] = useState(today)
   const [sort, setSort] = useState<'occurred_desc' | 'occurred_asc'>('occurred_desc')
   const [limit, setLimit] = useState(200)
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
   const [items, setItems] = useState<MutasiEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -76,14 +79,15 @@ export default function MutasiPage({ me }: { me: Me }) {
     return () => window.clearTimeout(t)
   }, [desc, draftKey, kategori, subKategori, time])
 
-  const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number; fk: string; fs: string }) => {
-    const { q, date, sort, limit, fk, fs } = opts
+  const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number; fk: string; fs: string; offset: number }) => {
+    const { q, date, sort, limit, fk, fs, offset } = opts
     setLoading(true)
     try {
-      const res = await apiGet<{ items: MutasiEntry[] }>(
-        `/api/mutasi?q=${encodeURIComponent(q.trim())}&kategori=${encodeURIComponent(fk)}&sub=${encodeURIComponent(fs)}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&status=active`,
+      const res = await apiGet<{ items: MutasiEntry[]; total: number }>(
+        `/api/mutasi?q=${encodeURIComponent(q.trim())}&kategori=${encodeURIComponent(fk)}&sub=${encodeURIComponent(fs)}&date=${encodeURIComponent(date)}&sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(String(limit))}&offset=${encodeURIComponent(String(Math.max(0, offset)))}&status=active`,
       )
       setItems(res.items || [])
+      setTotal(typeof res.total === 'number' ? res.total : 0)
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal memuat mutasi'), 'error')
     } finally {
@@ -95,9 +99,14 @@ export default function MutasiPage({ me }: { me: Me }) {
   const canAdmin = me.user.role === 'admin' || me.user.role === 'supervisor'
 
   useEffect(() => {
-    const t = window.setTimeout(() => refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub }).catch(() => {}), 250)
+    setPage(1)
+  }, [date, filterKategori, filterSub, limit, q, sort])
+
+  useEffect(() => {
+    const offset = Math.max(0, (page - 1) * limit)
+    const t = window.setTimeout(() => refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub, offset }).catch(() => {}), 250)
     return () => window.clearTimeout(t)
-  }, [date, limit, q, refresh, sort, filterKategori, filterSub])
+  }, [date, limit, page, q, refresh, sort, filterKategori, filterSub])
 
   const downloadCsv = (filename: string, rows: Array<Array<string | number>>) => {
     const lines = rows.map((r) => r.map((x) => `"${String(x ?? '').replace(/"/g, '""')}"`).join(','))
@@ -155,7 +164,7 @@ export default function MutasiPage({ me }: { me: Me }) {
       setPhotoKey((x) => x + 1)
       localStorage.removeItem(draftKey)
       toast.push('Mutasi dicatat', 'success')
-      await refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub })
+      await refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub, offset: Math.max(0, (page - 1) * limit) })
     } catch (err: any) {
       const msg = String(err?.message || err || 'Gagal menyimpan')
       setFormError(msg)
@@ -218,7 +227,7 @@ export default function MutasiPage({ me }: { me: Me }) {
       })
       toast.push('Mutasi diperbarui', 'success')
       setEditRow(null)
-      await refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub })
+      await refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub, offset: Math.max(0, (page - 1) * limit) })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal mengubah'), 'error')
     } finally {
@@ -238,7 +247,7 @@ export default function MutasiPage({ me }: { me: Me }) {
     try {
       await apiPost(`/api/mutasi/${r.id}/delete`, {})
       toast.push('Mutasi dihapus', 'success')
-      await refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub })
+      await refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub, offset: Math.max(0, (page - 1) * limit) })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal delete'), 'error')
     }
@@ -518,7 +527,14 @@ export default function MutasiPage({ me }: { me: Me }) {
               <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
                 Semua
               </button>
-              <button className="button button-secondary button-sm" type="button" onClick={() => refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub })}>
+              <button
+                className="button button-secondary button-sm"
+                type="button"
+                onClick={() => {
+                  setPage(1)
+                  refresh({ q, date, sort, limit, fk: filterKategori, fs: filterSub, offset: 0 }).catch(() => {})
+                }}
+              >
                 Refresh
               </button>
               <button
@@ -600,6 +616,7 @@ export default function MutasiPage({ me }: { me: Me }) {
               </tbody>
             </table>
           </div>
+          <Pagination page={page} pageSize={limit} total={total} onPageChange={setPage} />
         </div>
       </section>
 

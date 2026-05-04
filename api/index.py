@@ -106,6 +106,45 @@ def _day_bounds(date_str: str) -> tuple[str, str] | None:
     return (f"{d}T00:00:00", f"{d}T23:59:59")
 
 
+def _hm_to_minutes(hm: str) -> int | None:
+    s = (hm or "").strip()
+    if not s:
+        return None
+    parts = s.split(":", 2)
+    if len(parts) < 2:
+        return None
+    h = parts[0].strip()
+    m = parts[1].strip()
+    if not (h.isdigit() and m.isdigit()):
+        return None
+    hh = int(h)
+    mm = int(m)
+    if hh < 0 or hh > 23 or mm < 0 or mm > 59:
+        return None
+    return hh * 60 + mm
+
+
+def _apply_hm_bounds(bounds: tuple[str, str] | None, from_hm: str, to_hm: str) -> tuple[str, str] | None:
+    if not bounds:
+        return None
+    d = bounds[0][:10]
+    f = _hm_to_minutes(from_hm)
+    t = _hm_to_minutes(to_hm)
+    if f is None and t is None:
+        return bounds
+    start = bounds[0]
+    end = bounds[1]
+    if f is not None:
+        hh = f // 60
+        mm = f % 60
+        start = f"{d}T{hh:02d}:{mm:02d}:00"
+    if t is not None:
+        hh = t // 60
+        mm = t % 60
+        end = f"{d}T{hh:02d}:{mm:02d}:59"
+    return (start, end)
+
+
 def pbkdf2_hash_password(password: str, salt: bytes | None = None) -> str:
     salt = salt or secrets.token_bytes(16)
     dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 200_000)
@@ -1718,6 +1757,8 @@ def list_keys(
     q: str = "",
     date: str = "",
     date_field: str = "checkout",
+    from_hm: str = "",
+    to_hm: str = "",
     sort: str = "checkout_desc",
     limit: int = 200,
     offset: int = 0,
@@ -1726,7 +1767,7 @@ def list_keys(
         _require_session(conn, request)
         status = (status or "open").strip()
         qn = normalize_text(q)
-        bounds = _day_bounds(date)
+        bounds = _apply_hm_bounds(_day_bounds(date), from_hm, to_hm)
         date_field = (date_field or "checkout").strip().lower()
         if status == "open":
             date_field = "checkout"
@@ -1770,12 +1811,18 @@ def list_keys(
             WHERE ma.target_table='key_transactions' AND ma.target_id=kt.id
           ) att ON true
         """
+        count_sql = "SELECT COUNT(*)::int AS c FROM key_transactions kt"
+        if where:
+            count_sql += " WHERE " + " AND ".join(where)
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += f" ORDER BY {order} LIMIT %s OFFSET %s"
+        count_params = list(params)
         params.append(limit)
         params.append(offset)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(count_sql, tuple(count_params))
+            total = int(cur.fetchone()["c"] or 0)
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         for r in rows:
@@ -1783,7 +1830,7 @@ def list_keys(
             r["has_photo"] = r["photo_count"] > 0
             if r["has_photo"]:
                 r["photo_url"] = f"/api/keys/{int(r['id'])}/photo"
-        return {"items": rows}
+        return {"items": rows, "total": total}
 
 
 @app.get("/api/keys/{key_id}/photo")
@@ -2284,12 +2331,18 @@ def list_mutasi(request: Request, q: str = "", kategori: str = "", sub: str = ""
             WHERE ma.target_table='mutasi_entries' AND ma.target_id=m.id
           ) att ON true
         """
+        count_sql = "SELECT COUNT(*)::int AS c FROM mutasi_entries m"
+        if where:
+            count_sql += " WHERE " + " AND ".join(where)
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += f" ORDER BY {order} LIMIT %s OFFSET %s"
+        count_params = list(params)
         params.append(limit)
         params.append(offset)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(count_sql, tuple(count_params))
+            total = int(cur.fetchone()["c"] or 0)
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         for r in rows:
@@ -2297,7 +2350,7 @@ def list_mutasi(request: Request, q: str = "", kategori: str = "", sub: str = ""
             r["has_photo"] = r["photo_count"] > 0
             if r["has_photo"]:
                 r["photo_url"] = f"/api/mutasi/{int(r['id'])}/photo"
-        return {"items": rows}
+        return {"items": rows, "total": total}
 
 
 @app.get("/api/mutasi/{mutasi_id}/photo")
@@ -2524,12 +2577,18 @@ def list_guests(request: Request, status: str = "in", q: str = "", date: str = "
             WHERE ma.target_table='guest_entries' AND ma.target_id=g.id
           ) att ON true
         """
+        count_sql = "SELECT COUNT(*)::int AS c FROM guest_entries g"
+        if where:
+            count_sql += " WHERE " + " AND ".join(where)
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += f" ORDER BY {order} LIMIT %s OFFSET %s"
+        count_params = list(params)
         params.append(limit)
         params.append(offset)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(count_sql, tuple(count_params))
+            total = int(cur.fetchone()["c"] or 0)
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         for r in rows:
@@ -2537,7 +2596,7 @@ def list_guests(request: Request, status: str = "in", q: str = "", date: str = "
             r["has_photo"] = r["photo_count"] > 0
             if r["has_photo"]:
                 r["photo_url"] = f"/api/guests/{int(r['id'])}/photo"
-        return {"items": rows}
+        return {"items": rows, "total": total}
 
 
 @app.get("/api/guests/{guest_id}/photo")
@@ -2913,7 +2972,7 @@ def patch_guest(guest_id: str, body: PatchGuestBody, request: Request):
 
 
 @app.get("/api/tasks")
-def list_tasks(request: Request, q: str = "", date: str = "", sort: str = "occurred_desc", limit: int = 200, status: str = "active", offset: int = 0):
+def list_tasks(request: Request, q: str = "", date: str = "", sort: str = "occurred_desc", limit: int = 200, status: str = "active", offset: int = 0, tab: str = ""):
     with db_connect() as conn:
         _require_session(conn, request)
         qn = normalize_text(q)
@@ -2922,6 +2981,7 @@ def list_tasks(request: Request, q: str = "", date: str = "", sort: str = "occur
         limit = max(1, min(500, int(limit or 200)))
         offset = max(0, min(100_000, int(offset or 0)))
         status = (status or "active").strip().lower()
+        tabv = normalize_text(tab)
         where = []
         params: list[Any] = []
         if status in ("active", "void"):
@@ -2932,6 +2992,16 @@ def list_tasks(request: Request, q: str = "", date: str = "", sort: str = "occur
         if qn:
             where.append("(lower(t.kind) LIKE %s OR lower(t.destination) LIKE %s OR lower(t.notes) LIKE %s OR lower(COALESCE(t.extra_json,'')) LIKE %s)")
             params.extend([f"%{qn}%", f"%{qn}%", f"%{qn}%", f"%{qn}%"])
+        if tabv in ("pom", "galon", "umum"):
+            if tabv == "pom":
+                where.append("(lower(t.kind) LIKE %s AND lower(t.kind) LIKE %s)")
+                params.extend(["%pom%", "%cater%"])
+            elif tabv == "galon":
+                where.append("lower(t.kind) LIKE %s")
+                params.append("%galon%")
+            elif tabv == "umum":
+                where.append("NOT ((lower(t.kind) LIKE %s AND lower(t.kind) LIKE %s) OR lower(t.kind) LIKE %s)")
+                params.extend(["%pom%", "%cater%", "%galon%"])
         if bounds:
             where.append("t.occurred_at BETWEEN %s AND %s")
             params.extend([bounds[0], bounds[1]])
@@ -2952,12 +3022,18 @@ def list_tasks(request: Request, q: str = "", date: str = "", sort: str = "occur
             WHERE ma.target_table='task_entries' AND ma.target_id=t.id
           ) att ON true
         """
+        count_sql = "SELECT COUNT(*)::int AS c FROM task_entries t"
+        if where:
+            count_sql += " WHERE " + " AND ".join(where)
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += f" ORDER BY {order} LIMIT %s OFFSET %s"
+        count_params = list(params)
         params.append(limit)
         params.append(offset)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(count_sql, tuple(count_params))
+            total = int(cur.fetchone()["c"] or 0)
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         for r in rows:
@@ -2972,7 +3048,7 @@ def list_tasks(request: Request, q: str = "", date: str = "", sort: str = "occur
                 except Exception:
                     pass
             r.pop("extra_json", None)
-        return {"items": rows}
+        return {"items": rows, "total": total}
 
 
 @app.get("/api/tasks/{task_id}/photo")
