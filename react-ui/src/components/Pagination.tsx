@@ -12,6 +12,8 @@ export default function Pagination({ page, pageSize, total, onPageChange }: Prop
   const t = Math.max(0, total || 0)
   const pages = Math.max(1, Math.ceil(t / size) || 1)
   const p = clamp(Math.floor(page || 1), 1, pages)
+  const from = t === 0 ? 0 : (p - 1) * size + 1
+  const to = t === 0 ? 0 : Math.min(p * size, t)
 
   const go = (next: number) => onPageChange(clamp(next, 1, pages))
 
@@ -29,38 +31,46 @@ export default function Pagination({ page, pageSize, total, onPageChange }: Prop
   }
 
   return (
-    <div className="row row-right" style={{ marginTop: 12, gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-      <span className="muted" style={{ marginRight: 6 }}>
-        Total: {t}
-      </span>
-      <button className="button button-secondary button-sm" type="button" onClick={() => go(p - 1)} disabled={p <= 1}>
-        Prev
-      </button>
-      <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-        {nums.map((n, idx) =>
-          n === '…' ? (
-            <span key={`dots-${idx}`} className="muted" style={{ padding: '0 6px' }}>
-              …
-            </span>
-          ) : (
-            <button
-              key={n}
-              className={`button button-secondary button-sm${n === p ? ' button-active' : ''}`}
-              type="button"
-              onClick={() => go(n)}
-              aria-current={n === p ? 'page' : undefined}
-            >
-              {n}
-            </button>
-          ),
+    <nav className="pagination" aria-label="Pagination">
+      <div className="pagination-info">
+        {t === 0 ? (
+          <span className="muted">Tidak ada data</span>
+        ) : (
+          <span className="muted">
+            Menampilkan {from}-{to} dari {t}
+          </span>
         )}
       </div>
-      <button className="button button-secondary button-sm" type="button" onClick={() => go(p + 1)} disabled={p >= pages}>
-        Next
-      </button>
-      <span className="muted" style={{ marginLeft: 6 }}>
-        Halaman {p}/{pages}
-      </span>
-    </div>
+      <div className="pagination-controls">
+        <button className="button button-secondary button-sm" type="button" onClick={() => go(p - 1)} disabled={p <= 1}>
+          Prev
+        </button>
+        <div className="pagination-pages">
+          {nums.map((n, idx) =>
+            n === '…' ? (
+              <span key={`dots-${idx}`} className="pagination-dots" aria-hidden="true">
+                …
+              </span>
+            ) : (
+              <button
+                key={n}
+                className={`button button-sm ${n === p ? 'button-primary' : 'button-secondary'}`}
+                type="button"
+                onClick={() => go(n)}
+                aria-current={n === p ? 'page' : undefined}
+              >
+                {n}
+              </button>
+            ),
+          )}
+        </div>
+        <button className="button button-secondary button-sm" type="button" onClick={() => go(p + 1)} disabled={p >= pages}>
+          Next
+        </button>
+        <span className="pagination-meta muted">
+          Halaman {p}/{pages}
+        </span>
+      </div>
+    </nav>
   )
 }
