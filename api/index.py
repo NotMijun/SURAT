@@ -1372,6 +1372,8 @@ def _pom_cell(value: PomCateringCellBody | None) -> dict[str, Any]:
         taken = 0
     jatah = max(0, min(9_999, jatah))
     taken = max(0, min(9_999, taken))
+    if taken > jatah:
+        taken = jatah
     person = _text_field(v.person, field="Penanggung jawab", max_len=80, default="")
     note = _text_field(v.note, field="Keterangan", max_len=120, default="")
     return {"jatah": jatah, "taken": taken, "person": person, "note": note}

@@ -99,6 +99,9 @@ export default function TasksPage({ me }: { me: Me }) {
   const [pomOverCapRowIdx, setPomOverCapRowIdx] = useState<number | null>(null)
   const pomOverCapTimerRef = useRef<number | null>(null)
   const pomOverCapLastToastAtRef = useRef<number>(0)
+  const [pomOverJatahRowIdx, setPomOverJatahRowIdx] = useState<number | null>(null)
+  const pomOverJatahTimerRef = useRef<number | null>(null)
+  const pomOverJatahLastToastAtRef = useRef<number>(0)
 
   const refresh = useCallback(async (opts: { q: string; date: string; sort: string; limit: number; tab: TaskTab; offset: number }) => {
     const { q, date, sort, limit, tab, offset } = opts
@@ -249,6 +252,7 @@ export default function TasksPage({ me }: { me: Me }) {
   useEffect(() => {
     return () => {
       if (pomOverCapTimerRef.current) window.clearTimeout(pomOverCapTimerRef.current)
+      if (pomOverJatahTimerRef.current) window.clearTimeout(pomOverJatahTimerRef.current)
     }
   }, [])
 
@@ -291,6 +295,23 @@ export default function TasksPage({ me }: { me: Me }) {
     [toast],
   )
 
+  const bumpPomOverJatah = useCallback(
+    (rowIdx: number) => {
+      setPomOverJatahRowIdx(rowIdx)
+      if (pomOverJatahTimerRef.current) window.clearTimeout(pomOverJatahTimerRef.current)
+      pomOverJatahTimerRef.current = window.setTimeout(() => {
+        setPomOverJatahRowIdx(null)
+        pomOverJatahTimerRef.current = null
+      }, 650)
+      const now = Date.now()
+      if (now - pomOverJatahLastToastAtRef.current > 900) {
+        pomOverJatahLastToastAtRef.current = now
+        toast.push('Jumlah diambil tidak boleh lebih dari jatah', 'warn')
+      }
+    },
+    [toast],
+  )
+
   const setPomRowCapped = useCallback(
     (rowIdx: number, patch: Partial<PomRow>) => {
       setPomRows((prev) => {
@@ -320,6 +341,14 @@ export default function TasksPage({ me }: { me: Me }) {
           }
         }
 
+        if (patch.taken != null || patch.jatah != null) {
+          const rowCap = Math.max(0, nextJatah)
+          if (nextTaken > rowCap) {
+            nextTaken = rowCap
+            bumpPomOverJatah(rowIdx)
+          }
+        }
+
         return prev.map((r, i) =>
           i === rowIdx
             ? {
@@ -332,7 +361,7 @@ export default function TasksPage({ me }: { me: Me }) {
         )
       })
     },
-    [bumpPomOverCap, pomAvailableBoxes],
+    [bumpPomOverCap, bumpPomOverJatah, pomAvailableBoxes],
   )
 
   const savePomSheet = useCallback(async () => {
@@ -342,7 +371,11 @@ export default function TasksPage({ me }: { me: Me }) {
       const d = date || today
       const payload = {
         staff_name: pomStaffName,
-        rows: pomRows.map((r) => ({ ...r, jatah: Number(r.jatah) || 0, taken: Number(r.taken) || 0 })),
+        rows: pomRows.map((r) => {
+          const jatah = Number(r.jatah) || 0
+          const taken = Math.min(jatah, Number(r.taken) || 0)
+          return { ...r, jatah, taken }
+        }),
         total_boxes_in: Number(pomTotalBoxesIn) || 0,
         vendor_name: pomVendorName,
         date: d,
@@ -969,7 +1002,7 @@ export default function TasksPage({ me }: { me: Me }) {
                           </div>
                         </td>
                         <td>
-                          <div className={`number-stepper number-stepper-sm${isEditing ? ' stepper-editing' : ''}${pomOverCapRowIdx === idx ? ' stepper-overcap' : ''}`}>
+                          <div className={`number-stepper number-stepper-sm${isEditing ? ' stepper-editing' : ''}${pomOverCapRowIdx === idx ? ' stepper-overcap' : ''}${pomOverJatahRowIdx === idx ? ' stepper-overjatah' : ''}`}>
                             <button
                               className="stepper-btn stepper-btn-sm"
                               type="button"
