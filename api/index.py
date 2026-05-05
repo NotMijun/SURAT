@@ -3786,6 +3786,30 @@ def admin_delete_key_master(key_id: int, request: Request):
         return {"ok": True}
 
 
+@app.delete("/api/admin/keys/master/{key_id}/hard")
+def admin_hard_delete_key_master(key_id: int, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        _require_role(sess, ("admin",))
+        kid = int(key_id)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT id, name FROM key_master WHERE id=%s", (kid,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Kunci tidak ditemukan")
+            before = dict(row)
+            deleted_audit = 0
+            try:
+                cur.execute("DELETE FROM audit_log WHERE target_key_master_id=%s", (kid,))
+                deleted_audit = int(cur.rowcount or 0)
+            except Exception:
+                deleted_audit = 0
+            cur.execute("DELETE FROM key_master WHERE id=%s", (kid,))
+            deleted = int(cur.rowcount or 0)
+        conn.commit()
+        return {"ok": True, "deleted": deleted, "deleted_audit": deleted_audit, "before": before}
+
+
 @app.get("/api/admin/rooms/master")
 def admin_list_room_master(request: Request):
     with db_connect() as conn:

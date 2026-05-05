@@ -298,6 +298,23 @@ export default function AdminPage({ me }: { me: Me }) {
     }
   }
 
+  const hardDeleteKeyMaster = async (id: number) => {
+    const ok = await confirm.confirm({
+      title: 'Hapus Master Kunci',
+      message: 'Hapus master kunci ini secara permanen?\n\nAksi ini tidak bisa dibatalkan.',
+      confirmText: 'Hapus',
+      cancelText: 'Batal',
+    })
+    if (!ok) return
+    try {
+      await apiDelete(`/api/admin/keys/master/${id}/hard`)
+      toast.push('Master kunci dihapus', 'success')
+      await refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal menghapus master kunci'), 'error')
+    }
+  }
+
   const updateVendor = async (id: number, name: string) => {
     try {
       await apiPatch(`/api/admin/vendors/catering/${id}`, { name })
@@ -620,7 +637,7 @@ export default function AdminPage({ me }: { me: Me }) {
               </thead>
               <tbody>
                 {keyMasterView.map((k) => (
-                  <KeyMasterRow key={k.id} k={k} onSave={updateKeyMaster} onDisable={disableKeyMaster} />
+                  <KeyMasterRow key={k.id} k={k} onSave={updateKeyMaster} onDisable={disableKeyMaster} onDelete={hardDeleteKeyMaster} />
                 ))}
                 {keyMasterView.length === 0 && (
                   <tr>
@@ -992,10 +1009,12 @@ function KeyMasterRow({
   k,
   onSave,
   onDisable,
+  onDelete,
 }: {
   k: { id: number; name: string; is_active?: boolean; created_at?: string; updated_at?: string }
   onSave: (id: number, name: string, is_active: boolean) => void
   onDisable: (id: number) => void
+  onDelete: (id: number) => void
 }) {
   const [name, setName] = useState(k.name || '')
   const [active, setActive] = useState(k.is_active !== false)
@@ -1022,6 +1041,9 @@ function KeyMasterRow({
         </button>
         <button className="button button-sm" type="button" onClick={() => onDisable(k.id)}>
           Nonaktifkan
+        </button>
+        <button className="button button-sm button-danger" type="button" onClick={() => onDelete(k.id)}>
+          Hapus
         </button>
       </td>
     </tr>
