@@ -762,8 +762,23 @@ def _ensure_schema(conn) -> None:
                 )
                 """
             )
+            cur.execute("ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS target_key_master_id BIGINT REFERENCES key_master(id)")
+            cur.execute("ALTER TABLE audit_log DROP CONSTRAINT IF EXISTS audit_log_one_target")
+            cur.execute(
+                """
+                ALTER TABLE audit_log ADD CONSTRAINT audit_log_one_target CHECK (
+                  ((target_key_transaction_id IS NOT NULL)::int +
+                   (target_guest_entry_id IS NOT NULL)::int +
+                   (target_mutasi_entry_id IS NOT NULL)::int +
+                   (target_task_entry_id IS NOT NULL)::int +
+                   (target_user_id IS NOT NULL)::int +
+                   (target_key_master_id IS NOT NULL)::int) = 1
+                )
+                """
+            )
             cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_log(created_at)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor_user_id, created_at)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_key_master ON audit_log(target_key_master_id, created_at)")
         conn.commit()
         _maybe_bootstrap_admin(conn)
         _schema_ready = True
@@ -906,6 +921,7 @@ def _audit(conn, sess: dict[str, Any], table_name: str, record_id: str, action: 
         "target_mutasi_entry_id": None,
         "target_task_entry_id": None,
         "target_user_id": None,
+        "target_key_master_id": None,
     }
     try:
         rec_int = int(record_id)
@@ -920,15 +936,17 @@ def _audit(conn, sess: dict[str, Any], table_name: str, record_id: str, action: 
         target["target_mutasi_entry_id"] = rec_int
     elif t == "task_entries":
         target["target_task_entry_id"] = rec_int
+    elif t == "key_master":
+        target["target_key_master_id"] = rec_int
     elif t in ("users", "auth"):
         target["target_user_id"] = rec_int
 
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO audit_log(actor_user_id, target_key_transaction_id, target_guest_entry_id, target_mutasi_entry_id, target_task_entry_id, target_user_id,
+            INSERT INTO audit_log(actor_user_id, target_key_transaction_id, target_guest_entry_id, target_mutasi_entry_id, target_task_entry_id, target_user_id, target_key_master_id,
                                   action, actor_shift, actor_post, before_json, after_json, created_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """,
             (
                 sess["user_id"],
@@ -937,6 +955,7 @@ def _audit(conn, sess: dict[str, Any], table_name: str, record_id: str, action: 
                 target["target_mutasi_entry_id"],
                 target["target_task_entry_id"],
                 target["target_user_id"],
+                target["target_key_master_id"],
                 action,
                 sess["shift"],
                 sess["post"],
@@ -3655,17 +3674,17 @@ def admin_create_key_master(body: CreateKeyMasterBody, request: Request):
                 after = dict(after_row) if after_row else {"id": kid, "name": name}
 
                 if before is None:
-                    _audit(conn, sess, "auth", str(kid), "key_master_create", None, {"id": kid, "name": after.get("name"), "is_active": True})
+                    _audit(conn, sess, "key_master", str(kid), "key_master_create", None, {"id": kid, "name": after.get("name"), "is_active": True})
                     mode = "created"
                 else:
                     was_active = bool(before.get("is_active")) if has_is_active else True
                     now_active = bool(after.get("is_active")) if has_is_active else True
                     name_changed = str(before.get("name") or "") != str(after.get("name") or "")
                     if (not was_active) and now_active:
-                        _audit(conn, sess, "auth", str(kid), "key_master_reactivate", before, after)
+                        _audit(conn, sess, "key_master", str(kid), "key_master_reactivate", before, after)
                         mode = "reactivated"
                     elif name_changed:
-                        _audit(conn, sess, "auth", str(kid), "key_master_update", before, after)
+                        _audit(conn, sess, "key_master", str(kid), "key_master_update", before, after)
                         mode = "updated"
                     else:
                         mode = "exists"
@@ -3730,7 +3749,7 @@ def admin_patch_key_master(key_id: int, body: PatchKeyMasterBody, request: Reque
                 raise HTTPException(status_code=409, detail="Nama kunci sudah dipakai")
             cur.execute("SELECT * FROM key_master WHERE id=%s", (int(key_id),))
             after = dict(cur.fetchone())
-            _audit(conn, sess, "auth", str(key_id), "key_master_update", before, after)
+            _audit(conn, sess, "key_master", str(key_id), "key_master_update", before, after)
         conn.commit()
         return {"ok": True}
 
@@ -3758,11 +3777,11 @@ def admin_delete_key_master(key_id: int, request: Request):
                 cur.execute("UPDATE key_master SET is_active=%s, updated_at=%s WHERE id=%s", (active_false, now, int(key_id)))
                 cur.execute("SELECT * FROM key_master WHERE id=%s", (int(key_id),))
                 after = dict(cur.fetchone())
-                _audit(conn, sess, "auth", str(key_id), "key_master_disable", before, after)
+                _audit(conn, sess, "key_master", str(key_id), "key_master_disable", before, after)
             else:
                 cur.execute("DELETE FROM key_master WHERE id=%s", (int(key_id),))
                 after = {"id": int(key_id), "deleted": True}
-                _audit(conn, sess, "auth", str(key_id), "key_master_delete", before, after)
+                _audit(conn, sess, "key_master", str(key_id), "key_master_delete", before, after)
         conn.commit()
         return {"ok": True}
 
@@ -4093,9 +4112,10 @@ def admin_audit(
               WHEN a.target_mutasi_entry_id IS NOT NULL THEN 'mutasi_entries'
               WHEN a.target_task_entry_id IS NOT NULL THEN 'task_entries'
               WHEN a.target_user_id IS NOT NULL THEN 'users'
+              WHEN a.target_key_master_id IS NOT NULL THEN 'key_master'
               ELSE 'unknown'
             END AS table_name,
-            COALESCE(a.target_key_transaction_id, a.target_guest_entry_id, a.target_mutasi_entry_id, a.target_task_entry_id, a.target_user_id) AS record_id,
+            COALESCE(a.target_key_transaction_id, a.target_guest_entry_id, a.target_mutasi_entry_id, a.target_task_entry_id, a.target_user_id, a.target_key_master_id) AS record_id,
             CASE
               WHEN a.target_key_transaction_id IS NOT NULL THEN (
                 SELECT COALESCE(k.borrower_name, '') || CASE WHEN COALESCE(k.key_name, '') <> '' THEN ' · ' || k.key_name ELSE '' END
@@ -4122,6 +4142,11 @@ def admin_audit(
                 FROM users u2
                 WHERE u2.id = a.target_user_id
               )
+              WHEN a.target_key_master_id IS NOT NULL THEN (
+                SELECT COALESCE(km.name, '')
+                FROM key_master km
+                WHERE km.id = a.target_key_master_id
+              )
               ELSE NULL
             END AS target_label,
             a.action, a.created_at,
@@ -4133,11 +4158,11 @@ def admin_audit(
         params: list[Any] = []
         if tn:
             filters.append(
-                "lower(CASE WHEN a.target_key_transaction_id IS NOT NULL THEN 'key_transactions' WHEN a.target_guest_entry_id IS NOT NULL THEN 'guest_entries' WHEN a.target_mutasi_entry_id IS NOT NULL THEN 'mutasi_entries' WHEN a.target_task_entry_id IS NOT NULL THEN 'task_entries' WHEN a.target_user_id IS NOT NULL THEN 'users' ELSE 'unknown' END) = %s"
+                "lower(CASE WHEN a.target_key_transaction_id IS NOT NULL THEN 'key_transactions' WHEN a.target_guest_entry_id IS NOT NULL THEN 'guest_entries' WHEN a.target_mutasi_entry_id IS NOT NULL THEN 'mutasi_entries' WHEN a.target_task_entry_id IS NOT NULL THEN 'task_entries' WHEN a.target_user_id IS NOT NULL THEN 'users' WHEN a.target_key_master_id IS NOT NULL THEN 'key_master' ELSE 'unknown' END) = %s"
             )
             params.append(tn)
         if rid:
-            filters.append("COALESCE(a.target_key_transaction_id, a.target_guest_entry_id, a.target_mutasi_entry_id, a.target_task_entry_id, a.target_user_id) = CAST(%s AS BIGINT)")
+            filters.append("COALESCE(a.target_key_transaction_id, a.target_guest_entry_id, a.target_mutasi_entry_id, a.target_task_entry_id, a.target_user_id, a.target_key_master_id) = CAST(%s AS BIGINT)")
             params.append(rid)
         if auid:
             filters.append("a.actor_user_id = CAST(%s AS BIGINT)")
@@ -4159,6 +4184,7 @@ def admin_audit(
                       WHEN a.target_mutasi_entry_id IS NOT NULL THEN (SELECT COALESCE(m.kind, '') || CASE WHEN COALESCE(m.description, '') <> '' THEN ' · ' || m.description ELSE '' END FROM mutasi_entries m WHERE m.id = a.target_mutasi_entry_id)
                       WHEN a.target_task_entry_id IS NOT NULL THEN (SELECT COALESCE(t.kind, '') || CASE WHEN COALESCE(t.destination, '') <> '' THEN ' · ' || t.destination ELSE '' END FROM task_entries t WHERE t.id = a.target_task_entry_id)
                       WHEN a.target_user_id IS NOT NULL THEN (SELECT COALESCE(u2.display_name, '') || CASE WHEN COALESCE(u2.username, '') <> '' THEN ' · ' || u2.username ELSE '' END FROM users u2 WHERE u2.id = a.target_user_id)
+                      WHEN a.target_key_master_id IS NOT NULL THEN (SELECT COALESCE(km.name,'') FROM key_master km WHERE km.id = a.target_key_master_id)
                       ELSE NULL
                     END,
                     ''
@@ -4211,9 +4237,10 @@ def admin_security_history(request: Request, user_id: str, limit: int = 120):
                     WHEN a.target_mutasi_entry_id IS NOT NULL THEN 'mutasi_entries'
                     WHEN a.target_task_entry_id IS NOT NULL THEN 'task_entries'
                     WHEN a.target_user_id IS NOT NULL THEN 'users'
+                    WHEN a.target_key_master_id IS NOT NULL THEN 'key_master'
                     ELSE 'unknown'
                   END AS table_name,
-                  COALESCE(a.target_key_transaction_id, a.target_guest_entry_id, a.target_mutasi_entry_id, a.target_task_entry_id, a.target_user_id) AS record_id,
+                  COALESCE(a.target_key_transaction_id, a.target_guest_entry_id, a.target_mutasi_entry_id, a.target_task_entry_id, a.target_user_id, a.target_key_master_id) AS record_id,
                   CASE
                     WHEN a.target_key_transaction_id IS NOT NULL THEN (
                       SELECT COALESCE(k.borrower_name, '') || CASE WHEN COALESCE(k.key_name, '') <> '' THEN ' · ' || k.key_name ELSE '' END
@@ -4239,6 +4266,11 @@ def admin_security_history(request: Request, user_id: str, limit: int = 120):
                       SELECT COALESCE(u2.display_name, '') || CASE WHEN COALESCE(u2.username, '') <> '' THEN ' · ' || u2.username ELSE '' END
                       FROM users u2
                       WHERE u2.id = a.target_user_id
+                    )
+                    WHEN a.target_key_master_id IS NOT NULL THEN (
+                      SELECT COALESCE(km.name, '')
+                      FROM key_master km
+                      WHERE km.id = a.target_key_master_id
                     )
                     ELSE NULL
                   END AS target_label,
