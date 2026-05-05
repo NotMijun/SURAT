@@ -938,7 +938,7 @@ export default function TasksPage({ me }: { me: Me }) {
                         <td>{idx + 1}</td>
                         <td>{r.unit}</td>
                         <td>
-                          <div className={`number-stepper number-stepper-sm${pomOverCapRowIdx === idx ? ' stepper-overcap' : ''}`}>
+                          <div className={`number-stepper number-stepper-sm${isEditing ? ' stepper-editing' : ''}${pomOverCapRowIdx === idx ? ' stepper-overcap' : ''}`}>
                             <button
                               className="stepper-btn stepper-btn-sm"
                               type="button"
@@ -969,7 +969,7 @@ export default function TasksPage({ me }: { me: Me }) {
                           </div>
                         </td>
                         <td>
-                          <div className={`number-stepper number-stepper-sm${pomOverCapRowIdx === idx ? ' stepper-overcap' : ''}`}>
+                          <div className={`number-stepper number-stepper-sm${isEditing ? ' stepper-editing' : ''}${pomOverCapRowIdx === idx ? ' stepper-overcap' : ''}`}>
                             <button
                               className="stepper-btn stepper-btn-sm"
                               type="button"

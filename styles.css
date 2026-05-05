@@ -780,6 +780,14 @@ html.theme-transition .theme-toggle-icon{transition-duration:250ms}
 .stepper-overcap .input{
   border-color:rgba(255,91,122,.55);
 }
+.stepper-editing{
+  box-shadow:0 0 0 3px rgba(var(--primary-rgb),.20);
+  border-radius:var(--radius-sm);
+}
+.stepper-editing .stepper-btn,
+.stepper-editing .input{
+  border-color:rgba(var(--primary-rgb),.55);
+}
 
 .card-actions {
   display: flex;
