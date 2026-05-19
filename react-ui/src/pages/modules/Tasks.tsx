@@ -4,7 +4,6 @@ import type { AttachmentItem, Me, TaskEntry } from '../../types'
 import { compressImageFile } from '../../lib/image'
 import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useConfirm, useToast } from '../../components/ToastHost'
-import LoadingScreen from '../../components/LoadingScreen'
 import Modal from '../../components/Modal'
 import PhotoModal from '../../components/PhotoModal'
 import Pagination from '../../components/Pagination'
@@ -1372,8 +1371,7 @@ export default function TasksPage({ me }: { me: Me }) {
             <div className="muted">{pomHistoryLoading ? 'Memuat...' : `${pomHistoryItems.length} entri (per shift)`}</div>
           </header>
           <div className="card-body">
-            {pomHistoryLoading && <LoadingScreen mode="inline" label="Loading..." minHeight={260} />}
-            <div className="table-wrap" aria-hidden={pomHistoryLoading}>
+            <div className="table-wrap" aria-busy={pomHistoryLoading}>
               <table className="table table-mobile-cards">
                 <thead>
                   <tr>
@@ -1388,38 +1386,49 @@ export default function TasksPage({ me }: { me: Me }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {pomHistoryItems.map((h) => (
-                    <tr key={`${h.date}:${h.shift}`}>
-                      <td data-label="Tanggal">{h.date}</td>
-                      <td data-label="Shift">{h.shift === 'siang' ? 'Siang' : h.shift === 'sore' ? 'Sore' : 'Malam'}</td>
-                      <td data-label="Vendor">{h.vendor_name || <span className="muted">-</span>}</td>
-                      <td data-label="Total datang">{h.total_boxes_in}</td>
-                      <td data-label="Total jatah">{h.total_jatah}</td>
-                      <td data-label="Total diambil">{h.total_taken}</td>
-                      <td data-label="Update">{h.updated_at ? fmtTime(h.updated_at) : <span className="muted">-</span>}</td>
-                      <td data-label="Aksi">
-                        <div className="card-actions">
-                          <button
-                            className="button button-sm button-secondary"
-                            type="button"
-                            onClick={() => {
-                              ;(async () => {
-                                await loadPomSheet(h.shift, h.date)
-                                document.getElementById('pomSheet')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                                toast.push(`Sheet ${h.date} (${h.shift === 'siang' ? 'Siang' : h.shift === 'sore' ? 'Sore' : 'Malam'}) dimuat`, 'success')
-                              })().catch((err: any) => {
-                                toast.push(String(err?.message || err || 'Gagal membuka sheet'), 'error')
-                              })
-                            }}
-                            disabled={pomLoading || pomSaving}
-                          >
-                            Buka
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {pomHistoryItems.length === 0 && (
+                  {pomHistoryLoading
+                    ? Array.from({ length: 6 }).map((_, i) => (
+                        <tr key={`sk-ph-${i}`} className="table-skeleton">
+                          {Array.from({ length: 8 }).map((__, c) => (
+                            <td key={c}>
+                              <span className={`skeleton${c === 0 ? ' skeleton-lg' : ''}`} style={{ width: c === 2 ? '80%' : c === 7 ? '55%' : '60%' }} />
+                            </td>
+                          ))}
+                        </tr>
+                      ))
+                    : pomHistoryItems.map((h) => (
+                        <tr key={`${h.date}:${h.shift}`}>
+                          <td data-label="Tanggal">{h.date}</td>
+                          <td data-label="Shift">{h.shift === 'siang' ? 'Siang' : h.shift === 'sore' ? 'Sore' : 'Malam'}</td>
+                          <td data-label="Vendor">{h.vendor_name || <span className="muted">-</span>}</td>
+                          <td data-label="Total datang">{h.total_boxes_in}</td>
+                          <td data-label="Total jatah">{h.total_jatah}</td>
+                          <td data-label="Total diambil">{h.total_taken}</td>
+                          <td data-label="Update">{h.updated_at ? fmtTime(h.updated_at) : <span className="muted">-</span>}</td>
+                          <td data-label="Aksi">
+                            <div className="card-actions">
+                              <button
+                                className="button button-sm button-secondary"
+                                type="button"
+                                onClick={() => {
+                                  ;(async () => {
+                                    await loadPomSheet(h.shift, h.date)
+                                    document.getElementById('pomSheet')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                                    toast.push(`Sheet ${h.date} (${h.shift === 'siang' ? 'Siang' : h.shift === 'sore' ? 'Sore' : 'Malam'}) dimuat`, 'success')
+                                  })().catch((err: any) => {
+                                    toast.push(String(err?.message || err || 'Gagal membuka sheet'), 'error')
+                                  })
+                                }}
+                                aria-label={`Buka sheet POM ${h.date} shift ${h.shift}`}
+                                disabled={pomLoading || pomSaving}
+                              >
+                                Buka
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                  {!pomHistoryLoading && pomHistoryItems.length === 0 && (
                     <tr>
                       <td className="muted" colSpan={8}>
                         Belum ada data sheet.
@@ -1448,7 +1457,6 @@ export default function TasksPage({ me }: { me: Me }) {
           </div>
         </header>
         <div className="card-body">
-          {loading && <LoadingScreen mode="inline" label="Loading..." minHeight={320} />}
           <div className="table-footer-filters">
             <div className="filter-group">
               <label className="label-sm">Cari</label>
@@ -1516,7 +1524,7 @@ export default function TasksPage({ me }: { me: Me }) {
               </button>
             </div>
           </div>
-          <div className="table-wrap" aria-hidden={loading}>
+          <div className="table-wrap" aria-busy={loading}>
             <table className="table table-mobile-cards">
               <thead>
                 <tr>
@@ -1532,62 +1540,80 @@ export default function TasksPage({ me }: { me: Me }) {
                 </tr>
               </thead>
               <tbody>
-                {viewItems.map((r) => {
-                  const detailText = renderDetails(r)
-                  const e: any = r.extra || {}
-                  const canOpenSheet = isPom(r.kind) && e.source === 'sheet' && e.sheet_date && e.sheet_shift
-                  return (
-                    <tr key={r.id} className={r.status === 'void' ? 'table-row-void' : undefined}>
-                      <td data-label="Waktu">{fmtDateTime(r.occurred_at)}</td>
-                      <td data-label="Jenis">{r.kind}</td>
-                      <td data-label="Tujuan">{r.destination}</td>
-                      <td data-label="Detail">
-                        {detailText ? detailText : <span className="muted">-</span>}
-                        {canOpenSheet && (
-                          <div style={{ marginTop: 6 }}>
-                            <button className="button button-sm button-secondary" type="button" onClick={() => openPomSheetFromLog(e.sheet_date, e.sheet_shift)}>
-                              Lihat sheet
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                      <td data-label="Catatan">
-                        {r.notes}
-                        {r.status === 'void' && r.void_reason ? <div className="muted">Deleted: {r.void_reason}</div> : null}
-                      </td>
-                      <td data-label="Status">{r.status === 'void' ? <span className="badge badge-danger">Deleted</span> : <span className="badge badge-ok">Aktif</span>}</td>
-                      <td data-label="Foto">
-                        {r.has_photo && r.photo_url ? (
-                          <button className="button button-sm button-secondary" type="button" onClick={() => openTaskPhotos(r)}>
-                            {typeof r.photo_count === 'number' && r.photo_count > 1 ? `Foto (${r.photo_count})` : 'Foto'}
-                          </button>
-                        ) : (
-                          <span className="muted">-</span>
-                        )}
-                      </td>
-                      <td data-label="Petugas">{r.created_by_name || '-'}</td>
-                      {canAdmin && (
-                        <td data-label="Aksi">
-                          <div className="card-actions">
-                            {r.status === 'void' ? (
-                              <span className="muted">—</span>
-                            ) : (
-                              <>
-                                <button className="button button-sm button-secondary" type="button" onClick={() => doEdit(r)}>
-                                  ✎ Edit
+                {loading
+                  ? Array.from({ length: Math.max(6, Math.min(10, limit || 6)) }).map((_, i) => {
+                      const colCount = canAdmin ? 9 : 8
+                      return (
+                        <tr key={`sk-${i}`} className="table-skeleton">
+                          {Array.from({ length: colCount }).map((__, c) => (
+                            <td key={c}>
+                              <span className={`skeleton${c === 1 ? ' skeleton-lg' : ''}`} style={{ width: c === 3 ? '92%' : c === colCount - 1 ? '55%' : '60%' }} />
+                            </td>
+                          ))}
+                        </tr>
+                      )
+                    })
+                  : viewItems.map((r) => {
+                      const detailText = renderDetails(r)
+                      const e: any = r.extra || {}
+                      const canOpenSheet = isPom(r.kind) && e.source === 'sheet' && e.sheet_date && e.sheet_shift
+                      return (
+                        <tr key={r.id} className={r.status === 'void' ? 'table-row-void' : undefined}>
+                          <td data-label="Waktu">{fmtDateTime(r.occurred_at)}</td>
+                          <td data-label="Jenis">{r.kind}</td>
+                          <td data-label="Tujuan">{r.destination}</td>
+                          <td data-label="Detail">
+                            {detailText ? detailText : <span className="muted">-</span>}
+                            {canOpenSheet && (
+                              <div style={{ marginTop: 6 }}>
+                                <button
+                                  className="button button-sm button-secondary"
+                                  type="button"
+                                  onClick={() => openPomSheetFromLog(e.sheet_date, e.sheet_shift)}
+                                  aria-label={`Lihat sheet POM ${e.sheet_date} shift ${e.sheet_shift}`}
+                                >
+                                  Lihat sheet
                                 </button>
-                                <button className="button button-sm button-danger" type="button" onClick={() => doDelete(r)}>
-                                  Delete
-                                </button>
-                              </>
+                              </div>
                             )}
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  )
-                })}
-                {viewItems.length === 0 && (
+                          </td>
+                          <td data-label="Catatan">
+                            {r.notes}
+                            {r.status === 'void' && r.void_reason ? <div className="muted">Deleted: {r.void_reason}</div> : null}
+                          </td>
+                          <td data-label="Status">{r.status === 'void' ? <span className="badge badge-danger">Deleted</span> : <span className="badge badge-ok">Aktif</span>}</td>
+                          <td data-label="Foto">
+                            {r.has_photo && r.photo_url ? (
+                              <button className="button button-sm button-secondary" type="button" onClick={() => openTaskPhotos(r)} aria-label={`Lihat foto tugas ${r.kind} ${fmtDateTime(r.occurred_at)}`}>
+                                {typeof r.photo_count === 'number' && r.photo_count > 1 ? `Foto (${r.photo_count})` : 'Foto'}
+                              </button>
+                            ) : (
+                              <span className="muted">-</span>
+                            )}
+                          </td>
+                          <td data-label="Petugas">{r.created_by_name || '-'}</td>
+                          {canAdmin && (
+                            <td data-label="Aksi">
+                              <div className="card-actions">
+                                {r.status === 'void' ? (
+                                  <span className="muted">—</span>
+                                ) : (
+                                  <>
+                                    <button className="button button-sm button-secondary" type="button" onClick={() => doEdit(r)} aria-label={`Edit tugas ${r.kind} ${fmtDateTime(r.occurred_at)}`}>
+                                      ✎ Edit
+                                    </button>
+                                    <button className="button button-sm button-danger" type="button" onClick={() => doDelete(r)} aria-label={`Hapus tugas ${r.kind} ${fmtDateTime(r.occurred_at)}`}>
+                                      Delete
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      )
+                    })}
+                {!loading && viewItems.length === 0 && (
                   <tr>
                     <td className="muted" colSpan={canAdmin ? 9 : 8}>
                       Tidak ada data.

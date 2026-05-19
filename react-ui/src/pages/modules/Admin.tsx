@@ -958,13 +958,13 @@ function AdminUserRow({
         </label>
       </td>
       <td className="row">
-        <button className="button button-sm" type="button" onClick={() => onSave(u, { display_name: displayName, role, is_active: active ? 1 : 0 })}>
+        <button className="button button-sm" type="button" onClick={() => onSave(u, { display_name: displayName, role, is_active: active ? 1 : 0 })} aria-label={`Simpan user ${u.username}`}>
           Simpan
         </button>
-        <button className="button button-sm" type="button" onClick={() => onReset(u.id)}>
+        <button className="button button-sm" type="button" onClick={() => onReset(u.id)} aria-label={`Reset password ${u.username}`}>
           Reset Password
         </button>
-        <button className="button button-sm" type="button" onClick={() => onDelete(u.id)} disabled={isSelf}>
+        <button className="button button-sm" type="button" onClick={() => onDelete(u.id)} disabled={isSelf} aria-label={`Hapus user ${u.username}`}>
           Hapus
         </button>
       </td>
@@ -994,10 +994,10 @@ function VendorRow({
       </td>
       <td>{v.created_at || '-'}</td>
       <td className="row">
-        <button className="button button-sm" type="button" onClick={() => onSave(v.id, name)}>
+        <button className="button button-sm" type="button" onClick={() => onSave(v.id, name)} aria-label={`Simpan vendor ${v.name}`}>
           Simpan
         </button>
-        <button className="button button-sm" type="button" onClick={() => onDelete(v.id)}>
+        <button className="button button-sm" type="button" onClick={() => onDelete(v.id)} aria-label={`Hapus vendor ${v.name}`}>
           Hapus
         </button>
       </td>
@@ -1036,13 +1036,13 @@ function KeyMasterRow({
         </label>
       </td>
       <td className="row">
-        <button className="button button-sm" type="button" onClick={() => onSave(k.id, name, active)}>
+        <button className="button button-sm" type="button" onClick={() => onSave(k.id, name, active)} aria-label={`Simpan master kunci ${k.name}`}>
           Simpan
         </button>
-        <button className="button button-sm" type="button" onClick={() => onDisable(k.id)}>
+        <button className="button button-sm" type="button" onClick={() => onDisable(k.id)} aria-label={`Nonaktifkan master kunci ${k.name}`}>
           Nonaktifkan
         </button>
-        <button className="button button-sm button-danger" type="button" onClick={() => onDelete(k.id)}>
+        <button className="button button-sm button-danger" type="button" onClick={() => onDelete(k.id)} aria-label={`Hapus master kunci ${k.name}`}>
           Hapus
         </button>
       </td>
@@ -1079,10 +1079,10 @@ function RoomMasterRow({
         </label>
       </td>
       <td className="row">
-        <button className="button button-sm" type="button" onClick={() => onSave(r.id, name, active)}>
+        <button className="button button-sm" type="button" onClick={() => onSave(r.id, name, active)} aria-label={`Simpan master ruangan ${r.name}`}>
           Simpan
         </button>
-        <button className="button button-sm" type="button" onClick={() => onDisable(r.id)}>
+        <button className="button button-sm" type="button" onClick={() => onDisable(r.id)} aria-label={`Nonaktifkan master ruangan ${r.name}`}>
           Nonaktifkan
         </button>
       </td>
@@ -1127,10 +1127,10 @@ function PomUnitRow({
         </label>
       </td>
       <td className="row">
-        <button className="button button-sm" type="button" onClick={() => onSave(p.id, name, orderValue, active)}>
+        <button className="button button-sm" type="button" onClick={() => onSave(p.id, name, orderValue, active)} aria-label={`Simpan unit POM ${p.name}`}>
           Simpan
         </button>
-        <button className="button button-sm" type="button" onClick={() => onDisable(p.id)}>
+        <button className="button button-sm" type="button" onClick={() => onDisable(p.id)} aria-label={`Nonaktifkan unit POM ${p.name}`}>
           Nonaktifkan
         </button>
       </td>

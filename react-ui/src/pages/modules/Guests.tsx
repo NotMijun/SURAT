@@ -1,10 +1,9 @@
-﻿import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+﻿﻿import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { AttachmentItem, GuestEntry, Me } from '../../types'
 import { compressImageFile } from '../../lib/image'
 import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useConfirm, useToast } from '../../components/ToastHost'
-import LoadingScreen from '../../components/LoadingScreen'
 import Modal from '../../components/Modal'
 import PhotoModal from '../../components/PhotoModal'
 import Pagination from '../../components/Pagination'
@@ -623,7 +622,6 @@ export default function GuestsPage({ me }: { me: Me }) {
           </div>
         </header>
         <div className="card-body">
-          {loading && <LoadingScreen mode="inline" label="Loading..." minHeight={320} />}
           <div className="table-footer-filters">
             <div className="filter-group">
               <label className="label-sm">Cari</label>
@@ -721,7 +719,7 @@ export default function GuestsPage({ me }: { me: Me }) {
               )}
             </div>
           </div>
-          <div className="table-wrap" aria-hidden={loading}>
+          <div className="table-wrap" aria-busy={loading}>
             <table className="table table-mobile-cards">
               <thead>
                 <tr>
@@ -739,66 +737,85 @@ export default function GuestsPage({ me }: { me: Me }) {
                 </tr>
               </thead>
               <tbody>
-                {items.map((r, idx) => (
-                  <tr key={r.id} className={r.status === 'in' ? 'table-row-active' : r.status === 'void' ? 'table-row-void' : undefined}>
-                    {view === 'riwayat' && postFilter === 'IGD' && <td data-label="No">{idx + 1}</td>}
-                    <td data-label="Nama">{r.name}</td>
-                    {view === 'riwayat' && postFilter === 'IGD' && <td data-label="Asal/Instansi">{r.instansi}</td>}
-                    <td data-label="Tujuan">
-                      {r.post === 'Pintu Utama' || r.post === 'Lobby'
-                        ? (r.destination_room || '-')
-                        : postFilter === 'IGD'
-                          ? [r.purpose || '-', r.meet_person || '', r.notes || ''].filter((x) => String(x || '').trim()).join(' · ')
-                          : (r.purpose || '-')}
-                    </td>
-                    {view === 'riwayat' && postFilter !== 'IGD' && (
-                      <td data-label="Kartu">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? (r.visitor_card_no || '-') : '-'}</td>
-                    )}
-                    {view === 'riwayat' && postFilter !== 'IGD' && (
-                      <td data-label="Ditemui">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? '-' : (r.meet_person || '-')}</td>
-                    )}
-                    <td data-label="Masuk">{fmtTime(r.checkin_at)}</td>
-                    {view === 'riwayat' && <td data-label="Keluar">{fmtTime(r.checkout_at)}</td>}
-                    {view === 'riwayat' && postFilter === 'IGD' && <td data-label="Paraf">{r.paraf || '-'}</td>}
-                    <td data-label="Foto">
-                      {r.has_photo && r.photo_url ? (
-                        <button className="button button-sm button-secondary" type="button" onClick={() => openGuestPhotos(r)}>
-                          {typeof r.photo_count === 'number' && r.photo_count > 1 ? `Foto (${r.photo_count})` : 'Foto'}
-                        </button>
-                      ) : (
-                        <span className="muted">-</span>
-                      )}
-                    </td>
-                    <td data-label="Aksi">
-                      {r.status === 'void' ? (
-                        <span className="muted">Deleted</span>
-                      ) : (
-                        <div className="card-actions">
-                          {r.status === 'in' ? (
-                            <button className="button button-sm button-primary" type="button" onClick={() => checkout(r)} style={view === 'inhouse' ? { minHeight: 46, fontSize: 15 } : undefined}>
-                              Checkout
+                {loading
+                  ? Array.from({ length: Math.max(6, Math.min(10, limit || 6)) }).map((_, i) => {
+                      const colCount = view === 'riwayat' ? (postFilter === 'IGD' ? 9 : 8) : 5
+                      return (
+                        <tr key={`sk-${i}`} className="table-skeleton">
+                          {Array.from({ length: colCount }).map((__, c) => (
+                            <td key={c}>
+                              <span className={`skeleton${c === 0 ? ' skeleton-lg' : ''}`} style={{ width: c === 0 ? '70%' : c === colCount - 1 ? '55%' : '60%' }} />
+                            </td>
+                          ))}
+                        </tr>
+                      )
+                    })
+                  : items.map((r, idx) => (
+                      <tr key={r.id} className={r.status === 'in' ? 'table-row-active' : r.status === 'void' ? 'table-row-void' : undefined}>
+                        {view === 'riwayat' && postFilter === 'IGD' && <td data-label="No">{idx + 1}</td>}
+                        <td data-label="Nama">{r.name}</td>
+                        {view === 'riwayat' && postFilter === 'IGD' && <td data-label="Asal/Instansi">{r.instansi}</td>}
+                        <td data-label="Tujuan">
+                          {r.post === 'Pintu Utama' || r.post === 'Lobby'
+                            ? (r.destination_room || '-')
+                            : postFilter === 'IGD'
+                              ? [r.purpose || '-', r.meet_person || '', r.notes || ''].filter((x) => String(x || '').trim()).join(' · ')
+                              : (r.purpose || '-')}
+                        </td>
+                        {view === 'riwayat' && postFilter !== 'IGD' && (
+                          <td data-label="Kartu">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? (r.visitor_card_no || '-') : '-'}</td>
+                        )}
+                        {view === 'riwayat' && postFilter !== 'IGD' && (
+                          <td data-label="Ditemui">{r.post === 'Pintu Utama' || r.post === 'Lobby' ? '-' : (r.meet_person || '-')}</td>
+                        )}
+                        <td data-label="Masuk">{fmtTime(r.checkin_at)}</td>
+                        {view === 'riwayat' && <td data-label="Keluar">{fmtTime(r.checkout_at)}</td>}
+                        {view === 'riwayat' && postFilter === 'IGD' && <td data-label="Paraf">{r.paraf || '-'}</td>}
+                        <td data-label="Foto">
+                          {r.has_photo && r.photo_url ? (
+                            <button className="button button-sm button-secondary" type="button" onClick={() => openGuestPhotos(r)} aria-label={`Lihat foto tamu ${r.name}`}>
+                              {typeof r.photo_count === 'number' && r.photo_count > 1 ? `Foto (${r.photo_count})` : 'Foto'}
                             </button>
-                          ) : canCorrect(r) ? (
-                            <button className="button button-sm button-secondary" type="button" onClick={() => undoCheckout(r)}>
-                              ↩ Batal checkout
-                            </button>
-                          ) : null}
-                          {canCorrect(r) ? (
-                            <button className="button button-sm button-secondary" type="button" onClick={() => openEdit(r)}>
-                              ✎ Edit
-                            </button>
-                          ) : null}
-                          {canCorrect(r) ? (
-                            <button className="button button-sm button-danger" type="button" onClick={() => deleteGuest(r)}>
-                              Delete
-                            </button>
-                          ) : null}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-                {items.length === 0 && (
+                          ) : (
+                            <span className="muted">-</span>
+                          )}
+                        </td>
+                        <td data-label="Aksi">
+                          {r.status === 'void' ? (
+                            <span className="muted">Deleted</span>
+                          ) : (
+                            <div className="card-actions">
+                              {r.status === 'in' ? (
+                                <button
+                                  className="button button-sm button-primary"
+                                  type="button"
+                                  onClick={() => checkout(r)}
+                                  aria-label={`Checkout tamu ${r.name}`}
+                                  style={view === 'inhouse' ? { minHeight: 46, fontSize: 15 } : undefined}
+                                >
+                                  Checkout
+                                </button>
+                              ) : canCorrect(r) ? (
+                                <button className="button button-sm button-secondary" type="button" onClick={() => undoCheckout(r)} aria-label={`Batal checkout tamu ${r.name}`}>
+                                  ↩ Batal checkout
+                                </button>
+                              ) : null}
+                              {canCorrect(r) ? (
+                                <button className="button button-sm button-secondary" type="button" onClick={() => openEdit(r)} aria-label={`Edit tamu ${r.name}`}>
+                                  ✎ Edit
+                                </button>
+                              ) : null}
+                              {canCorrect(r) ? (
+                                <button className="button button-sm button-danger" type="button" onClick={() => deleteGuest(r)} aria-label={`Hapus tamu ${r.name}`}>
+                                  Delete
+                                </button>
+                              ) : null}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                {!loading && items.length === 0 && (
                   <tr>
                     <td className="muted" colSpan={view === 'riwayat' ? (postFilter === 'IGD' ? 9 : 8) : 5}>
                       Tidak ada data.

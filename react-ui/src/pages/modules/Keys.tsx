@@ -4,7 +4,6 @@ import type { AttachmentItem, KeyMasterItem, KeyTx, Me } from '../../types'
 import { compressImageFile } from '../../lib/image'
 import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useConfirm, useToast } from '../../components/ToastHost'
-import LoadingScreen from '../../components/LoadingScreen'
 import Modal from '../../components/Modal'
 import PhotoModal from '../../components/PhotoModal'
 import Pagination from '../../components/Pagination'
@@ -552,8 +551,7 @@ export default function KeysPage({ me }: { me: Me }) {
             <div className="muted">{loading ? 'Memuat...' : `${openTotal} entri`}</div>
           </header>
           <div className="card-body">
-            {loading && <LoadingScreen mode="inline" label="Loading..." minHeight={280} />}
-            <div className="table-wrap" aria-hidden={loading}>
+            <div className="table-wrap" aria-busy={loading}>
               <table className="table table-mobile-cards">
                 <thead>
                   <tr>
@@ -567,42 +565,57 @@ export default function KeysPage({ me }: { me: Me }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {open.map((r) => (
-                    <tr key={r.id} className="table-row-active">
-                      <td data-label="Nama">{r.borrower_name}</td>
-                      <td data-label="Ruangan">{r.key_name}</td>
-                      <td data-label="Titip">{fmtDateTime(r.checkout_at)}</td>
-                      <td data-label="Petugas">{petugasName(r)}</td>
-                      <td data-label="Status">{badge(r.status)}</td>
-                      <td data-label="Foto">
-                        {r.has_photo && r.photo_url ? (
-                          <button className="button button-sm button-secondary" type="button" onClick={() => openKeyPhotos(r)}>
-                            {typeof r.photo_count === 'number' && r.photo_count > 1 ? `Foto (${r.photo_count})` : 'Foto'}
-                          </button>
-                        ) : (
-                          <span className="muted">-</span>
-                        )}
-                      </td>
-                      <td data-label="Aksi">
-                        <div className="row" style={{ flexWrap: 'wrap' }}>
-                          <button className="button button-sm button-primary" type="button" onClick={() => doReturn(r)}>
-                            ↗ Ambil
-                          </button>
-                          {canCorrect(r) ? (
-                            <button className="button button-sm button-secondary" type="button" onClick={() => openEdit(r)}>
-                              ✎ Edit
-                            </button>
-                          ) : null}
-                          {canCorrect(r) ? (
-                            <button className="button button-sm button-danger" type="button" onClick={() => doUndo(r.id)}>
-                              Delete
-                            </button>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {open.length === 0 && (
+                  {loading
+                    ? Array.from({ length: Math.max(6, Math.min(10, limit || 6)) }).map((_, i) => (
+                        <tr key={`sk-open-${i}`} className="table-skeleton">
+                          {Array.from({ length: 7 }).map((__, c) => (
+                            <td key={c}>
+                              <span className={`skeleton${c === 0 ? ' skeleton-lg' : ''}`} style={{ width: c === 0 ? '70%' : c === 6 ? '55%' : '60%' }} />
+                            </td>
+                          ))}
+                        </tr>
+                      ))
+                    : open.map((r) => (
+                        <tr key={r.id} className="table-row-active">
+                          <td data-label="Nama">{r.borrower_name}</td>
+                          <td data-label="Ruangan">{r.key_name}</td>
+                          <td data-label="Titip">{fmtDateTime(r.checkout_at)}</td>
+                          <td data-label="Petugas">{petugasName(r)}</td>
+                          <td data-label="Status">{badge(r.status)}</td>
+                          <td data-label="Foto">
+                            {r.has_photo && r.photo_url ? (
+                              <button
+                                className="button button-sm button-secondary"
+                                type="button"
+                                onClick={() => openKeyPhotos(r)}
+                                aria-label={`Lihat foto ${r.borrower_name} · ${r.key_name}`}
+                              >
+                                {typeof r.photo_count === 'number' && r.photo_count > 1 ? `Foto (${r.photo_count})` : 'Foto'}
+                              </button>
+                            ) : (
+                              <span className="muted">-</span>
+                            )}
+                          </td>
+                          <td data-label="Aksi">
+                            <div className="row" style={{ flexWrap: 'wrap' }}>
+                              <button className="button button-sm button-primary" type="button" onClick={() => doReturn(r)} aria-label={`Ambil kunci ${r.borrower_name} · ${r.key_name}`}>
+                                ↗ Ambil
+                              </button>
+                              {canCorrect(r) ? (
+                                <button className="button button-sm button-secondary" type="button" onClick={() => openEdit(r)} aria-label={`Edit transaksi ${r.borrower_name} · ${r.key_name}`}>
+                                  ✎ Edit
+                                </button>
+                              ) : null}
+                              {canCorrect(r) ? (
+                                <button className="button button-sm button-danger" type="button" onClick={() => doUndo(r.id)} aria-label={`Hapus transaksi ${r.borrower_name} · ${r.key_name}`}>
+                                  Delete
+                                </button>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                  {!loading && open.length === 0 && (
                     <tr>
                       <td className="muted" colSpan={7}>
                         Tidak ada data.
@@ -622,7 +635,6 @@ export default function KeysPage({ me }: { me: Me }) {
             <div className="muted">{loading ? 'Memuat...' : `${closedTotal} entri`}</div>
           </header>
           <div className="card-body">
-            {loading && <LoadingScreen mode="inline" label="Loading..." minHeight={280} />}
             <div className="table-footer-filters">
               <div className="filter-group">
                 <label className="label-sm">Cari</label>
@@ -712,7 +724,7 @@ export default function KeysPage({ me }: { me: Me }) {
                 </button>
               </div>
             </div>
-            <div className="table-wrap" aria-hidden={loading}>
+            <div className="table-wrap" aria-busy={loading}>
               <table className="table table-mobile-cards">
                 <thead>
                   <tr>
@@ -726,51 +738,66 @@ export default function KeysPage({ me }: { me: Me }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {closed.map((r) => (
-                    <tr key={r.id} className={r.status === 'void' ? 'table-row-void' : undefined}>
-                      <td data-label="Nama">{r.borrower_name}</td>
-                      <td data-label="Ruangan">{r.key_name}</td>
-                      <td data-label="Titip">{fmtDateTime(r.checkout_at)}</td>
-                      <td data-label="Ambil">{fmtDateTime(r.checkin_at || '')}</td>
-                      <td data-label="Status">
-                        {badge(r.status)}
-                        {r.status === 'void' ? <div className="muted">Deleted</div> : null}
-                      </td>
-                      <td data-label="Foto">
-                        {r.has_photo && r.photo_url ? (
-                          <button className="button button-sm button-secondary" type="button" onClick={() => openKeyPhotos(r)}>
-                            {typeof r.photo_count === 'number' && r.photo_count > 1 ? `Foto (${r.photo_count})` : 'Foto'}
-                          </button>
-                        ) : (
-                          <span className="muted">-</span>
-                        )}
-                      </td>
-                      <td data-label="Aksi">
-                        {r.status === 'void' ? (
-                          <span className="muted">—</span>
-                        ) : (
-                          <div className="row" style={{ flexWrap: 'wrap' }}>
-                            {r.status === 'closed' ? (
-                            <button className="button button-sm button-secondary" type="button" onClick={() => doReopen(r)}>
-                              ↩ Batal ambil
-                            </button>
-                          ) : null}
-                            {canCorrect(r) ? (
-                              <button className="button button-sm button-secondary" type="button" onClick={() => openEdit(r)}>
-                                ✎ Edit
+                  {loading
+                    ? Array.from({ length: Math.max(6, Math.min(10, limit || 6)) }).map((_, i) => (
+                        <tr key={`sk-closed-${i}`} className="table-skeleton">
+                          {Array.from({ length: 7 }).map((__, c) => (
+                            <td key={c}>
+                              <span className={`skeleton${c === 0 ? ' skeleton-lg' : ''}`} style={{ width: c === 0 ? '70%' : c === 6 ? '55%' : '60%' }} />
+                            </td>
+                          ))}
+                        </tr>
+                      ))
+                    : closed.map((r) => (
+                        <tr key={r.id} className={r.status === 'void' ? 'table-row-void' : undefined}>
+                          <td data-label="Nama">{r.borrower_name}</td>
+                          <td data-label="Ruangan">{r.key_name}</td>
+                          <td data-label="Titip">{fmtDateTime(r.checkout_at)}</td>
+                          <td data-label="Ambil">{fmtDateTime(r.checkin_at || '')}</td>
+                          <td data-label="Status">
+                            {badge(r.status)}
+                            {r.status === 'void' ? <div className="muted">Deleted</div> : null}
+                          </td>
+                          <td data-label="Foto">
+                            {r.has_photo && r.photo_url ? (
+                              <button
+                                className="button button-sm button-secondary"
+                                type="button"
+                                onClick={() => openKeyPhotos(r)}
+                                aria-label={`Lihat foto ${r.borrower_name} · ${r.key_name}`}
+                              >
+                                {typeof r.photo_count === 'number' && r.photo_count > 1 ? `Foto (${r.photo_count})` : 'Foto'}
                               </button>
-                            ) : null}
-                            {canCorrect(r) ? (
-                              <button className="button button-sm button-danger" type="button" onClick={() => doVoid(r)}>
-                                Delete
-                              </button>
-                            ) : null}
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                  {closed.length === 0 && (
+                            ) : (
+                              <span className="muted">-</span>
+                            )}
+                          </td>
+                          <td data-label="Aksi">
+                            {r.status === 'void' ? (
+                              <span className="muted">—</span>
+                            ) : (
+                              <div className="row" style={{ flexWrap: 'wrap' }}>
+                                {r.status === 'closed' ? (
+                                  <button className="button button-sm button-secondary" type="button" onClick={() => doReopen(r)} aria-label={`Batal ambil kunci ${r.borrower_name} · ${r.key_name}`}>
+                                    ↩ Batal ambil
+                                  </button>
+                                ) : null}
+                                {canCorrect(r) ? (
+                                  <button className="button button-sm button-secondary" type="button" onClick={() => openEdit(r)} aria-label={`Edit transaksi ${r.borrower_name} · ${r.key_name}`}>
+                                    ✎ Edit
+                                  </button>
+                                ) : null}
+                                {canCorrect(r) ? (
+                                  <button className="button button-sm button-danger" type="button" onClick={() => doVoid(r)} aria-label={`Hapus transaksi ${r.borrower_name} · ${r.key_name}`}>
+                                    Delete
+                                  </button>
+                                ) : null}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                  {!loading && closed.length === 0 && (
                     <tr>
                       <td className="muted" colSpan={7}>
                         Tidak ada data.

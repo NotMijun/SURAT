@@ -4,7 +4,6 @@ import type { AttachmentItem, Me, MutasiEntry } from '../../types'
 import { compressImageFile } from '../../lib/image'
 import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
 import { useConfirm, useToast } from '../../components/ToastHost'
-import LoadingScreen from '../../components/LoadingScreen'
 import Modal from '../../components/Modal'
 import PhotoModal from '../../components/PhotoModal'
 import Pagination from '../../components/Pagination'
@@ -464,7 +463,6 @@ export default function MutasiPage({ me }: { me: Me }) {
           <div className="muted">{loading ? 'Memuat...' : `${items.length} entri`}</div>
         </header>
         <div className="card-body">
-          {loading && <LoadingScreen mode="inline" label="Loading..." minHeight={320} />}
           <div className="table-footer-filters">
             <div className="filter-group">
               <label className="label-sm">Cari</label>
@@ -553,7 +551,7 @@ export default function MutasiPage({ me }: { me: Me }) {
               </button>
             </div>
           </div>
-          <div className="table-wrap" aria-hidden={loading}>
+          <div className="table-wrap" aria-busy={loading}>
             <table className="table table-mobile-cards">
               <thead>
                 <tr>
@@ -567,46 +565,64 @@ export default function MutasiPage({ me }: { me: Me }) {
                 </tr>
               </thead>
               <tbody>
-                {items.map((r) => (
-                  <tr key={r.id} className={r.status === 'void' ? 'table-row-void' : undefined}>
-                    <td data-label="Jam">{fmtWhen(r.occurred_at)}</td>
-                    <td data-label="Jenis">{r.kind}</td>
-                    <td data-label="Deskripsi">
-                      {r.description}
-                      {r.status === 'void' && r.void_reason ? <div className="muted">Deleted: {r.void_reason}</div> : null}
-                    </td>
-                    <td data-label="Status">{r.status === 'void' ? <span className="badge badge-danger">Deleted</span> : <span className="badge badge-ok">Aktif</span>}</td>
-                    <td data-label="Foto">
-                      {r.has_photo && r.photo_url ? (
-                        <button className="button button-sm button-secondary" type="button" onClick={() => openMutasiPhotos(r)}>
-                          {typeof r.photo_count === 'number' && r.photo_count > 1 ? `Foto (${r.photo_count})` : 'Foto'}
-                        </button>
-                      ) : (
-                        <span className="muted">-</span>
-                      )}
-                    </td>
-                    <td data-label="Petugas">{r.created_by_name || '-'}</td>
-                    {canAdmin && (
-                      <td data-label="Aksi">
-                        <div className="card-actions">
-                          {r.status === 'void' ? (
-                            <span className="muted">—</span>
+                {loading
+                  ? Array.from({ length: Math.max(6, Math.min(10, limit || 6)) }).map((_, i) => {
+                      const colCount = canAdmin ? 7 : 6
+                      return (
+                        <tr key={`sk-${i}`} className="table-skeleton">
+                          {Array.from({ length: colCount }).map((__, c) => (
+                            <td key={c}>
+                              <span className={`skeleton${c === 1 ? ' skeleton-lg' : ''}`} style={{ width: c === 2 ? '92%' : c === colCount - 1 ? '55%' : '60%' }} />
+                            </td>
+                          ))}
+                        </tr>
+                      )
+                    })
+                  : items.map((r) => (
+                      <tr key={r.id} className={r.status === 'void' ? 'table-row-void' : undefined}>
+                        <td data-label="Jam">{fmtWhen(r.occurred_at)}</td>
+                        <td data-label="Jenis">{r.kind}</td>
+                        <td data-label="Deskripsi">
+                          {r.description}
+                          {r.status === 'void' && r.void_reason ? <div className="muted">Deleted: {r.void_reason}</div> : null}
+                        </td>
+                        <td data-label="Status">{r.status === 'void' ? <span className="badge badge-danger">Deleted</span> : <span className="badge badge-ok">Aktif</span>}</td>
+                        <td data-label="Foto">
+                          {r.has_photo && r.photo_url ? (
+                            <button
+                              className="button button-sm button-secondary"
+                              type="button"
+                              onClick={() => openMutasiPhotos(r)}
+                              aria-label={`Lihat foto mutasi ${r.kind} ${fmtWhen(r.occurred_at)}`}
+                            >
+                              {typeof r.photo_count === 'number' && r.photo_count > 1 ? `Foto (${r.photo_count})` : 'Foto'}
+                            </button>
                           ) : (
-                            <>
-                              <button className="button button-sm button-secondary" type="button" onClick={() => doEdit(r)}>
-                                ✎ Edit
-                              </button>
-                              <button className="button button-sm button-danger" type="button" onClick={() => doDelete(r)}>
-                                Delete
-                              </button>
-                            </>
+                            <span className="muted">-</span>
                           )}
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-                {items.length === 0 && (
+                        </td>
+                        <td data-label="Petugas">{r.created_by_name || '-'}</td>
+                        {canAdmin && (
+                          <td data-label="Aksi">
+                            <div className="card-actions">
+                              {r.status === 'void' ? (
+                                <span className="muted">—</span>
+                              ) : (
+                                <>
+                                  <button className="button button-sm button-secondary" type="button" onClick={() => doEdit(r)} aria-label={`Edit mutasi ${r.kind} ${fmtWhen(r.occurred_at)}`}>
+                                    ✎ Edit
+                                  </button>
+                                  <button className="button button-sm button-danger" type="button" onClick={() => doDelete(r)} aria-label={`Hapus mutasi ${r.kind} ${fmtWhen(r.occurred_at)}`}>
+                                    Delete
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                {!loading && items.length === 0 && (
                   <tr>
                     <td className="muted" colSpan={canAdmin ? 7 : 6}>
                       Tidak ada data.

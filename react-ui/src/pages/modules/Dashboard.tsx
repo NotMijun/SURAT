@@ -238,7 +238,7 @@ export default function DashboardPage({ me }: { me: Me }) {
             <div className="card-title">Kunci belum diambil</div>
           </header>
           <div className="card-body">
-            <div className="table-wrap">
+            <div className="table-wrap" aria-busy={loading}>
               <table className="table table-mobile-cards">
                 <thead>
                   <tr>
@@ -249,17 +249,27 @@ export default function DashboardPage({ me }: { me: Me }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {keysOpen.map((r) => (
-                    <tr key={r.id} className="table-row-active">
-                      <td data-label="Nama">{r.borrower_name}</td>
-                      <td data-label="Ruangan/Kunci">{r.key_name}</td>
-                      <td data-label="Jam titip">{fmtTime(r.checkout_at)}</td>
-                      <td>
-                        <span className="badge badge-warn">Dititipkan</span>
-                      </td>
-                    </tr>
-                  ))}
-                  {keysOpen.length === 0 && (
+                  {loading
+                    ? Array.from({ length: 6 }).map((_, i) => (
+                        <tr key={`sk-${i}`} className="table-skeleton">
+                          {Array.from({ length: 4 }).map((__, c) => (
+                            <td key={c}>
+                              <span className={`skeleton${c === 0 ? ' skeleton-lg' : ''}`} style={{ width: c === 1 ? '85%' : '60%' }} />
+                            </td>
+                          ))}
+                        </tr>
+                      ))
+                    : keysOpen.map((r) => (
+                        <tr key={r.id} className="table-row-active">
+                          <td data-label="Nama">{r.borrower_name}</td>
+                          <td data-label="Ruangan/Kunci">{r.key_name}</td>
+                          <td data-label="Jam titip">{fmtTime(r.checkout_at)}</td>
+                          <td>
+                            <span className="badge badge-warn">Dititipkan</span>
+                          </td>
+                        </tr>
+                      ))}
+                  {!loading && keysOpen.length === 0 && (
                     <tr>
                       <td className="muted" colSpan={4}>
                         Tidak ada data.

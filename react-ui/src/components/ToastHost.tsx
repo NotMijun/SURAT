@@ -233,7 +233,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         {toasts.map((t) => (
           <div key={t.id} className={clsForTone(t.tone)}>
             <div>{t.message}</div>
-            <button className="toast-close" type="button" onClick={() => setToasts((x) => x.filter((y) => y.id !== t.id))}>
+            <button className="toast-close" type="button" onClick={() => setToasts((x) => x.filter((y) => y.id !== t.id))} aria-label="Tutup notifikasi">
               ×
             </button>
           </div>
@@ -261,6 +261,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                   if (dialog.kind === 'confirm') resolveAndNext(() => dialog.resolve(false))
                   else resolveAndNext(() => dialog.resolve(null))
                 }}
+                aria-label="Tutup dialog"
               >
                 Tutup
               </button>

@@ -503,6 +503,25 @@ a{color:inherit}
   box-shadow:none;
 }
 
+@keyframes skeleton-shimmer{
+  0%{background-position:0% 0%}
+  100%{background-position:200% 0%}
+}
+.skeleton{
+  display:block;
+  height:12px;
+  border-radius:10px;
+  background:linear-gradient(90deg, rgba(255,255,255,.06) 25%, rgba(255,255,255,.12) 37%, rgba(255,255,255,.06) 63%);
+  background-size:200% 100%;
+  animation:skeleton-shimmer 1.1s linear infinite;
+}
+html[data-theme="light"] .skeleton{
+  background:linear-gradient(90deg, rgba(0,0,0,.05) 25%, rgba(0,0,0,.09) 37%, rgba(0,0,0,.05) 63%);
+}
+.skeleton-sm{height:10px}
+.skeleton-lg{height:14px}
+.table-skeleton td{padding-top:14px;padding-bottom:14px}
+
 .button{
   border:1px solid var(--border);
   background:var(--soft-bg-2);
@@ -518,8 +537,19 @@ a{color:inherit}
   gap:8px;
   transition:transform .16s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease;
 }
-.button:focus,.tab:focus,.chip:focus{outline:none}
-html[data-focus="keyboard"] .button:focus-visible,html[data-focus="keyboard"] .tab:focus-visible,html[data-focus="keyboard"] .chip:focus-visible{border-color:rgba(var(--primary-rgb),.6);box-shadow:0 0 0 4px rgba(var(--primary-rgb),.18)}
+.button:focus,.tab:focus,.chip:focus,.stepper-btn:focus,.toast-close:focus,.quick-action:focus{outline:none}
+html[data-focus="keyboard"] .button:focus-visible,
+html[data-focus="keyboard"] .tab:focus-visible,
+html[data-focus="keyboard"] .chip:focus-visible,
+html[data-focus="keyboard"] .stepper-btn:focus-visible,
+html[data-focus="keyboard"] .toast-close:focus-visible,
+html[data-focus="keyboard"] .quick-action:focus-visible,
+html[data-focus="keyboard"] .input:focus-visible,
+html[data-focus="keyboard"] .select:focus-visible,
+html[data-focus="keyboard"] .search:focus-within{
+  border-color:rgba(var(--primary-rgb),.6);
+  box-shadow:0 0 0 4px rgba(var(--primary-rgb),.18)
+}
 .button:active{transform:translateY(1px)}
 .button-primary{
   border-color: var(--primary);
