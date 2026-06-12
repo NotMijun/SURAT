@@ -908,10 +908,10 @@ html.theme-transition .theme-toggle-icon{transition-duration:250ms}
 }
 
 .table-footer-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  padding: 18px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  padding: 16px;
   border-top: 1px solid var(--border);
   background: var(--soft-bg);
   align-items: flex-end;
@@ -928,10 +928,16 @@ html.theme-transition .theme-toggle-icon{transition-duration:250ms}
   font-weight: 700;
 }
 .filter-actions {
+  grid-column: 1 / -1;
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  justify-content: flex-start;
   margin-top: 4px;
+}
+
+@media (min-width: 720px){
+  .filter-actions{justify-content:flex-end}
 }
 
 .attachments-grid{
