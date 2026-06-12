@@ -408,6 +408,14 @@ a{color:inherit}
 }
 
 .brand{display:flex;align-items:center;gap:12px}
+.brand .brand-mark{
+  transition: box-shadow .2s ease, border-color .2s ease, transform .2s ease, background .2s ease;
+}
+.brand:hover .brand-mark{
+  border-color:rgba(var(--primary-rgb),.75);
+  box-shadow:0 0 0 3px rgba(var(--primary-rgb),.14), 0 12px 36px rgba(var(--primary-rgb),.18);
+}
+.brand:active .brand-mark{transform:translateY(1px)}
 .brand-mark{
   width:38px;height:38px;border-radius:var(--radius-sm);
   display:grid;place-items:center;
