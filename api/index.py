@@ -14,7 +14,7 @@ from sys import stderr
 from typing import Any, Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
@@ -64,14 +64,51 @@ def _serve_root_file(name: str, content_type: str):
     return FileResponse(path=str(file_path), media_type=content_type)
 
 
+def _react_dist_dir() -> Path:
+    return ROOT_DIR / "react-ui" / "dist"
+
+
+def _serve_react_index():
+    dist_index = _react_dist_dir() / "index.html"
+    if not dist_index.exists():
+        raise HTTPException(
+            status_code=503,
+            detail="Build React tidak ditemukan. Jalankan: cd react-ui && npm run build",
+        )
+    return FileResponse(path=str(dist_index), media_type="text/html; charset=utf-8")
+
+
 @app.get("/")
 def root_index():
-    return _serve_root_file("index.html", "text/html; charset=utf-8")
+    return _serve_react_index()
 
 
 @app.get("/app.html")
 def root_app_html():
-    return _serve_root_file("app.html", "text/html; charset=utf-8")
+    return RedirectResponse(url="/", status_code=307)
+
+
+@app.get("/assets/{asset_path:path}")
+def react_asset(asset_path: str):
+    safe_rel = Path(asset_path)
+    if safe_rel.is_absolute() or ".." in safe_rel.parts:
+        raise HTTPException(status_code=400, detail="Path asset tidak valid")
+    file_path = _react_dist_dir() / "assets" / safe_rel
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Asset tidak ditemukan")
+    suffix = file_path.suffix.lower()
+    media_type = {
+        ".js": "application/javascript; charset=utf-8",
+        ".css": "text/css; charset=utf-8",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".svg": "image/svg+xml",
+        ".webp": "image/webp",
+        ".woff": "font/woff",
+        ".woff2": "font/woff2",
+    }.get(suffix, "application/octet-stream")
+    return FileResponse(path=str(file_path), media_type=media_type)
 
 
 @app.get("/styles.css")
@@ -1945,6 +1982,37 @@ def get_key_photo(key_id: str, request: Request):
             return Response(content=data, media_type=mime, headers=headers)
 
 
+def _attachment_blob_response(conn, attachment_id: str):
+    try:
+        aid = int(attachment_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="attachment_id tidak valid")
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("SELECT photo_b64, photo_mime, photo_name FROM media_attachments WHERE id=%s", (aid,))
+        row = cur.fetchone()
+        if not row or not (row.get("photo_b64") or ""):
+            raise HTTPException(status_code=404, detail="Foto tidak ditemukan")
+        data = base64.b64decode((row["photo_b64"] or "").encode("ascii"))
+        mime = (row.get("photo_mime") or "application/octet-stream").strip()
+        name = (row.get("photo_name") or "photo").strip()
+        headers = {"Content-Disposition": f'inline; filename="{name}"'}
+        return Response(content=data, media_type=mime, headers=headers)
+
+
+@app.get("/api/attachment_blob/{attachment_id}")
+def get_attachment_blob_stable(attachment_id: str, request: Request):
+    with db_connect() as conn:
+        _require_session(conn, request)
+        return _attachment_blob_response(conn, attachment_id)
+
+
+@app.get("/api/attachments/blob/{attachment_id}")
+def get_attachment_blob_v2(attachment_id: str, request: Request):
+    with db_connect() as conn:
+        _require_session(conn, request)
+        return _attachment_blob_response(conn, attachment_id)
+
+
 @app.get("/api/attachments/{table_name}/{record_id}")
 def list_attachments(table_name: str, record_id: str, request: Request):
     with db_connect() as conn:
@@ -1973,7 +2041,7 @@ def list_attachments(table_name: str, record_id: str, request: Request):
                     "kind": r.get("kind") or "Foto",
                     "photo_name": r.get("photo_name") or "photo",
                     "uploaded_at": r.get("photo_uploaded_at") or r.get("created_at") or "",
-                    "url": f"/api/attachments/{int(r['id'])}/blob",
+                    "url": f"/api/attachment_blob/{int(r['id'])}",
                 }
             )
         return {"items": items}
@@ -1983,20 +2051,7 @@ def list_attachments(table_name: str, record_id: str, request: Request):
 def get_attachment_blob(attachment_id: str, request: Request):
     with db_connect() as conn:
         _require_session(conn, request)
-        try:
-            aid = int(attachment_id)
-        except Exception:
-            raise HTTPException(status_code=400, detail="attachment_id tidak valid")
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT photo_b64, photo_mime, photo_name FROM media_attachments WHERE id=%s", (aid,))
-            row = cur.fetchone()
-            if not row or not (row.get("photo_b64") or ""):
-                raise HTTPException(status_code=404, detail="Foto tidak ditemukan")
-            data = base64.b64decode((row["photo_b64"] or "").encode("ascii"))
-            mime = (row.get("photo_mime") or "application/octet-stream").strip()
-            name = (row.get("photo_name") or "photo").strip()
-            headers = {"Content-Disposition": f'inline; filename="{name}"'}
-            return Response(content=data, media_type=mime, headers=headers)
+        return _attachment_blob_response(conn, attachment_id)
 
 
 @app.post("/api/attachments/{table_name}/{record_id}")

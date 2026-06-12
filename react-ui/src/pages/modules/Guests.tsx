@@ -1,4 +1,4 @@
-﻿import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { AttachmentItem, GuestEntry, Me } from '../../types'
 import { compressImageFile } from '../../lib/image'
@@ -351,6 +351,12 @@ export default function GuestsPage({ me }: { me: Me }) {
       }
       toast.push('Foto tidak ditemukan', 'error')
     } catch (err: any) {
+      if (r.photo_url) {
+        try {
+          await loadPhotoUrl(r.photo_url)
+          return
+        } catch {}
+      }
       toast.push(String(err?.message || err || 'Gagal memuat foto'), 'error')
     }
   }, [loadPhotoUrl, toast])

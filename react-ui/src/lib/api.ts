@@ -2,6 +2,14 @@ import { getToken } from './storage'
 
 export type ApiError = { message: string; status?: number }
 
+const normalizeBlobPath = (path: string) => {
+  const match = /^\/api\/attachments\/(\d+)\/blob$/.exec(String(path || '').trim())
+  if (match) return `/api/attachment_blob/${match[1]}`
+  const v2 = /^\/api\/attachments\/blob\/(\d+)$/.exec(String(path || '').trim())
+  if (v2) return `/api/attachment_blob/${v2[1]}`
+  return path
+}
+
 export const apiRequest = async <T>(path: string, options: RequestInit = {}): Promise<T> => {
   const token = getToken()
   const headers = new Headers(options.headers || {})
@@ -17,10 +25,11 @@ export const apiRequest = async <T>(path: string, options: RequestInit = {}): Pr
 }
 
 export const apiGetBlob = async (path: string): Promise<Blob> => {
+  const resolvedPath = normalizeBlobPath(path)
   const token = getToken()
   const headers = new Headers()
   if (token) headers.set('Authorization', `Bearer ${token}`)
-  const res = await fetch(path, { headers })
+  const res = await fetch(resolvedPath, { headers })
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as any
     const msg = String(data?.detail || data?.error || `Request gagal (${res.status})`)

@@ -275,6 +275,12 @@ export default function MutasiPage({ me }: { me: Me }) {
       }
       toast.push('Foto tidak ditemukan', 'error')
     } catch (err: any) {
+      if (r.photo_url) {
+        try {
+          await loadPhotoUrl(r.photo_url)
+          return
+        } catch {}
+      }
       toast.push(String(err?.message || err || 'Gagal memuat foto'), 'error')
     }
   }, [loadPhotoUrl, toast])
