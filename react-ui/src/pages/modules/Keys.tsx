@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
+import { apiGet, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { AttachmentItem, KeyMasterItem, KeyTx, Me } from '../../types'
 import { compressImageFile } from '../../lib/image'
 import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
@@ -7,6 +7,7 @@ import { useConfirm, useToast } from '../../components/ToastHost'
 import Modal from '../../components/Modal'
 import PhotoModal from '../../components/PhotoModal'
 import Pagination from '../../components/Pagination'
+import Avatar from '../../components/Avatar'
 
 const badge = (s: KeyTx['status']) => {
   if (s === 'closed') return <span className="badge badge-ok">Diambil</span>
@@ -293,17 +294,11 @@ export default function KeysPage({ me }: { me: Me }) {
   }
 
   const closePhoto = () => {
-    if (photoView) URL.revokeObjectURL(photoView)
+    if (photoView && photoView.startsWith('blob:')) URL.revokeObjectURL(photoView)
     setPhotoView(null)
     setAttachments([])
     setActiveAttachment(null)
   }
-
-  const loadPhotoUrl = useCallback(async (url: string) => {
-    const blob = await apiGetBlob(url)
-    if (photoView) URL.revokeObjectURL(photoView)
-    setPhotoView(URL.createObjectURL(blob))
-  }, [photoView])
 
   const openKeyPhotos = useCallback(async (r: KeyTx) => {
     try {
@@ -312,18 +307,18 @@ export default function KeysPage({ me }: { me: Me }) {
       if (list.length > 0) {
         setAttachments(list)
         setActiveAttachment(list[0])
-        await loadPhotoUrl(list[0].url)
+        setPhotoView(list[0].url)
         return
       }
       if (r.photo_url) {
-        await loadPhotoUrl(r.photo_url)
+        setPhotoView(r.photo_url)
         return
       }
       toast.push('Foto tidak ditemukan', 'error')
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal memuat foto'), 'error')
     }
-  }, [loadPhotoUrl, toast])
+  }, [toast])
 
   const attachmentKinds = useMemo(() => ['Foto', 'Surat Jalan', 'Kondisi Barang', 'Lokasi'], [])
 
@@ -580,7 +575,12 @@ export default function KeysPage({ me }: { me: Me }) {
                           <td data-label="Nama">{r.borrower_name}</td>
                           <td data-label="Ruangan">{r.key_name}</td>
                           <td data-label="Titip">{fmtDateTime(r.checkout_at)}</td>
-                          <td data-label="Petugas">{petugasName(r)}</td>
+                          <td data-label="Petugas">
+                            <div className="row" style={{ gap: '8px', alignItems: 'center' }}>
+                              <Avatar name={petugasName(r)} />
+                              {petugasName(r)}
+                            </div>
+                          </td>
                           <td data-label="Status">{badge(r.status)}</td>
                           <td data-label="Foto">
                             {r.has_photo && r.photo_url ? (
@@ -822,10 +822,8 @@ export default function KeysPage({ me }: { me: Me }) {
           onSelectAttachment={(id) => {
             const a = attachments.find((x) => x.id === id)
             if (!a) return
-            ;(async () => {
-              setActiveAttachment(a)
-              await loadPhotoUrl(a.url)
-            })().catch(() => {})
+            setActiveAttachment(a)
+            setPhotoView(a.url)
           }}
           onClose={closePhoto}
         />

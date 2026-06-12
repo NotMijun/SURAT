@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react'
-import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
+import { apiGet, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { AttachmentItem, Me, MutasiEntry } from '../../types'
 import { compressImageFile } from '../../lib/image'
 import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
@@ -7,6 +7,7 @@ import { useConfirm, useToast } from '../../components/ToastHost'
 import Modal from '../../components/Modal'
 import PhotoModal from '../../components/PhotoModal'
 import Pagination from '../../components/Pagination'
+import Avatar from '../../components/Avatar'
 
 const KATEGORI_OPTS: Record<string, string[]> = {
   'Kejadian Operasional': ['Catering', 'Galon', 'Patroli/Ronda', 'Pemeliharaan', 'Lainnya'],
@@ -174,7 +175,7 @@ export default function MutasiPage({ me }: { me: Me }) {
   }
 
   const closePhoto = () => {
-    if (photoView) URL.revokeObjectURL(photoView)
+    if (photoView && photoView.startsWith('blob:')) URL.revokeObjectURL(photoView)
     setPhotoView(null)
     setAttachments([])
     setActiveAttachment(null)
@@ -252,12 +253,6 @@ export default function MutasiPage({ me }: { me: Me }) {
     }
   }
 
-  const loadPhotoUrl = useCallback(async (url: string) => {
-    const blob = await apiGetBlob(url)
-    if (photoView) URL.revokeObjectURL(photoView)
-    setPhotoView(URL.createObjectURL(blob))
-  }, [photoView])
-
   const openMutasiPhotos = useCallback(async (r: MutasiEntry) => {
     try {
       const res = await apiGet<{ items: AttachmentItem[] }>(`/api/attachments/mutasi_entries/${r.id}`)
@@ -265,18 +260,18 @@ export default function MutasiPage({ me }: { me: Me }) {
       if (list.length > 0) {
         setAttachments(list)
         setActiveAttachment(list[0])
-        await loadPhotoUrl(list[0].url)
+        setPhotoView(list[0].url)
         return
       }
       if (r.photo_url) {
-        await loadPhotoUrl(r.photo_url)
+        setPhotoView(r.photo_url)
         return
       }
       toast.push('Foto tidak ditemukan', 'error')
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal memuat foto'), 'error')
     }
-  }, [loadPhotoUrl, toast])
+  }, [toast])
 
   const attachmentKinds = ['Foto', 'Surat Jalan', 'Kondisi Barang', 'Lokasi']
 
@@ -601,7 +596,12 @@ export default function MutasiPage({ me }: { me: Me }) {
                             <span className="muted">-</span>
                           )}
                         </td>
-                        <td data-label="Petugas">{r.created_by_name || '-'}</td>
+                        <td data-label="Petugas">
+                          <div className="row" style={{ gap: '8px', alignItems: 'center' }}>
+                            <Avatar name={r.created_by_name || '-'} />
+                            {r.created_by_name || '-'}
+                          </div>
+                        </td>
                         {canAdmin && (
                           <td data-label="Aksi">
                             <div className="card-actions">
@@ -646,10 +646,8 @@ export default function MutasiPage({ me }: { me: Me }) {
           onSelectAttachment={(id) => {
             const a = attachments.find((x) => x.id === id)
             if (!a) return
-            ;(async () => {
-              setActiveAttachment(a)
-              await loadPhotoUrl(a.url)
-            })().catch(() => {})
+            setActiveAttachment(a)
+            setPhotoView(a.url)
           }}
           onClose={closePhoto}
         />
