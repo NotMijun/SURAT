@@ -55,6 +55,11 @@ export default function AdminPage({ me }: { me: Me }) {
   const [auditPage, setAuditPage] = useState(1)
   const [historyPage, setHistoryPage] = useState(1)
   const [loading, setLoading] = useState(true)
+  const [creatingUser, setCreatingUser] = useState(false)
+  const [newUsername, setNewUsername] = useState('')
+  const [newDisplayName, setNewDisplayName] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [newRole, setNewRole] = useState<'guard' | 'supervisor' | 'admin'>('guard')
 
   const usersPageSize = 20
   const vendorsPageSize = 20
@@ -245,6 +250,29 @@ export default function AdminPage({ me }: { me: Me }) {
       await refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal menambah vendor'), 'error')
+    }
+  }
+
+  const addUser = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (creatingUser) return
+    const username = newUsername.trim()
+    const display_name = newDisplayName.trim()
+    const password = newPassword
+    if (!username || !display_name || !password) return
+    setCreatingUser(true)
+    try {
+      await apiPost<{ ok: boolean; id: number }>('/api/admin/users', { username, display_name, password, role: newRole })
+      setNewUsername('')
+      setNewDisplayName('')
+      setNewPassword('')
+      setNewRole('guard')
+      toast.push('User ditambahkan', 'success')
+      await refresh({ userQ, auditQ, auditTable, auditActorUserId, auditDateFrom, auditDateTo })
+    } catch (err: any) {
+      toast.push(String(err?.message || err || 'Gagal menambah user'), 'error')
+    } finally {
+      setCreatingUser(false)
     }
   }
 
@@ -535,6 +563,33 @@ export default function AdminPage({ me }: { me: Me }) {
           <div className="muted">Ubah role, aktif/nonaktif, reset password</div>
         </header>
         <div className="card-body">
+          <form className="form grid grid-4" onSubmit={addUser} style={{ marginBottom: 12 }}>
+            <div className="field">
+              <label className="label">Username</label>
+              <input className="input" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} placeholder="mis. budi" required />
+            </div>
+            <div className="field">
+              <label className="label">Nama tampil</label>
+              <input className="input" value={newDisplayName} onChange={(e) => setNewDisplayName(e.target.value)} placeholder="mis. Budi" required />
+            </div>
+            <div className="field">
+              <label className="label">Role</label>
+              <select className="select" value={newRole} onChange={(e) => setNewRole(e.target.value as any)}>
+                <option value="guard">Security</option>
+                <option value="supervisor">Supervisor</option>
+                <option value="admin">Komandan Security</option>
+              </select>
+            </div>
+            <div className="field">
+              <label className="label">Password</label>
+              <input className="input" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} type="password" placeholder="minimal 4 karakter" required />
+            </div>
+            <div className="row row-right grid-span-4">
+              <button className="button button-primary" type="submit" disabled={creatingUser}>
+                {creatingUser ? 'Menambahkan...' : 'Tambah User'}
+              </button>
+            </div>
+          </form>
           <div className="table-wrap">
             <table className="table">
               <thead>
