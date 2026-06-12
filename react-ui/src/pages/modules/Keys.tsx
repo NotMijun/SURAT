@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { apiGet, apiPatch, apiPost, apiPostForm } from '../../lib/api'
+import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { AttachmentItem, KeyMasterItem, KeyTx, Me } from '../../types'
 import { compressImageFile } from '../../lib/image'
 import { fmtDateTime, fmtTime, nowHm, shiftHm, toIsoLocal, toYmd } from '../../lib/time'
@@ -300,6 +300,12 @@ export default function KeysPage({ me }: { me: Me }) {
     setActiveAttachment(null)
   }
 
+  const loadPhotoUrl = useCallback(async (url: string) => {
+    const blob = await apiGetBlob(url)
+    if (photoView && photoView.startsWith('blob:')) URL.revokeObjectURL(photoView)
+    setPhotoView(URL.createObjectURL(blob))
+  }, [photoView])
+
   const openKeyPhotos = useCallback(async (r: KeyTx) => {
     try {
       const res = await apiGet<{ items: AttachmentItem[] }>(`/api/attachments/key_transactions/${r.id}`)
@@ -307,18 +313,18 @@ export default function KeysPage({ me }: { me: Me }) {
       if (list.length > 0) {
         setAttachments(list)
         setActiveAttachment(list[0])
-        setPhotoView(list[0].url)
+        await loadPhotoUrl(list[0].url)
         return
       }
       if (r.photo_url) {
-        setPhotoView(r.photo_url)
+        await loadPhotoUrl(r.photo_url)
         return
       }
       toast.push('Foto tidak ditemukan', 'error')
     } catch (err: any) {
       toast.push(String(err?.message || err || 'Gagal memuat foto'), 'error')
     }
-  }, [toast])
+  }, [loadPhotoUrl, toast])
 
   const attachmentKinds = useMemo(() => ['Foto', 'Surat Jalan', 'Kondisi Barang', 'Lokasi'], [])
 
@@ -823,7 +829,7 @@ export default function KeysPage({ me }: { me: Me }) {
             const a = attachments.find((x) => x.id === id)
             if (!a) return
             setActiveAttachment(a)
-            setPhotoView(a.url)
+            loadPhotoUrl(a.url)
           }}
           onClose={closePhoto}
         />
