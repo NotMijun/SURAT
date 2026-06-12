@@ -210,14 +210,14 @@ export default function Shell() {
       {loading && <LoadingScreen mode="overlay" label="Loading..." />}
       <div className="topbar">
         <div className="topbar-left">
-          <div className="brand">
+          <NavLink className="brand" to="/" aria-label="Ke Dashboard" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="brand-mark">
               <img src="/api/brand/logo.png" alt="BSH" />
             </div>
             <div className="topbar-title">
               <div className="title">Logbook Security RS</div>
             </div>
-          </div>
+          </NavLink>
         </div>
         <div className="topbar-right">
           <div className="pill">{me ? `Shift: ${me.shift} · Pos: ${me.post}` : 'Shift: -'}</div>
