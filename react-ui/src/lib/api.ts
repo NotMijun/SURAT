@@ -9,7 +9,7 @@ export const apiRequest = async <T>(path: string, options: RequestInit = {}): Pr
   const res = await fetch(path, { ...options, headers })
   const data = (await res.json().catch(() => ({}))) as any
   if (!res.ok) {
-    const msg = String(data?.error || `Request gagal (${res.status})`)
+    const msg = String(data?.detail || data?.error || `Request gagal (${res.status})`)
     const err: ApiError = { message: msg, status: res.status }
     throw err
   }
@@ -23,7 +23,7 @@ export const apiGetBlob = async (path: string): Promise<Blob> => {
   const res = await fetch(path, { headers })
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as any
-    const msg = String(data?.error || `Request gagal (${res.status})`)
+    const msg = String(data?.detail || data?.error || `Request gagal (${res.status})`)
     const err: ApiError = { message: msg, status: res.status }
     throw err
   }
