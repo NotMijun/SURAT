@@ -4,6 +4,7 @@
 
 node_modules/
 react-ui/node_modules/
+react-ui/dist/
 
 .vercel/
 .vscode/
