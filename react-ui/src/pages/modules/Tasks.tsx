@@ -480,9 +480,9 @@ export default function TasksPage({ me }: { me: Me }) {
     }
     if (isGalon(r.kind)) {
       const parts = []
-      if (typeof e.galon_used === 'number' && Number.isFinite(e.galon_used)) parts.push(`Dipakai: ${String(e.galon_used)}`)
-      if (typeof e.galon_unused === 'number' && Number.isFinite(e.galon_unused)) parts.push(`Tidak dipakai: ${String(e.galon_unused)}`)
-      if (typeof e.galon_returned === 'number' && Number.isFinite(e.galon_returned)) parts.push(`Dikembalikan: ${String(e.galon_returned)}`)
+      if (typeof e.galon_used === 'number' && Number.isFinite(e.galon_used)) parts.push(`Galon Yang Diambil: ${String(e.galon_used)}`)
+      if (typeof e.galon_unused === 'number' && Number.isFinite(e.galon_unused)) parts.push(`Stok Galon: ${String(e.galon_unused)}`)
+      if (typeof e.galon_returned === 'number' && Number.isFinite(e.galon_returned)) parts.push(`Galon Kosong / Tidak berisi air: ${String(e.galon_returned)}`)
       if (e.galon_to) parts.push(`Ke: ${String(e.galon_to)}`)
       return parts.join(' · ')
     }
@@ -650,13 +650,13 @@ export default function TasksPage({ me }: { me: Me }) {
         const u = galonUsed ? Number.parseInt(galonUsed, 10) : null
         const nu = galonUnused ? Number.parseInt(galonUnused, 10) : null
         const r = galonReturned ? Number.parseInt(galonReturned, 10) : null
-        if (u != null && (!Number.isFinite(u) || u < 0)) throw new Error('Galon dipakai tidak valid')
-        if (nu != null && (!Number.isFinite(nu) || nu < 0)) throw new Error('Galon tidak dipakai tidak valid')
-        if (r != null && (!Number.isFinite(r) || r < 0)) throw new Error('Galon dikembalikan tidak valid')
-        if (r != null) {
-          const total = (u ?? 0) + (nu ?? 0)
-          if (r > total) throw new Error('Galon dikembalikan tidak boleh lebih dari (dipakai + tidak dipakai)')
-        }
+        if (u != null && (!Number.isFinite(u) || u < 0)) throw new Error('Galon Yang Diambil tidak valid')
+                  if (nu != null && (!Number.isFinite(nu) || nu < 0)) throw new Error('Stok Galon tidak valid')
+                  if (r != null && (!Number.isFinite(r) || r < 0)) throw new Error('Galon Kosong / Tidak berisi air tidak valid')
+                  if (r != null) {
+                    const total = (u ?? 0) + (nu ?? 0)
+                    if (r > total) throw new Error('Galon Kosong tidak boleh lebih dari (Galon Yang Diambil + Stok Galon)')
+                  }
         if (u == null && nu == null && r == null && !(galonTo || '').trim()) throw new Error('Minimal isi salah satu data galon')
         extra = {
           galon_used: u,
@@ -1200,7 +1200,7 @@ export default function TasksPage({ me }: { me: Me }) {
               <>
                 <div className="field">
                   <label className="label" htmlFor="taskGalonUsed">
-                    Galon dipakai
+                    Galon Yang Diambil
                   </label>
                   <div className="number-stepper">
                     <button className="stepper-btn" type="button" onClick={() => setGalonUsed(String(Math.max(0, (parseInt(galonUsed, 10) || 0) - 1)))}>-</button>
@@ -1210,7 +1210,7 @@ export default function TasksPage({ me }: { me: Me }) {
                 </div>
                 <div className="field">
                   <label className="label" htmlFor="taskGalonUnused">
-                    Galon tidak dipakai
+                    Stok Galon
                   </label>
                   <div className="number-stepper">
                     <button className="stepper-btn" type="button" onClick={() => setGalonUnused(String(Math.max(0, (parseInt(galonUnused, 10) || 0) - 1)))}>-</button>
@@ -1220,7 +1220,7 @@ export default function TasksPage({ me }: { me: Me }) {
                 </div>
                 <div className="field">
                   <label className="label" htmlFor="taskGalonReturned">
-                    Galon dikembalikan
+                    Galon Kosong / Tidak berisi air
                   </label>
                   <div className="number-stepper">
                     <button className="stepper-btn" type="button" onClick={() => setGalonReturned(String(Math.max(0, (parseInt(galonReturned, 10) || 0) - 1)))}>-</button>
@@ -1454,7 +1454,7 @@ export default function TasksPage({ me }: { me: Me }) {
           <div className="muted">
             {loading ? 'Memuat...' : `${viewItems.length} entri`}
             {summary.kind === 'pom' ? ` · Total box: ${summary.totalBox}${summary.lastArrived ? ` · Terakhir datang: ${fmtTime(summary.lastArrived)}` : ''}${summary.bermasalah ? ` · Bermasalah: ${summary.bermasalah}` : ''}` : ''}
-            {summary.kind === 'galon' ? ` · Dipakai: ${summary.used} · Tidak dipakai: ${summary.unused} · Dikembalikan: ${summary.returned}` : ''}
+            {summary.kind === 'galon' ? ` · Galon Yang Diambil: ${summary.used} · Stok Galon: ${summary.unused} · Galon Kosong / Tidak berisi air: ${summary.returned}` : ''}
           </div>
         </header>
         <div className="card-body">
@@ -1725,14 +1725,14 @@ export default function TasksPage({ me }: { me: Me }) {
                 {isGalon(editKind) && (
                   <>
                     <div className="field">
-                      <label className="label">Dipakai</label>
+                      <label className="label">Galon Yang Diambil</label>
                       <div className="number-stepper">
                         <button
                           className="stepper-btn"
                           type="button"
                           onClick={() => setEditGalonUsed(String(Math.max(0, (parseInt(editGalonUsed, 10) || 0) - 1)))}
                           disabled={busy}
-                          aria-label="Kurangi galon dipakai"
+                          aria-label="Kurangi galon yang diambil"
                         >
                           -
                         </button>
@@ -1751,21 +1751,21 @@ export default function TasksPage({ me }: { me: Me }) {
                           type="button"
                           onClick={() => setEditGalonUsed(String((parseInt(editGalonUsed, 10) || 0) + 1))}
                           disabled={busy}
-                          aria-label="Tambah galon dipakai"
+                          aria-label="Tambah galon yang diambil"
                         >
                           +
                         </button>
                       </div>
                     </div>
                     <div className="field">
-                      <label className="label">Tidak Dipakai</label>
+                      <label className="label">Stok Galon</label>
                       <div className="number-stepper">
                         <button
                           className="stepper-btn"
                           type="button"
                           onClick={() => setEditGalonUnused(String(Math.max(0, (parseInt(editGalonUnused, 10) || 0) - 1)))}
                           disabled={busy}
-                          aria-label="Kurangi galon tidak dipakai"
+                          aria-label="Kurangi stok galon"
                         >
                           -
                         </button>
@@ -1784,21 +1784,21 @@ export default function TasksPage({ me }: { me: Me }) {
                           type="button"
                           onClick={() => setEditGalonUnused(String((parseInt(editGalonUnused, 10) || 0) + 1))}
                           disabled={busy}
-                          aria-label="Tambah galon tidak dipakai"
+                          aria-label="Tambah stok galon"
                         >
                           +
                         </button>
                       </div>
                     </div>
                     <div className="field">
-                      <label className="label">Dikembalikan</label>
+                      <label className="label">Galon Kosong / Tidak berisi air</label>
                       <div className="number-stepper">
                         <button
                           className="stepper-btn"
                           type="button"
                           onClick={() => setEditGalonReturned(String(Math.max(0, (parseInt(editGalonReturned, 10) || 0) - 1)))}
                           disabled={busy}
-                          aria-label="Kurangi galon dikembalikan"
+                          aria-label="Kurangi galon kosong"
                         >
                           -
                         </button>
@@ -1817,7 +1817,7 @@ export default function TasksPage({ me }: { me: Me }) {
                           type="button"
                           onClick={() => setEditGalonReturned(String((parseInt(editGalonReturned, 10) || 0) + 1))}
                           disabled={busy}
-                          aria-label="Tambah galon dikembalikan"
+                          aria-label="Tambah galon kosong"
                         >
                           +
                         </button>
