@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { AttachmentItem, KeyMasterItem, KeyTx, Me } from '../../types'
 import { compressImageFile } from '../../lib/image'
@@ -55,6 +56,7 @@ export default function KeysPage({ me }: { me: Me }) {
     | 'closed:status'
   const [headerMenu, setHeaderMenu] = useState<HeaderMenuKey>(null)
   const headerMenuRef = useRef<HTMLDivElement | null>(null)
+  const [headerMenuAnchorEl, setHeaderMenuAnchorEl] = useState<HTMLElement | null>(null)
   const [headerMenuAnchorRect, setHeaderMenuAnchorRect] = useState<{ top: number; right: number; bottom: number; left: number } | null>(null)
   const [headerMenuPos, setHeaderMenuPos] = useState<{ top: number; left: number } | null>(null)
   const [filterNama, setFilterNama] = useState('')
@@ -69,6 +71,7 @@ export default function KeysPage({ me }: { me: Me }) {
 
   const closeHeaderMenu = useCallback(() => {
     setHeaderMenu(null)
+    setHeaderMenuAnchorEl(null)
     setHeaderMenuAnchorRect(null)
     setHeaderMenuPos(null)
   }, [])
@@ -83,6 +86,7 @@ export default function KeysPage({ me }: { me: Me }) {
       const top = r.bottom + 8
       const left = r.left
       setHeaderMenu(key)
+      setHeaderMenuAnchorEl(anchorEl)
       setHeaderMenuAnchorRect({ top: r.top, right: r.right, bottom: r.bottom, left: r.left })
       setHeaderMenuPos({ top, left })
     },
@@ -193,6 +197,8 @@ export default function KeysPage({ me }: { me: Me }) {
       const target = e.target as Node | null
       const el = headerMenuRef.current
       if (el && target && el.contains(target)) return
+      const anchor = headerMenuAnchorEl
+      if (anchor && target && anchor.contains(target)) return
       closeHeaderMenu()
     }
     const onKey = (e: KeyboardEvent) => {
@@ -209,7 +215,7 @@ export default function KeysPage({ me }: { me: Me }) {
       document.removeEventListener('scroll', onScroll, { capture: true } as any)
       window.removeEventListener('resize', onScroll as any)
     }
-  }, [closeHeaderMenu, headerMenu])
+  }, [closeHeaderMenu, headerMenu, headerMenuAnchorEl])
 
   useEffect(() => {
     if (!headerMenu || !headerMenuAnchorRect) return
@@ -853,7 +859,8 @@ export default function KeysPage({ me }: { me: Me }) {
                         >
                           ⌄{filterNama.trim() || clientSort.key === 'nama' ? <span className="th-dot" /> : null}
                         </button>
-                        {headerMenu === menuKey('open', 'nama') && (
+                        {headerMenu === menuKey('open', 'nama') &&
+                          createPortal(
                           <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Nama</div>
                             <div className="th-menu-section">
@@ -908,7 +915,7 @@ export default function KeysPage({ me }: { me: Me }) {
                               </button>
                             </div>
                           </div>
-                        )}
+                          , document.body)}
                       </div>
                     </th>
                     <th className="th-col">
@@ -931,7 +938,8 @@ export default function KeysPage({ me }: { me: Me }) {
                         >
                           ⌄{filterRuangan.length || clientSort.key === 'ruangan' ? <span className="th-dot" /> : null}
                         </button>
-                        {headerMenu === menuKey('open', 'ruangan') && (
+                        {headerMenu === menuKey('open', 'ruangan') &&
+                          createPortal(
                           <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Ruangan</div>
                             <div className="th-menu-section">
@@ -965,7 +973,7 @@ export default function KeysPage({ me }: { me: Me }) {
                               </button>
                             </div>
                           </div>
-                        )}
+                          , document.body)}
                       </div>
                     </th>
                     <th className="th-col">
@@ -989,7 +997,8 @@ export default function KeysPage({ me }: { me: Me }) {
                         >
                           ⌄{titipDateFrom || titipDateTo || fromHm || toHm ? <span className="th-dot" /> : null}
                         </button>
-                        {headerMenu === menuKey('open', 'titip') && (
+                        {headerMenu === menuKey('open', 'titip') &&
+                          createPortal(
                           <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Titip</div>
                             <div className="th-menu-section">
@@ -1050,7 +1059,7 @@ export default function KeysPage({ me }: { me: Me }) {
                               </button>
                             </div>
                           </div>
-                        )}
+                          , document.body)}
                       </div>
                     </th>
                     <th className="th-col">
@@ -1073,7 +1082,8 @@ export default function KeysPage({ me }: { me: Me }) {
                         >
                           ⌄{filterPetugas.length || clientSort.key === 'petugas' ? <span className="th-dot" /> : null}
                         </button>
-                        {headerMenu === menuKey('open', 'petugas') && (
+                        {headerMenu === menuKey('open', 'petugas') &&
+                          createPortal(
                           <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Petugas</div>
                             <div className="th-menu-section">
@@ -1107,7 +1117,7 @@ export default function KeysPage({ me }: { me: Me }) {
                               </button>
                             </div>
                           </div>
-                        )}
+                          , document.body)}
                       </div>
                     </th>
                     <th className="th-col">
@@ -1130,7 +1140,8 @@ export default function KeysPage({ me }: { me: Me }) {
                         >
                           ⌄{filterStatus.length || clientSort.key === 'status' ? <span className="th-dot" /> : null}
                         </button>
-                        {headerMenu === menuKey('open', 'status') && (
+                        {headerMenu === menuKey('open', 'status') &&
+                          createPortal(
                           <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Status</div>
                             <div className="th-menu-list">
@@ -1158,7 +1169,7 @@ export default function KeysPage({ me }: { me: Me }) {
                               </button>
                             </div>
                           </div>
-                        )}
+                          , document.body)}
                       </div>
                     </th>
                     <th>Foto</th>
@@ -1368,7 +1379,8 @@ export default function KeysPage({ me }: { me: Me }) {
                         >
                           ⌄{filterNama.trim() || clientSort.key === 'nama' ? <span className="th-dot" /> : null}
                         </button>
-                        {headerMenu === menuKey('closed', 'nama') && (
+                        {headerMenu === menuKey('closed', 'nama') &&
+                          createPortal(
                           <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Nama</div>
                             <div className="th-menu-section">
@@ -1408,7 +1420,7 @@ export default function KeysPage({ me }: { me: Me }) {
                               </button>
                             </div>
                           </div>
-                        )}
+                          , document.body)}
                       </div>
                     </th>
                     <th className="th-col">
@@ -1431,7 +1443,8 @@ export default function KeysPage({ me }: { me: Me }) {
                         >
                           ⌄{filterRuangan.length || clientSort.key === 'ruangan' ? <span className="th-dot" /> : null}
                         </button>
-                        {headerMenu === menuKey('closed', 'ruangan') && (
+                        {headerMenu === menuKey('closed', 'ruangan') &&
+                          createPortal(
                           <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Ruangan</div>
                             <div className="th-menu-section">
@@ -1465,7 +1478,7 @@ export default function KeysPage({ me }: { me: Me }) {
                               </button>
                             </div>
                           </div>
-                        )}
+                          , document.body)}
                       </div>
                     </th>
                     <th className="th-col">
@@ -1489,7 +1502,8 @@ export default function KeysPage({ me }: { me: Me }) {
                         >
                           ⌄{titipDateFrom || titipDateTo || fromHm || toHm ? <span className="th-dot" /> : null}
                         </button>
-                        {headerMenu === menuKey('closed', 'titip') && (
+                        {headerMenu === menuKey('closed', 'titip') &&
+                          createPortal(
                           <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Titip</div>
                             <div className="th-menu-section">
@@ -1550,7 +1564,7 @@ export default function KeysPage({ me }: { me: Me }) {
                               </button>
                             </div>
                           </div>
-                        )}
+                          , document.body)}
                       </div>
                     </th>
                     <th className="th-col">
@@ -1588,7 +1602,8 @@ export default function KeysPage({ me }: { me: Me }) {
                         >
                           ⌄{filterPetugas.length || clientSort.key === 'petugas' ? <span className="th-dot" /> : null}
                         </button>
-                        {headerMenu === menuKey('closed', 'petugas') && (
+                        {headerMenu === menuKey('closed', 'petugas') &&
+                          createPortal(
                           <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Petugas</div>
                             <div className="th-menu-section">
@@ -1622,7 +1637,7 @@ export default function KeysPage({ me }: { me: Me }) {
                               </button>
                             </div>
                           </div>
-                        )}
+                          , document.body)}
                       </div>
                     </th>
                     <th className="th-col">
@@ -1645,7 +1660,8 @@ export default function KeysPage({ me }: { me: Me }) {
                         >
                           ⌄{filterStatus.length || clientSort.key === 'status' ? <span className="th-dot" /> : null}
                         </button>
-                        {headerMenu === menuKey('closed', 'status') && (
+                        {headerMenu === menuKey('closed', 'status') &&
+                          createPortal(
                           <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Status</div>
                             <div className="th-menu-list">
@@ -1673,7 +1689,7 @@ export default function KeysPage({ me }: { me: Me }) {
                               </button>
                             </div>
                           </div>
-                        )}
+                          , document.body)}
                       </div>
                     </th>
                     <th>FOTO</th>
