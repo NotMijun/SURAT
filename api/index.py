@@ -545,10 +545,59 @@ def _ensure_schema(conn) -> None:
                 )
                 """
             )
+            cur.execute("ALTER TABLE public.key_transactions ADD COLUMN IF NOT EXISTS borrower_name TEXT")
+            cur.execute("ALTER TABLE public.key_transactions ADD COLUMN IF NOT EXISTS borrower_name_norm TEXT")
+            cur.execute("ALTER TABLE public.key_transactions ADD COLUMN IF NOT EXISTS unit TEXT")
+            cur.execute("ALTER TABLE public.key_transactions ADD COLUMN IF NOT EXISTS key_name TEXT")
+            cur.execute("ALTER TABLE public.key_transactions ADD COLUMN IF NOT EXISTS key_name_norm TEXT")
+            cur.execute("ALTER TABLE public.key_transactions ADD COLUMN IF NOT EXISTS checkout_at TEXT")
+            cur.execute("ALTER TABLE public.key_transactions ADD COLUMN IF NOT EXISTS checkin_at TEXT")
+            cur.execute("ALTER TABLE public.key_transactions ADD COLUMN IF NOT EXISTS notes TEXT")
+            cur.execute("ALTER TABLE public.key_transactions ADD COLUMN IF NOT EXISTS status TEXT")
+            cur.execute("ALTER TABLE public.key_transactions ADD COLUMN IF NOT EXISTS created_by BIGINT")
+            cur.execute("ALTER TABLE public.key_transactions ADD COLUMN IF NOT EXISTS created_shift TEXT")
+            cur.execute("ALTER TABLE public.key_transactions ADD COLUMN IF NOT EXISTS created_post TEXT")
+            cur.execute("ALTER TABLE public.key_transactions ADD COLUMN IF NOT EXISTS closed_by BIGINT")
+            cur.execute("ALTER TABLE public.key_transactions ADD COLUMN IF NOT EXISTS closed_shift TEXT")
+            cur.execute("ALTER TABLE public.key_transactions ADD COLUMN IF NOT EXISTS closed_post TEXT")
+            cur.execute("ALTER TABLE public.key_transactions ADD COLUMN IF NOT EXISTS void_reason TEXT")
             cur.execute("ALTER TABLE key_transactions ADD COLUMN IF NOT EXISTS photo_b64 TEXT")
             cur.execute("ALTER TABLE key_transactions ADD COLUMN IF NOT EXISTS photo_mime TEXT")
             cur.execute("ALTER TABLE key_transactions ADD COLUMN IF NOT EXISTS photo_name TEXT")
             cur.execute("ALTER TABLE key_transactions ADD COLUMN IF NOT EXISTS photo_uploaded_at TEXT")
+            cur.execute("ALTER TABLE public.key_transactions ADD COLUMN IF NOT EXISTS created_at TEXT")
+            cur.execute("ALTER TABLE public.key_transactions ADD COLUMN IF NOT EXISTS updated_at TEXT")
+            cur.execute(
+                """
+                DO $$
+                BEGIN
+                  IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='key_transactions' AND column_name='shift'
+                  ) THEN
+                    UPDATE public.key_transactions SET created_shift = COALESCE(created_shift, shift) WHERE created_shift IS NULL;
+                  END IF;
+                  IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='key_transactions' AND column_name='post'
+                  ) THEN
+                    UPDATE public.key_transactions SET created_post = COALESCE(created_post, post) WHERE created_post IS NULL;
+                  END IF;
+                END $$;
+                """
+            )
+            cur.execute("UPDATE public.key_transactions SET created_shift = COALESCE(created_shift, '') WHERE created_shift IS NULL")
+            cur.execute("UPDATE public.key_transactions SET created_post = COALESCE(created_post, '') WHERE created_post IS NULL")
+            cur.execute("UPDATE public.key_transactions SET borrower_name = COALESCE(borrower_name, '') WHERE borrower_name IS NULL")
+            cur.execute("UPDATE public.key_transactions SET borrower_name_norm = COALESCE(borrower_name_norm, '') WHERE borrower_name_norm IS NULL")
+            cur.execute("UPDATE public.key_transactions SET unit = COALESCE(unit, '') WHERE unit IS NULL")
+            cur.execute("UPDATE public.key_transactions SET key_name = COALESCE(key_name, '') WHERE key_name IS NULL")
+            cur.execute("UPDATE public.key_transactions SET key_name_norm = COALESCE(key_name_norm, '') WHERE key_name_norm IS NULL")
+            cur.execute("UPDATE public.key_transactions SET checkout_at = COALESCE(checkout_at, '') WHERE checkout_at IS NULL")
+            cur.execute("UPDATE public.key_transactions SET notes = COALESCE(notes, '') WHERE notes IS NULL")
+            cur.execute("UPDATE public.key_transactions SET status = COALESCE(status, 'open') WHERE status IS NULL")
+            cur.execute("UPDATE public.key_transactions SET created_at = COALESCE(created_at, %s) WHERE created_at IS NULL", (now,))
+            cur.execute("UPDATE public.key_transactions SET updated_at = COALESCE(updated_at, %s) WHERE updated_at IS NULL", (now,))
             cur.execute("CREATE INDEX IF NOT EXISTS idx_key_open ON key_transactions(status, key_name_norm)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_key_borrower ON key_transactions(borrower_name_norm)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_key_checkout ON key_transactions(checkout_at)")
@@ -2104,76 +2153,90 @@ def _create_key_tx(
     if petugas_id is not None:
         created_by_id = petugas_id
 
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute(
-            "SELECT id, borrower_name, unit, key_name, checkout_at FROM key_transactions WHERE status='open' AND key_name_norm=%s",
-            (key_norm,),
-        )
-        existing_open = cur.fetchone()
-        if existing_open and not force:
-            raise HTTPException(status_code=409, detail=f"Kunci '{existing_open['key_name']}' masih tercatat dipinjam (ID {existing_open['id']}).")
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT id, borrower_name, unit, key_name, checkout_at FROM key_transactions WHERE status='open' AND key_name_norm=%s",
+                (key_norm,),
+            )
+            existing_open = cur.fetchone()
+            if existing_open and not force:
+                raise HTTPException(status_code=409, detail=f"Kunci '{existing_open['key_name']}' masih tercatat dipinjam (ID {existing_open['id']}).")
 
-        cur.execute(
-            """
-            SELECT id FROM key_transactions
-            WHERE borrower_name_norm=%s AND key_name_norm=%s AND status='open'
-            LIMIT 1
-            """,
-            (borrower_norm, key_norm),
-        )
-        recent_dup = cur.fetchone()
-        if recent_dup and not force:
-            raise HTTPException(status_code=409, detail=f"Transaksi serupa sudah ada (ID {recent_dup['id']}).")
+            cur.execute(
+                """
+                SELECT id FROM key_transactions
+                WHERE borrower_name_norm=%s AND key_name_norm=%s AND status='open'
+                LIMIT 1
+                """,
+                (borrower_norm, key_norm),
+            )
+            recent_dup = cur.fetchone()
+            if recent_dup and not force:
+                raise HTTPException(status_code=409, detail=f"Transaksi serupa sudah ada (ID {recent_dup['id']}).")
 
-        now = utc_now_iso()
-        cur.execute(
-            """
-            INSERT INTO key_transactions(
-              borrower_name, borrower_name_norm, unit, key_name, key_name_norm, checkout_at, checkin_at, notes, status,
-              created_by, created_shift, created_post, photo_b64, photo_mime, photo_name, photo_uploaded_at, created_at, updated_at
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            RETURNING id
-            """,
-            (
-                borrower_name,
-                borrower_norm,
-                unit,
-                key_name,
-                key_norm,
-                checkout_at,
+            now = utc_now_iso()
+            cur.execute(
+                """
+                INSERT INTO key_transactions(
+                  borrower_name, borrower_name_norm, unit, key_name, key_name_norm, checkout_at, checkin_at, notes, status,
+                  created_by, created_shift, created_post, photo_b64, photo_mime, photo_name, photo_uploaded_at, created_at, updated_at
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                RETURNING id
+                """,
+                (
+                    borrower_name,
+                    borrower_norm,
+                    unit,
+                    key_name,
+                    key_norm,
+                    checkout_at,
+                    None,
+                    notes,
+                    "open",
+                    created_by_id,
+                    sess["shift"],
+                    sess["post"],
+                    photo_b64,
+                    photo_mime,
+                    photo_name,
+                    photo_uploaded_at,
+                    now,
+                    now,
+                ),
+            )
+            record_id = int(cur.fetchone()["id"])
+            _audit(
+                conn,
+                sess,
+                "key_transactions",
+                str(record_id),
+                "create",
                 None,
-                notes,
-                "open",
-                created_by_id,
-                sess["shift"],
-                sess["post"],
-                photo_b64,
-                photo_mime,
-                photo_name,
-                photo_uploaded_at,
-                now,
-                now,
-            ),
-        )
-        record_id = int(cur.fetchone()["id"])
-        _audit(
-            conn,
-            sess,
-            "key_transactions",
-            str(record_id),
-            "create",
-            None,
-            {
-                "borrower_name": borrower_name,
-                "unit": unit,
-                "key_name": key_name,
-                "checkout_at": checkout_at,
-                "notes": notes,
-                "status": "open",
-                "has_photo": bool(photo_b64),
-                "photo_name": photo_name if photo_b64 else None,
-            },
-        )
+                {
+                    "borrower_name": borrower_name,
+                    "unit": unit,
+                    "key_name": key_name,
+                    "checkout_at": checkout_at,
+                    "notes": notes,
+                    "status": "open",
+                    "has_photo": bool(photo_b64),
+                    "photo_name": photo_name if photo_b64 else None,
+                },
+            )
+    except psycopg2.Error as e:
+        conn.rollback()
+        code = getattr(e, "pgcode", None)
+        msg = str(getattr(e, "diag", None).message_primary) if getattr(e, "diag", None) and getattr(e.diag, "message_primary", None) else str(e)
+        if code == "23503":
+            raise HTTPException(status_code=400, detail="Petugas tidak valid (user tidak ditemukan)")
+        if code == "23502":
+            raise HTTPException(status_code=400, detail="Data tidak lengkap (ada field wajib yang kosong)")
+        if code == "42703":
+            raise HTTPException(status_code=500, detail="Struktur database belum sinkron. Redeploy backend agar migrasi berjalan.")
+        if (os.getenv("DEBUG") or "").strip() == "1":
+            raise HTTPException(status_code=500, detail=f"DB error {code or ''}: {msg}".strip())
+        raise HTTPException(status_code=500, detail="Kesalahan server (database)")
     return record_id
 
 
