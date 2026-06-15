@@ -823,6 +823,9 @@ html.theme-transition .theme-toggle-icon{transition-duration:250ms}
 .th-sort.is-active{color:var(--primary)}
 .th-icon{
   margin-left:auto;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
   background:transparent;
   border:0;
   color:var(--muted);
@@ -839,7 +842,7 @@ html.theme-transition .theme-toggle-icon{transition-duration:250ms}
   position:absolute;
   top:calc(100% + 8px);
   right:0;
-  width:300px;
+  width:min(320px, calc(100vw - 20px));
   background:var(--soft-bg-2);
   border:1px solid rgba(var(--primary-rgb),.28);
   border-radius:12px;

@@ -80,10 +80,8 @@ export default function KeysPage({ me }: { me: Me }) {
         return
       }
       const r = anchorEl.getBoundingClientRect()
-      const pad = 10
-      const widthGuess = 300
       const top = r.bottom + 8
-      const left = Math.max(pad, Math.min(r.right - widthGuess, window.innerWidth - pad - widthGuess))
+      const left = r.left
       setHeaderMenu(key)
       setHeaderMenuAnchorRect({ top: r.top, right: r.right, bottom: r.bottom, left: r.left })
       setHeaderMenuPos({ top, left })
