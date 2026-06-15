@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { AttachmentItem, KeyMasterItem, KeyTx, Me } from '../../types'
 import { compressImageFile } from '../../lib/image'
@@ -40,6 +40,56 @@ export default function KeysPage({ me }: { me: Me }) {
   const [filterBy, setFilterBy] = useState<'titip' | 'ambil'>('titip')
   const [fromHm, setFromHm] = useState('')
   const [toHm, setToHm] = useState('')
+
+  type HeaderMenuKey =
+    | null
+    | 'open:nama'
+    | 'open:ruangan'
+    | 'open:titip'
+    | 'open:petugas'
+    | 'open:status'
+    | 'closed:nama'
+    | 'closed:ruangan'
+    | 'closed:titip'
+    | 'closed:petugas'
+    | 'closed:status'
+  const [headerMenu, setHeaderMenu] = useState<HeaderMenuKey>(null)
+  const headerMenuRef = useRef<HTMLDivElement | null>(null)
+  const [headerMenuAnchorRect, setHeaderMenuAnchorRect] = useState<{ top: number; right: number; bottom: number; left: number } | null>(null)
+  const [headerMenuPos, setHeaderMenuPos] = useState<{ top: number; left: number } | null>(null)
+  const [filterNama, setFilterNama] = useState('')
+  const [filterRuangan, setFilterRuangan] = useState<string[]>([])
+  const [filterPetugas, setFilterPetugas] = useState<string[]>([])
+  const [filterStatus, setFilterStatus] = useState<Array<KeyTx['status']>>([])
+  const [titipDateFrom, setTitipDateFrom] = useState('')
+  const [titipDateTo, setTitipDateTo] = useState('')
+  const [petugasSearch, setPetugasSearch] = useState('')
+  const [ruanganSearch, setRuanganSearch] = useState('')
+  const [clientSort, setClientSort] = useState<{ key: 'nama' | 'ruangan' | 'petugas' | 'status' | null; dir: 'asc' | 'desc' }>({ key: null, dir: 'asc' })
+
+  const closeHeaderMenu = useCallback(() => {
+    setHeaderMenu(null)
+    setHeaderMenuAnchorRect(null)
+    setHeaderMenuPos(null)
+  }, [])
+
+  const openHeaderMenu = useCallback(
+    (key: Exclude<HeaderMenuKey, null>, anchorEl: HTMLElement) => {
+      if (headerMenu === key) {
+        closeHeaderMenu()
+        return
+      }
+      const r = anchorEl.getBoundingClientRect()
+      const pad = 10
+      const widthGuess = 300
+      const top = r.bottom + 8
+      const left = Math.max(pad, Math.min(r.right - widthGuess, window.innerWidth - pad - widthGuess))
+      setHeaderMenu(key)
+      setHeaderMenuAnchorRect({ top: r.top, right: r.right, bottom: r.bottom, left: r.left })
+      setHeaderMenuPos({ top, left })
+    },
+    [closeHeaderMenu, headerMenu],
+  )
 
   const [borrower, setBorrower] = useState('')
   const [unit, setUnit] = useState('')
@@ -139,7 +189,216 @@ export default function KeysPage({ me }: { me: Me }) {
     return () => window.clearTimeout(t)
   }, [borrower, draftKey, keyName, notes, petugasId, time, unit])
 
+  useEffect(() => {
+    if (!headerMenu) return
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node | null
+      const el = headerMenuRef.current
+      if (el && target && el.contains(target)) return
+      closeHeaderMenu()
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeHeaderMenu()
+    }
+    const onScroll = () => closeHeaderMenu()
+    document.addEventListener('mousedown', onDown, { capture: true })
+    window.addEventListener('keydown', onKey, { capture: true })
+    document.addEventListener('scroll', onScroll, { capture: true })
+    window.addEventListener('resize', onScroll)
+    return () => {
+      document.removeEventListener('mousedown', onDown, { capture: true } as any)
+      window.removeEventListener('keydown', onKey, { capture: true } as any)
+      document.removeEventListener('scroll', onScroll, { capture: true } as any)
+      window.removeEventListener('resize', onScroll as any)
+    }
+  }, [closeHeaderMenu, headerMenu])
+
+  useEffect(() => {
+    if (!headerMenu || !headerMenuAnchorRect) return
+    const el = headerMenuRef.current
+    if (!el) return
+    const pad = 10
+    const menuRect = el.getBoundingClientRect()
+    let top = headerMenuPos?.top ?? headerMenuAnchorRect.bottom + 8
+    let left = headerMenuPos?.left ?? headerMenuAnchorRect.left
+
+    if (left + menuRect.width > window.innerWidth - pad) left = Math.max(pad, window.innerWidth - pad - menuRect.width)
+    if (left < pad) left = pad
+    if (top + menuRect.height > window.innerHeight - pad) {
+      const above = headerMenuAnchorRect.top - 8 - menuRect.height
+      if (above >= pad) top = above
+    }
+    if (top < pad) top = pad
+    if (!headerMenuPos || top !== headerMenuPos.top || left !== headerMenuPos.left) setHeaderMenuPos({ top, left })
+  }, [headerMenu, headerMenuAnchorRect, headerMenuPos])
+
+  const toggleInList = (prev: string[], value: string) => {
+    const v = String(value || '').trim()
+    if (!v) return prev
+    return prev.includes(v) ? prev.filter((x) => x !== v) : prev.concat(v)
+  }
+
+  const menuKey = (table: 'open' | 'closed', col: 'nama' | 'ruangan' | 'titip' | 'petugas' | 'status') => `${table}:${col}` as Exclude<HeaderMenuKey, null>
+
   const petugasName = useCallback((r: KeyTx) => String(r.created_by_name || '').trim() || me.user.display_name, [me.user.display_name])
+
+  const uniqueRooms = useMemo(() => {
+    const s = new Set<string>()
+    for (const r of [...open, ...closed]) {
+      const nm = String(r.key_name || '').trim()
+      if (nm) s.add(nm)
+    }
+    return Array.from(s).sort((a, b) => a.localeCompare(b))
+  }, [closed, open])
+
+  const uniquePetugas = useMemo(() => {
+    const s = new Set<string>()
+    for (const r of [...open, ...closed]) {
+      const nm = petugasName(r)
+      if (nm && nm !== '-') s.add(nm)
+    }
+    for (const g of guards) {
+      const nm = String(g.display_name || '').trim()
+      if (nm) s.add(nm)
+    }
+    return Array.from(s).sort((a, b) => a.localeCompare(b))
+  }, [closed, guards, open, petugasName])
+
+  const statusOptions: Array<{ value: KeyTx['status']; label: string; badge: JSX.Element }> = useMemo(
+    () => [
+      { value: 'open', label: 'Dititipkan', badge: <span className="badge badge-warn">Dititipkan</span> },
+      { value: 'closed', label: 'Diambil', badge: <span className="badge badge-ok">Diambil</span> },
+      { value: 'void', label: 'Deleted', badge: <span className="badge badge-danger">Deleted</span> },
+    ],
+    [],
+  )
+
+  const hasActiveFilters = useMemo(() => {
+    return Boolean(filterNama.trim() || filterRuangan.length || filterPetugas.length || filterStatus.length || titipDateFrom || titipDateTo || fromHm || toHm || clientSort.key)
+  }, [clientSort.key, filterNama, filterPetugas.length, filterRuangan.length, filterStatus.length, fromHm, titipDateFrom, titipDateTo, toHm])
+
+  const resetAllHeaderFilters = () => {
+    setFilterNama('')
+    setFilterRuangan([])
+    setFilterPetugas([])
+    setFilterStatus([])
+    setTitipDateFrom('')
+    setTitipDateTo('')
+    setFromHm('')
+    setToHm('')
+    setFilterBy('titip')
+    setPetugasSearch('')
+    setRuanganSearch('')
+    setClientSort({ key: null, dir: 'asc' })
+    closeHeaderMenu()
+  }
+
+  const hmToMinutes = (v: string) => {
+    const s = String(v || '').trim()
+    if (!s) return null
+    const m = /^(\d{1,2}):(\d{2})$/.exec(s)
+    if (!m) return null
+    const hh = Math.max(0, Math.min(23, parseInt(m[1], 10)))
+    const mm = Math.max(0, Math.min(59, parseInt(m[2], 10)))
+    return hh * 60 + mm
+  }
+
+  const isoToTs = (iso: string) => {
+    const t = Date.parse(String(iso || ''))
+    return Number.isFinite(t) ? t : null
+  }
+
+  const applyClientFilters = useCallback(
+    (rows: KeyTx[]) => {
+      const fNama = filterNama.trim().toLowerCase()
+      const fRooms = new Set(filterRuangan)
+      const fPet = new Set(filterPetugas)
+      const fStat = new Set(filterStatus)
+      const dateFromTs = titipDateFrom ? Date.parse(`${titipDateFrom}T00:00:00`) : null
+      const dateToTs = titipDateTo ? Date.parse(`${titipDateTo}T23:59:59`) : null
+      const fromMin = hmToMinutes(fromHm)
+      const toMin = hmToMinutes(toHm)
+      let out = rows.filter((r) => {
+        if (fNama) {
+          const nm = String(r.borrower_name || '').toLowerCase()
+          if (!nm.includes(fNama)) return false
+        }
+        if (fRooms.size) {
+          const rm = String(r.key_name || '').trim()
+          if (!fRooms.has(rm)) return false
+        }
+        if (fPet.size) {
+          const pn = petugasName(r)
+          if (!fPet.has(pn)) return false
+        }
+        if (fStat.size) {
+          const st = r.status
+          if (!fStat.has(st)) return false
+        }
+        if (dateFromTs !== null || dateToTs !== null || fromMin !== null || toMin !== null) {
+          const iso = filterBy === 'ambil' && r.status !== 'open' ? String(r.checkin_at || '') : String(r.checkout_at || '')
+          const ts = isoToTs(iso)
+          if (ts === null) return false
+          if (dateFromTs !== null && ts < dateFromTs) return false
+          if (dateToTs !== null && ts > dateToTs) return false
+          if (fromMin !== null || toMin !== null) {
+            const d = new Date(ts)
+            const minutes = d.getHours() * 60 + d.getMinutes()
+            if (fromMin !== null && minutes < fromMin) return false
+            if (toMin !== null && minutes > toMin) return false
+          }
+        }
+        return true
+      })
+      if (clientSort.key) {
+        const dir = clientSort.dir === 'desc' ? -1 : 1
+        out = out.slice().sort((a, b) => {
+          const av =
+            clientSort.key === 'nama'
+              ? String(a.borrower_name || '')
+              : clientSort.key === 'ruangan'
+                ? String(a.key_name || '')
+                : clientSort.key === 'petugas'
+                  ? String(petugasName(a) || '')
+                  : String(a.status || '')
+          const bv =
+            clientSort.key === 'nama'
+              ? String(b.borrower_name || '')
+              : clientSort.key === 'ruangan'
+                ? String(b.key_name || '')
+                : clientSort.key === 'petugas'
+                  ? String(petugasName(b) || '')
+                  : String(b.status || '')
+          return av.localeCompare(bv) * dir
+        })
+      }
+      return out
+    },
+    [clientSort.dir, clientSort.key, filterBy, filterNama, filterPetugas, filterRuangan, filterStatus, fromHm, petugasName, titipDateFrom, titipDateTo, toHm],
+  )
+
+  const openView = useMemo(() => applyClientFilters(open), [applyClientFilters, open])
+  const closedView = useMemo(() => applyClientFilters(closed), [applyClientFilters, closed])
+
+  const filterSummary = useMemo(() => {
+    const parts: string[] = []
+    if (filterNama.trim()) parts.push(`Nama: ${filterNama.trim()}`)
+    if (filterRuangan.length) parts.push(`Ruangan: ${filterRuangan.join(', ')}`)
+    if (filterPetugas.length) parts.push(`Petugas: ${filterPetugas.join(', ')}`)
+    if (filterStatus.length) {
+      const labels = filterStatus
+        .map((s) => (s === 'open' ? 'Dititipkan' : s === 'closed' ? 'Diambil' : 'Deleted'))
+        .join(', ')
+      parts.push(`Status: ${labels}`)
+    }
+    if (titipDateFrom || titipDateTo) parts.push(`Tanggal: ${titipDateFrom || '...'} → ${titipDateTo || '...'}`)
+    if (fromHm || toHm) parts.push(`Jam (${filterBy === 'ambil' ? 'ambil' : 'titip'}): ${fromHm || '...'} → ${toHm || '...'}`)
+    if (clientSort.key) {
+      const lbl = clientSort.key === 'nama' ? 'Nama' : clientSort.key === 'ruangan' ? 'Ruangan' : clientSort.key === 'petugas' ? 'Petugas' : 'Status'
+      parts.push(`Sort: ${lbl} ${clientSort.dir === 'desc' ? 'Z→A' : 'A→Z'}`)
+    }
+    return parts
+  }, [clientSort.dir, clientSort.key, filterBy, filterNama, filterPetugas, filterRuangan, filterStatus, fromHm, titipDateFrom, titipDateTo, toHm])
 
   const downloadCsv = (filename: string, rows: Array<Array<string | number>>) => {
     const lines = rows.map((r) => r.map((x) => `"${String(x ?? '').replace(/"/g, '""')}"`).join(','))
@@ -555,18 +814,355 @@ export default function KeysPage({ me }: { me: Me }) {
         <section className="card">
           <header className="card-header">
             <div className="card-title">Penitipan aktif</div>
-            <div className="muted">{loading ? 'Memuat...' : `${openTotal} entri`}</div>
+            <div className="muted">{loading ? 'Memuat...' : hasActiveFilters ? `${openView.length} / ${openTotal} entri` : `${openTotal} entri`}</div>
           </header>
           <div className="card-body">
+            {hasActiveFilters && (
+              <div className="table-active-filters">
+                <div className="table-active-list">
+                  {filterSummary.map((x) => (
+                    <span key={x} className="filter-chip">
+                      {x}
+                    </span>
+                  ))}
+                </div>
+                <button className="button button-secondary button-sm" type="button" onClick={resetAllHeaderFilters}>
+                  Reset semua filter
+                </button>
+              </div>
+            )}
             <div className="table-wrap" aria-busy={loading}>
-              <table className="table table-mobile-cards">
+              <table className="table table-mobile-cards table-sticky">
                 <thead>
                   <tr>
-                    <th>Nama</th>
-                    <th>Ruangan</th>
-                    <th>Titip</th>
-                    <th>Petugas</th>
-                    <th>Status</th>
+                    <th className="th-col">
+                      <div className="th-head">
+                        <button
+                          className="th-label"
+                          type="button"
+                          onClick={() => {
+                            setClientSort((prev) => (prev.key === 'nama' ? { key: 'nama', dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key: 'nama', dir: 'asc' }))
+                          }}
+                        >
+                          NAMA
+                        </button>
+                        <span className={`th-sort ${clientSort.key === 'nama' ? 'is-active' : ''}`}>{clientSort.key === 'nama' ? (clientSort.dir === 'asc' ? '▲' : '▼') : ''}</span>
+                        <button
+                          className={`th-icon ${filterNama.trim() || clientSort.key === 'nama' ? 'is-active' : ''}`}
+                          type="button"
+                          aria-label="Filter Nama"
+                          onClick={(e) => openHeaderMenu(menuKey('open', 'nama'), e.currentTarget)}
+                        >
+                          ⌄{filterNama.trim() || clientSort.key === 'nama' ? <span className="th-dot" /> : null}
+                        </button>
+                        {headerMenu === menuKey('open', 'nama') && (
+                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                            <div className="th-menu-title">Nama</div>
+                            <div className="th-menu-section">
+                              <label className="th-option">
+                                <input
+                                  type="radio"
+                                  name="sort-nama"
+                                  checked={clientSort.key !== 'nama'}
+                                  onChange={() => setClientSort({ key: null, dir: 'asc' })}
+                                />
+                                Default
+                              </label>
+                              <label className="th-option">
+                                <input
+                                  type="radio"
+                                  name="sort-nama"
+                                  checked={clientSort.key === 'nama' && clientSort.dir === 'asc'}
+                                  onChange={() => setClientSort({ key: 'nama', dir: 'asc' })}
+                                />
+                                Urutkan A-Z
+                              </label>
+                              <label className="th-option">
+                                <input
+                                  type="radio"
+                                  name="sort-nama"
+                                  checked={clientSort.key === 'nama' && clientSort.dir === 'desc'}
+                                  onChange={() => setClientSort({ key: 'nama', dir: 'desc' })}
+                                />
+                                Urutkan Z-A
+                              </label>
+                            </div>
+                            <div className="th-menu-section">
+                              <label className="label-sm">Cari nama</label>
+                              <input className="input input-sm" value={filterNama} onChange={(e) => setFilterNama(e.target.value)} placeholder="Cari..." />
+                            </div>
+                            <div className="th-menu-actions">
+                              <button className="button button-sm button-primary" type="button" onClick={closeHeaderMenu}>
+                                Terapkan
+                              </button>
+                              <button
+                                className="button button-sm button-secondary"
+                                type="button"
+                                onClick={() => {
+                                  setFilterNama('')
+                                  if (clientSort.key === 'nama') setClientSort({ key: null, dir: 'asc' })
+                                }}
+                              >
+                                Reset
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={closeHeaderMenu}>
+                                Tutup
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </th>
+                    <th className="th-col">
+                      <div className="th-head">
+                        <button
+                          className="th-label"
+                          type="button"
+                          onClick={() => {
+                            setClientSort((prev) => (prev.key === 'ruangan' ? { key: 'ruangan', dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key: 'ruangan', dir: 'asc' }))
+                          }}
+                        >
+                          RUANGAN
+                        </button>
+                        <span className={`th-sort ${clientSort.key === 'ruangan' ? 'is-active' : ''}`}>{clientSort.key === 'ruangan' ? (clientSort.dir === 'asc' ? '▲' : '▼') : ''}</span>
+                        <button
+                          className={`th-icon ${filterRuangan.length || clientSort.key === 'ruangan' ? 'is-active' : ''}`}
+                          type="button"
+                          aria-label="Filter Ruangan"
+                          onClick={(e) => openHeaderMenu(menuKey('open', 'ruangan'), e.currentTarget)}
+                        >
+                          ⌄{filterRuangan.length || clientSort.key === 'ruangan' ? <span className="th-dot" /> : null}
+                        </button>
+                        {headerMenu === menuKey('open', 'ruangan') && (
+                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                            <div className="th-menu-title">Ruangan</div>
+                            <div className="th-menu-section">
+                              <label className="label-sm">Cari ruangan</label>
+                              <input className="input input-sm" value={ruanganSearch} onChange={(e) => setRuanganSearch(e.target.value)} placeholder="Cari..." />
+                            </div>
+                            <div className="th-menu-list">
+                              <label className="th-option">
+                                <input type="checkbox" checked={filterRuangan.length === 0} onChange={() => setFilterRuangan([])} />
+                                Semua ruangan
+                              </label>
+                              {uniqueRooms
+                                .filter((x) => !ruanganSearch.trim() || x.toLowerCase().includes(ruanganSearch.trim().toLowerCase()))
+                                .slice(0, 80)
+                                .map((rm) => (
+                                  <label key={rm} className="th-option">
+                                    <input type="checkbox" checked={filterRuangan.includes(rm)} onChange={() => setFilterRuangan((p) => toggleInList(p, rm))} />
+                                    {rm}
+                                  </label>
+                                ))}
+                            </div>
+                            <div className="th-menu-actions">
+                              <button className="button button-sm button-primary" type="button" onClick={closeHeaderMenu}>
+                                Terapkan
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={() => setFilterRuangan([])}>
+                                Reset
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={closeHeaderMenu}>
+                                Tutup
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </th>
+                    <th className="th-col">
+                      <div className="th-head">
+                        <button
+                          className="th-label"
+                          type="button"
+                          onClick={() => {
+                            setClientSort({ key: null, dir: 'asc' })
+                            setSort((v) => (v === 'checkout_desc' ? 'checkout_asc' : 'checkout_desc'))
+                          }}
+                        >
+                          TITIP
+                        </button>
+                        <span className={`th-sort ${sort.startsWith('checkout_') ? 'is-active' : ''}`}>{sort === 'checkout_asc' ? '▲' : sort === 'checkout_desc' ? '▼' : ''}</span>
+                        <button
+                          className={`th-icon ${titipDateFrom || titipDateTo || fromHm || toHm || sort.startsWith('checkout_') ? 'is-active' : ''}`}
+                          type="button"
+                          aria-label="Filter Titip"
+                          onClick={(e) => openHeaderMenu(menuKey('open', 'titip'), e.currentTarget)}
+                        >
+                          ⌄{titipDateFrom || titipDateTo || fromHm || toHm ? <span className="th-dot" /> : null}
+                        </button>
+                        {headerMenu === menuKey('open', 'titip') && (
+                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                            <div className="th-menu-title">Titip</div>
+                            <div className="th-menu-section">
+                              <label className="th-option">
+                                <input type="radio" name="sort-titip" checked={sort === 'checkout_desc'} onChange={() => setSort('checkout_desc')} />
+                                Urutkan terbaru
+                              </label>
+                              <label className="th-option">
+                                <input type="radio" name="sort-titip" checked={sort === 'checkout_asc'} onChange={() => setSort('checkout_asc')} />
+                                Urutkan terlama
+                              </label>
+                            </div>
+                            <div className="th-menu-section">
+                              <label className="label-sm">Filter tanggal (rentang)</label>
+                              <div className="th-two">
+                                <input className="input input-sm" type="date" value={titipDateFrom} onChange={(e) => setTitipDateFrom(e.target.value)} />
+                                <input className="input input-sm" type="date" value={titipDateTo} onChange={(e) => setTitipDateTo(e.target.value)} />
+                              </div>
+                            </div>
+                            <div className="th-menu-section">
+                              <label className="label-sm">Gunakan jam</label>
+                              <div className="th-two">
+                                <label className="th-option">
+                                  <input type="radio" name="filterby-titip-open" checked={filterBy === 'titip'} onChange={() => setFilterBy('titip')} />
+                                  Titip
+                                </label>
+                                <label className="th-option">
+                                  <input type="radio" name="filterby-titip-open" checked={filterBy === 'ambil'} onChange={() => setFilterBy('ambil')} />
+                                  Ambil
+                                </label>
+                              </div>
+                            </div>
+                            <div className="th-menu-section">
+                              <label className="label-sm">Filter jam</label>
+                              <div className="th-two">
+                                <input className="input input-sm" type="time" value={fromHm} onChange={(e) => setFromHm(e.target.value)} />
+                                <input className="input input-sm" type="time" value={toHm} onChange={(e) => setToHm(e.target.value)} />
+                              </div>
+                            </div>
+                            <div className="th-menu-actions">
+                              <button className="button button-sm button-primary" type="button" onClick={closeHeaderMenu}>
+                                Terapkan
+                              </button>
+                              <button
+                                className="button button-sm button-secondary"
+                                type="button"
+                                onClick={() => {
+                                  setTitipDateFrom('')
+                                  setTitipDateTo('')
+                                  setFromHm('')
+                                  setToHm('')
+                                }}
+                              >
+                                Reset
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={closeHeaderMenu}>
+                                Tutup
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </th>
+                    <th className="th-col">
+                      <div className="th-head">
+                        <button
+                          className="th-label"
+                          type="button"
+                          onClick={() => {
+                            setClientSort((prev) => (prev.key === 'petugas' ? { key: 'petugas', dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key: 'petugas', dir: 'asc' }))
+                          }}
+                        >
+                          PETUGAS
+                        </button>
+                        <span className={`th-sort ${clientSort.key === 'petugas' ? 'is-active' : ''}`}>{clientSort.key === 'petugas' ? (clientSort.dir === 'asc' ? '▲' : '▼') : ''}</span>
+                        <button
+                          className={`th-icon ${filterPetugas.length || clientSort.key === 'petugas' ? 'is-active' : ''}`}
+                          type="button"
+                          aria-label="Filter Petugas"
+                          onClick={(e) => openHeaderMenu(menuKey('open', 'petugas'), e.currentTarget)}
+                        >
+                          ⌄{filterPetugas.length || clientSort.key === 'petugas' ? <span className="th-dot" /> : null}
+                        </button>
+                        {headerMenu === menuKey('open', 'petugas') && (
+                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                            <div className="th-menu-title">Petugas</div>
+                            <div className="th-menu-section">
+                              <label className="label-sm">Cari petugas</label>
+                              <input className="input input-sm" value={petugasSearch} onChange={(e) => setPetugasSearch(e.target.value)} placeholder="Cari..." />
+                            </div>
+                            <div className="th-menu-list">
+                              <label className="th-option">
+                                <input type="checkbox" checked={filterPetugas.length === 0} onChange={() => setFilterPetugas([])} />
+                                Semua petugas
+                              </label>
+                              {uniquePetugas
+                                .filter((x) => !petugasSearch.trim() || x.toLowerCase().includes(petugasSearch.trim().toLowerCase()))
+                                .slice(0, 120)
+                                .map((nm) => (
+                                  <label key={nm} className="th-option">
+                                    <input type="checkbox" checked={filterPetugas.includes(nm)} onChange={() => setFilterPetugas((p) => toggleInList(p, nm))} />
+                                    {nm}
+                                  </label>
+                                ))}
+                            </div>
+                            <div className="th-menu-actions">
+                              <button className="button button-sm button-primary" type="button" onClick={closeHeaderMenu}>
+                                Terapkan
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={() => setFilterPetugas([])}>
+                                Reset
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={closeHeaderMenu}>
+                                Tutup
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </th>
+                    <th className="th-col">
+                      <div className="th-head">
+                        <button
+                          className="th-label"
+                          type="button"
+                          onClick={() => {
+                            setClientSort((prev) => (prev.key === 'status' ? { key: 'status', dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key: 'status', dir: 'asc' }))
+                          }}
+                        >
+                          STATUS
+                        </button>
+                        <span className={`th-sort ${clientSort.key === 'status' ? 'is-active' : ''}`}>{clientSort.key === 'status' ? (clientSort.dir === 'asc' ? '▲' : '▼') : ''}</span>
+                        <button
+                          className={`th-icon ${filterStatus.length || clientSort.key === 'status' ? 'is-active' : ''}`}
+                          type="button"
+                          aria-label="Filter Status"
+                          onClick={(e) => openHeaderMenu(menuKey('open', 'status'), e.currentTarget)}
+                        >
+                          ⌄{filterStatus.length || clientSort.key === 'status' ? <span className="th-dot" /> : null}
+                        </button>
+                        {headerMenu === menuKey('open', 'status') && (
+                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                            <div className="th-menu-title">Status</div>
+                            <div className="th-menu-list">
+                              <label className="th-option">
+                                <input type="checkbox" checked={filterStatus.length === 0} onChange={() => setFilterStatus([])} />
+                                Semua status
+                              </label>
+                              {statusOptions.map((s) => (
+                                <label key={s.value} className="th-option">
+                                  <input type="checkbox" checked={filterStatus.includes(s.value)} onChange={() => setFilterStatus((p) => (p.includes(s.value) ? p.filter((x) => x !== s.value) : p.concat(s.value)))} />
+                                  <span className="th-badge">{s.badge}</span>
+                                  <span>{s.label}</span>
+                                </label>
+                              ))}
+                            </div>
+                            <div className="th-menu-actions">
+                              <button className="button button-sm button-primary" type="button" onClick={closeHeaderMenu}>
+                                Terapkan
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={() => setFilterStatus([])}>
+                                Reset
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={closeHeaderMenu}>
+                                Tutup
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </th>
                     <th>Foto</th>
                     <th>Aksi</th>
                   </tr>
@@ -582,7 +1178,7 @@ export default function KeysPage({ me }: { me: Me }) {
                           ))}
                         </tr>
                       ))
-                    : open.map((r) => (
+                    : openView.map((r) => (
                         <tr key={r.id} className="table-row-active">
                           <td data-label="Nama">{r.borrower_name}</td>
                           <td data-label="Ruangan">{r.key_name}</td>
@@ -627,7 +1223,7 @@ export default function KeysPage({ me }: { me: Me }) {
                           </td>
                         </tr>
                       ))}
-                  {!loading && open.length === 0 && (
+                  {!loading && openView.length === 0 && (
                     <tr>
                       <td className="muted" colSpan={7}>
                         Tidak ada data.
@@ -644,7 +1240,7 @@ export default function KeysPage({ me }: { me: Me }) {
         <section className="card">
           <header className="card-header">
             <div className="card-title">Riwayat (closed)</div>
-            <div className="muted">{loading ? 'Memuat...' : `${closedTotal} entri`}</div>
+            <div className="muted">{loading ? 'Memuat...' : hasActiveFilters ? `${closedView.length} / ${closedTotal} entri` : `${closedTotal} entri`}</div>
           </header>
           <div className="card-body">
             <div className="table-footer-filters">
@@ -736,36 +1332,379 @@ export default function KeysPage({ me }: { me: Me }) {
                 </button>
               </div>
             </div>
+            {hasActiveFilters && (
+              <div className="table-active-filters">
+                <div className="table-active-list">
+                  {filterSummary.map((x) => (
+                    <span key={x} className="filter-chip">
+                      {x}
+                    </span>
+                  ))}
+                </div>
+                <button className="button button-secondary button-sm" type="button" onClick={resetAllHeaderFilters}>
+                  Reset semua filter
+                </button>
+              </div>
+            )}
             <div className="table-wrap" aria-busy={loading}>
-              <table className="table table-mobile-cards">
+              <table className="table table-mobile-cards table-sticky">
                 <thead>
                   <tr>
-                    <th>Nama</th>
-                    <th>Ruangan</th>
-                    <th>Titip</th>
-                    <th>Ambil</th>
-                    <th>Status</th>
-                    <th>Foto</th>
-                    <th>Aksi</th>
+                    <th className="th-col">
+                      <div className="th-head">
+                        <button
+                          className="th-label"
+                          type="button"
+                          onClick={() => {
+                            setClientSort((prev) => (prev.key === 'nama' ? { key: 'nama', dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key: 'nama', dir: 'asc' }))
+                          }}
+                        >
+                          NAMA
+                        </button>
+                        <span className={`th-sort ${clientSort.key === 'nama' ? 'is-active' : ''}`}>{clientSort.key === 'nama' ? (clientSort.dir === 'asc' ? '▲' : '▼') : ''}</span>
+                        <button
+                          className={`th-icon ${filterNama.trim() || clientSort.key === 'nama' ? 'is-active' : ''}`}
+                          type="button"
+                          aria-label="Filter Nama"
+                          onClick={(e) => openHeaderMenu(menuKey('closed', 'nama'), e.currentTarget)}
+                        >
+                          ⌄{filterNama.trim() || clientSort.key === 'nama' ? <span className="th-dot" /> : null}
+                        </button>
+                        {headerMenu === menuKey('closed', 'nama') && (
+                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                            <div className="th-menu-title">Nama</div>
+                            <div className="th-menu-section">
+                              <label className="th-option">
+                                <input type="radio" name="sort-nama-closed" checked={clientSort.key !== 'nama'} onChange={() => setClientSort({ key: null, dir: 'asc' })} />
+                                Default
+                              </label>
+                              <label className="th-option">
+                                <input type="radio" name="sort-nama-closed" checked={clientSort.key === 'nama' && clientSort.dir === 'asc'} onChange={() => setClientSort({ key: 'nama', dir: 'asc' })} />
+                                Urutkan A-Z
+                              </label>
+                              <label className="th-option">
+                                <input type="radio" name="sort-nama-closed" checked={clientSort.key === 'nama' && clientSort.dir === 'desc'} onChange={() => setClientSort({ key: 'nama', dir: 'desc' })} />
+                                Urutkan Z-A
+                              </label>
+                            </div>
+                            <div className="th-menu-section">
+                              <label className="label-sm">Cari nama</label>
+                              <input className="input input-sm" value={filterNama} onChange={(e) => setFilterNama(e.target.value)} placeholder="Cari..." />
+                            </div>
+                            <div className="th-menu-actions">
+                              <button className="button button-sm button-primary" type="button" onClick={closeHeaderMenu}>
+                                Terapkan
+                              </button>
+                              <button
+                                className="button button-sm button-secondary"
+                                type="button"
+                                onClick={() => {
+                                  setFilterNama('')
+                                  if (clientSort.key === 'nama') setClientSort({ key: null, dir: 'asc' })
+                                }}
+                              >
+                                Reset
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={closeHeaderMenu}>
+                                Tutup
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </th>
+                    <th className="th-col">
+                      <div className="th-head">
+                        <button
+                          className="th-label"
+                          type="button"
+                          onClick={() => {
+                            setClientSort((prev) => (prev.key === 'ruangan' ? { key: 'ruangan', dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key: 'ruangan', dir: 'asc' }))
+                          }}
+                        >
+                          RUANGAN
+                        </button>
+                        <span className={`th-sort ${clientSort.key === 'ruangan' ? 'is-active' : ''}`}>{clientSort.key === 'ruangan' ? (clientSort.dir === 'asc' ? '▲' : '▼') : ''}</span>
+                        <button
+                          className={`th-icon ${filterRuangan.length || clientSort.key === 'ruangan' ? 'is-active' : ''}`}
+                          type="button"
+                          aria-label="Filter Ruangan"
+                          onClick={(e) => openHeaderMenu(menuKey('closed', 'ruangan'), e.currentTarget)}
+                        >
+                          ⌄{filterRuangan.length || clientSort.key === 'ruangan' ? <span className="th-dot" /> : null}
+                        </button>
+                        {headerMenu === menuKey('closed', 'ruangan') && (
+                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                            <div className="th-menu-title">Ruangan</div>
+                            <div className="th-menu-section">
+                              <label className="label-sm">Cari ruangan</label>
+                              <input className="input input-sm" value={ruanganSearch} onChange={(e) => setRuanganSearch(e.target.value)} placeholder="Cari..." />
+                            </div>
+                            <div className="th-menu-list">
+                              <label className="th-option">
+                                <input type="checkbox" checked={filterRuangan.length === 0} onChange={() => setFilterRuangan([])} />
+                                Semua ruangan
+                              </label>
+                              {uniqueRooms
+                                .filter((x) => !ruanganSearch.trim() || x.toLowerCase().includes(ruanganSearch.trim().toLowerCase()))
+                                .slice(0, 80)
+                                .map((rm) => (
+                                  <label key={rm} className="th-option">
+                                    <input type="checkbox" checked={filterRuangan.includes(rm)} onChange={() => setFilterRuangan((p) => toggleInList(p, rm))} />
+                                    {rm}
+                                  </label>
+                                ))}
+                            </div>
+                            <div className="th-menu-actions">
+                              <button className="button button-sm button-primary" type="button" onClick={closeHeaderMenu}>
+                                Terapkan
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={() => setFilterRuangan([])}>
+                                Reset
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={closeHeaderMenu}>
+                                Tutup
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </th>
+                    <th className="th-col">
+                      <div className="th-head">
+                        <button
+                          className="th-label"
+                          type="button"
+                          onClick={() => {
+                            setClientSort({ key: null, dir: 'asc' })
+                            setSort((v) => (v === 'checkout_desc' ? 'checkout_asc' : 'checkout_desc'))
+                          }}
+                        >
+                          TITIP
+                        </button>
+                        <span className={`th-sort ${sort.startsWith('checkout_') ? 'is-active' : ''}`}>{sort === 'checkout_asc' ? '▲' : sort === 'checkout_desc' ? '▼' : ''}</span>
+                        <button
+                          className={`th-icon ${titipDateFrom || titipDateTo || fromHm || toHm || sort.startsWith('checkout_') ? 'is-active' : ''}`}
+                          type="button"
+                          aria-label="Filter Titip"
+                          onClick={(e) => openHeaderMenu(menuKey('closed', 'titip'), e.currentTarget)}
+                        >
+                          ⌄{titipDateFrom || titipDateTo || fromHm || toHm ? <span className="th-dot" /> : null}
+                        </button>
+                        {headerMenu === menuKey('closed', 'titip') && (
+                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                            <div className="th-menu-title">Titip</div>
+                            <div className="th-menu-section">
+                              <label className="th-option">
+                                <input type="radio" name="sort-titip-closed" checked={sort === 'checkout_desc'} onChange={() => setSort('checkout_desc')} />
+                                Urutkan terbaru
+                              </label>
+                              <label className="th-option">
+                                <input type="radio" name="sort-titip-closed" checked={sort === 'checkout_asc'} onChange={() => setSort('checkout_asc')} />
+                                Urutkan terlama
+                              </label>
+                            </div>
+                            <div className="th-menu-section">
+                              <label className="label-sm">Filter tanggal (rentang)</label>
+                              <div className="th-two">
+                                <input className="input input-sm" type="date" value={titipDateFrom} onChange={(e) => setTitipDateFrom(e.target.value)} />
+                                <input className="input input-sm" type="date" value={titipDateTo} onChange={(e) => setTitipDateTo(e.target.value)} />
+                              </div>
+                            </div>
+                            <div className="th-menu-section">
+                              <label className="label-sm">Gunakan jam</label>
+                              <div className="th-two">
+                                <label className="th-option">
+                                  <input type="radio" name="filterby-titip-closed" checked={filterBy === 'titip'} onChange={() => setFilterBy('titip')} />
+                                  Titip
+                                </label>
+                                <label className="th-option">
+                                  <input type="radio" name="filterby-titip-closed" checked={filterBy === 'ambil'} onChange={() => setFilterBy('ambil')} />
+                                  Ambil
+                                </label>
+                              </div>
+                            </div>
+                            <div className="th-menu-section">
+                              <label className="label-sm">Filter jam</label>
+                              <div className="th-two">
+                                <input className="input input-sm" type="time" value={fromHm} onChange={(e) => setFromHm(e.target.value)} />
+                                <input className="input input-sm" type="time" value={toHm} onChange={(e) => setToHm(e.target.value)} />
+                              </div>
+                            </div>
+                            <div className="th-menu-actions">
+                              <button className="button button-sm button-primary" type="button" onClick={closeHeaderMenu}>
+                                Terapkan
+                              </button>
+                              <button
+                                className="button button-sm button-secondary"
+                                type="button"
+                                onClick={() => {
+                                  setTitipDateFrom('')
+                                  setTitipDateTo('')
+                                  setFromHm('')
+                                  setToHm('')
+                                }}
+                              >
+                                Reset
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={closeHeaderMenu}>
+                                Tutup
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </th>
+                    <th className="th-col">
+                      <div className="th-head">
+                        <button
+                          className="th-label"
+                          type="button"
+                          onClick={() => {
+                            setClientSort({ key: null, dir: 'asc' })
+                            setSort((v) => (v === 'checkin_desc' ? 'checkin_asc' : 'checkin_desc'))
+                          }}
+                        >
+                          AMBIL
+                        </button>
+                        <span className={`th-sort ${sort.startsWith('checkin_') ? 'is-active' : ''}`}>{sort === 'checkin_asc' ? '▲' : sort === 'checkin_desc' ? '▼' : ''}</span>
+                      </div>
+                    </th>
+                    <th className="th-col">
+                      <div className="th-head">
+                        <button
+                          className="th-label"
+                          type="button"
+                          onClick={() => {
+                            setClientSort((prev) => (prev.key === 'petugas' ? { key: 'petugas', dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key: 'petugas', dir: 'asc' }))
+                          }}
+                        >
+                          PETUGAS
+                        </button>
+                        <span className={`th-sort ${clientSort.key === 'petugas' ? 'is-active' : ''}`}>{clientSort.key === 'petugas' ? (clientSort.dir === 'asc' ? '▲' : '▼') : ''}</span>
+                        <button
+                          className={`th-icon ${filterPetugas.length || clientSort.key === 'petugas' ? 'is-active' : ''}`}
+                          type="button"
+                          aria-label="Filter Petugas"
+                          onClick={(e) => openHeaderMenu(menuKey('closed', 'petugas'), e.currentTarget)}
+                        >
+                          ⌄{filterPetugas.length || clientSort.key === 'petugas' ? <span className="th-dot" /> : null}
+                        </button>
+                        {headerMenu === menuKey('closed', 'petugas') && (
+                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                            <div className="th-menu-title">Petugas</div>
+                            <div className="th-menu-section">
+                              <label className="label-sm">Cari petugas</label>
+                              <input className="input input-sm" value={petugasSearch} onChange={(e) => setPetugasSearch(e.target.value)} placeholder="Cari..." />
+                            </div>
+                            <div className="th-menu-list">
+                              <label className="th-option">
+                                <input type="checkbox" checked={filterPetugas.length === 0} onChange={() => setFilterPetugas([])} />
+                                Semua petugas
+                              </label>
+                              {uniquePetugas
+                                .filter((x) => !petugasSearch.trim() || x.toLowerCase().includes(petugasSearch.trim().toLowerCase()))
+                                .slice(0, 120)
+                                .map((nm) => (
+                                  <label key={nm} className="th-option">
+                                    <input type="checkbox" checked={filterPetugas.includes(nm)} onChange={() => setFilterPetugas((p) => toggleInList(p, nm))} />
+                                    {nm}
+                                  </label>
+                                ))}
+                            </div>
+                            <div className="th-menu-actions">
+                              <button className="button button-sm button-primary" type="button" onClick={closeHeaderMenu}>
+                                Terapkan
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={() => setFilterPetugas([])}>
+                                Reset
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={closeHeaderMenu}>
+                                Tutup
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </th>
+                    <th className="th-col">
+                      <div className="th-head">
+                        <button
+                          className="th-label"
+                          type="button"
+                          onClick={() => {
+                            setClientSort((prev) => (prev.key === 'status' ? { key: 'status', dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key: 'status', dir: 'asc' }))
+                          }}
+                        >
+                          STATUS
+                        </button>
+                        <span className={`th-sort ${clientSort.key === 'status' ? 'is-active' : ''}`}>{clientSort.key === 'status' ? (clientSort.dir === 'asc' ? '▲' : '▼') : ''}</span>
+                        <button
+                          className={`th-icon ${filterStatus.length || clientSort.key === 'status' ? 'is-active' : ''}`}
+                          type="button"
+                          aria-label="Filter Status"
+                          onClick={(e) => openHeaderMenu(menuKey('closed', 'status'), e.currentTarget)}
+                        >
+                          ⌄{filterStatus.length || clientSort.key === 'status' ? <span className="th-dot" /> : null}
+                        </button>
+                        {headerMenu === menuKey('closed', 'status') && (
+                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                            <div className="th-menu-title">Status</div>
+                            <div className="th-menu-list">
+                              <label className="th-option">
+                                <input type="checkbox" checked={filterStatus.length === 0} onChange={() => setFilterStatus([])} />
+                                Semua status
+                              </label>
+                              {statusOptions.map((s) => (
+                                <label key={s.value} className="th-option">
+                                  <input type="checkbox" checked={filterStatus.includes(s.value)} onChange={() => setFilterStatus((p) => (p.includes(s.value) ? p.filter((x) => x !== s.value) : p.concat(s.value)))} />
+                                  <span className="th-badge">{s.badge}</span>
+                                  <span>{s.label}</span>
+                                </label>
+                              ))}
+                            </div>
+                            <div className="th-menu-actions">
+                              <button className="button button-sm button-primary" type="button" onClick={closeHeaderMenu}>
+                                Terapkan
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={() => setFilterStatus([])}>
+                                Reset
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={closeHeaderMenu}>
+                                Tutup
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </th>
+                    <th>FOTO</th>
+                    <th>AKSI</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading
                     ? Array.from({ length: Math.max(6, Math.min(10, limit || 6)) }).map((_, i) => (
                         <tr key={`sk-closed-${i}`} className="table-skeleton">
-                          {Array.from({ length: 7 }).map((__, c) => (
+                          {Array.from({ length: 8 }).map((__, c) => (
                             <td key={c}>
-                              <span className={`skeleton${c === 0 ? ' skeleton-lg' : ''}`} style={{ width: c === 0 ? '70%' : c === 6 ? '55%' : '60%' }} />
+                              <span className={`skeleton${c === 0 ? ' skeleton-lg' : ''}`} style={{ width: c === 0 ? '70%' : c === 7 ? '55%' : '60%' }} />
                             </td>
                           ))}
                         </tr>
                       ))
-                    : closed.map((r) => (
+                    : closedView.map((r) => (
                         <tr key={r.id} className={r.status === 'void' ? 'table-row-void' : undefined}>
                           <td data-label="Nama">{r.borrower_name}</td>
                           <td data-label="Ruangan">{r.key_name}</td>
                           <td data-label="Titip">{fmtDateTime(r.checkout_at)}</td>
                           <td data-label="Ambil">{fmtDateTime(r.checkin_at || '')}</td>
+                          <td data-label="Petugas">
+                            <div className="row" style={{ gap: '8px', alignItems: 'center' }}>
+                              <Avatar name={petugasName(r)} />
+                              {petugasName(r)}
+                            </div>
+                          </td>
                           <td data-label="Status">
                             {badge(r.status)}
                             {r.status === 'void' ? <div className="muted">Deleted</div> : null}
@@ -809,9 +1748,9 @@ export default function KeysPage({ me }: { me: Me }) {
                           </td>
                         </tr>
                       ))}
-                  {!loading && closed.length === 0 && (
+                  {!loading && closedView.length === 0 && (
                     <tr>
-                      <td className="muted" colSpan={7}>
+                      <td className="muted" colSpan={8}>
                         Tidak ada data.
                       </td>
                     </tr>

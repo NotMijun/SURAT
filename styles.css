@@ -807,6 +807,60 @@ html.theme-transition .theme-toggle-icon{transition-duration:250ms}
   background:rgba(255,91,122,.10);
 }
 
+.table-sticky thead th{top:0}
+.th-col{position:relative}
+.th-head{display:flex;align-items:center;gap:6px;min-height:18px}
+.th-label{
+  background:transparent;
+  border:0;
+  padding:0;
+  color:inherit;
+  font:inherit;
+  cursor:pointer;
+}
+.th-label:hover{color:var(--text)}
+.th-sort{font-size:11px;color:var(--muted);min-width:12px;text-align:center}
+.th-sort.is-active{color:var(--primary)}
+.th-icon{
+  margin-left:auto;
+  background:transparent;
+  border:0;
+  color:var(--muted);
+  cursor:pointer;
+  padding:2px 6px;
+  border-radius:10px;
+  position:relative;
+  line-height:1;
+}
+.th-icon:hover{background:rgba(var(--primary-rgb),.10);color:var(--text)}
+.th-icon.is-active{color:var(--primary)}
+.th-dot{position:absolute;top:1px;right:2px;width:6px;height:6px;border-radius:999px;background:var(--primary)}
+.th-menu{
+  position:absolute;
+  top:calc(100% + 8px);
+  right:0;
+  width:300px;
+  background:var(--soft-bg-2);
+  border:1px solid rgba(var(--primary-rgb),.28);
+  border-radius:12px;
+  box-shadow:0 18px 60px rgba(0,0,0,.55);
+  padding:10px;
+  z-index:40;
+}
+.th-menu-title{font-weight:900;margin-bottom:6px}
+.th-menu-section{display:grid;gap:6px;padding:8px 0;border-top:1px solid rgba(255,255,255,.06)}
+.th-menu-section:first-of-type{border-top:0;padding-top:0}
+.th-menu-list{display:grid;gap:6px;max-height:240px;overflow:auto;padding-right:4px}
+.th-option{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);cursor:pointer}
+.th-option input{accent-color:var(--primary)}
+.th-badge{display:inline-flex}
+.th-menu-actions{display:flex;gap:8px;justify-content:flex-end;padding-top:10px;border-top:1px solid rgba(255,255,255,.06);margin-top:8px}
+.th-two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+.table-active-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;padding:10px 12px;border-top:1px solid var(--border);background:var(--soft-bg)}
+.table-active-list{display:flex;gap:8px;flex-wrap:wrap}
+.filter-chip{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;border:1px solid rgba(var(--primary-rgb),.28);background:rgba(var(--primary-rgb),.10);font-size:12px;color:var(--text)}
+
 .time-row {
   display: flex;
   gap: 8px;
