@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { AttachmentItem, Me, TaskEntry } from '../../types'
 import { compressImageFile } from '../../lib/image'
@@ -25,6 +26,113 @@ export default function TasksPage({ me }: { me: Me }) {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string>('')
+
+  type HeaderMenuKey = null | 'waktu' | 'jenis' | 'tujuan' | 'petugas' | 'status'
+  const [headerMenu, setHeaderMenu] = useState<HeaderMenuKey>(null)
+  const headerMenuRef = useRef<HTMLDivElement | null>(null)
+  const [headerMenuAnchorEl, setHeaderMenuAnchorEl] = useState<HTMLElement | null>(null)
+  const [headerMenuAnchorRect, setHeaderMenuAnchorRect] = useState<{ top: number; right: number; bottom: number; left: number } | null>(null)
+  const [headerMenuPos, setHeaderMenuPos] = useState<{ top: number; left: number } | null>(null)
+
+  const [filterJenis, setFilterJenis] = useState('')
+  const [filterTujuan, setFilterTujuan] = useState<string[]>([])
+  const [filterPetugas, setFilterPetugas] = useState<string[]>([])
+  const [filterStatus, setFilterStatus] = useState<Array<NonNullable<TaskEntry['status']>>>([])
+  const [waktuDateFrom, setWaktuDateFrom] = useState('')
+  const [waktuDateTo, setWaktuDateTo] = useState('')
+  const [fromHm, setFromHm] = useState('')
+  const [toHm, setToHm] = useState('')
+  const [petugasSearch, setPetugasSearch] = useState('')
+  const [tujuanSearch, setTujuanSearch] = useState('')
+  const [clientSort, setClientSort] = useState<{ key: 'jenis' | 'tujuan' | 'petugas' | 'status' | null; dir: 'asc' | 'desc' }>({ key: null, dir: 'asc' })
+
+  const closeHeaderMenu = useCallback(() => {
+    setHeaderMenu(null)
+    setHeaderMenuAnchorEl(null)
+    setHeaderMenuAnchorRect(null)
+    setHeaderMenuPos(null)
+  }, [])
+
+  const openHeaderMenu = useCallback(
+    (key: Exclude<HeaderMenuKey, null>, anchorEl: HTMLElement) => {
+      if (headerMenu === key) {
+        closeHeaderMenu()
+        return
+      }
+      const r = anchorEl.getBoundingClientRect()
+      setHeaderMenu(key)
+      setHeaderMenuAnchorEl(anchorEl)
+      setHeaderMenuAnchorRect({ top: r.top, right: r.right, bottom: r.bottom, left: r.left })
+      setHeaderMenuPos({ top: r.bottom + 8, left: r.left })
+    },
+    [closeHeaderMenu, headerMenu],
+  )
+
+  useEffect(() => {
+    if (!headerMenu) return
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node | null
+      const el = headerMenuRef.current
+      if (el && target && el.contains(target)) return
+      const anchor = headerMenuAnchorEl
+      if (anchor && target && anchor.contains(target)) return
+      closeHeaderMenu()
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeHeaderMenu()
+    }
+    const onScroll = () => closeHeaderMenu()
+    document.addEventListener('mousedown', onDown, { capture: true })
+    window.addEventListener('keydown', onKey, { capture: true })
+    document.addEventListener('scroll', onScroll, { capture: true })
+    window.addEventListener('resize', onScroll)
+    return () => {
+      document.removeEventListener('mousedown', onDown, { capture: true } as any)
+      window.removeEventListener('keydown', onKey, { capture: true } as any)
+      document.removeEventListener('scroll', onScroll, { capture: true } as any)
+      window.removeEventListener('resize', onScroll as any)
+    }
+  }, [closeHeaderMenu, headerMenu, headerMenuAnchorEl])
+
+  useEffect(() => {
+    if (!headerMenu || !headerMenuAnchorRect) return
+    const el = headerMenuRef.current
+    if (!el) return
+    const pad = 10
+    const menuRect = el.getBoundingClientRect()
+    let top = headerMenuPos?.top ?? headerMenuAnchorRect.bottom + 8
+    let left = headerMenuPos?.left ?? headerMenuAnchorRect.left
+
+    if (left + menuRect.width > window.innerWidth - pad) left = Math.max(pad, window.innerWidth - pad - menuRect.width)
+    if (left < pad) left = pad
+    if (top + menuRect.height > window.innerHeight - pad) {
+      const above = headerMenuAnchorRect.top - 8 - menuRect.height
+      if (above >= pad) top = above
+    }
+    if (top < pad) top = pad
+    if (!headerMenuPos || top !== headerMenuPos.top || left !== headerMenuPos.left) setHeaderMenuPos({ top, left })
+  }, [headerMenu, headerMenuAnchorRect, headerMenuPos])
+
+  const toggleInList = (prev: string[], value: string) => {
+    const v = String(value || '').trim()
+    if (!v) return prev
+    return prev.includes(v) ? prev.filter((x) => x !== v) : prev.concat(v)
+  }
+
+  const hmToMinutes = (v: string) => {
+    const s = String(v || '').trim()
+    if (!s) return null
+    const m = /^(\d{1,2}):(\d{2})$/.exec(s)
+    if (!m) return null
+    const hh = Math.max(0, Math.min(23, parseInt(m[1], 10)))
+    const mm = Math.max(0, Math.min(59, parseInt(m[2], 10)))
+    return hh * 60 + mm
+  }
+
+  const isoToTs = (iso: string) => {
+    const t = Date.parse(String(iso || ''))
+    return Number.isFinite(t) ? t : null
+  }
 
   const [editRow, setEditRow] = useState<TaskEntry | null>(null)
   const [editKind, setEditKind] = useState('')
@@ -462,7 +570,142 @@ export default function TasksPage({ me }: { me: Me }) {
 
   const isPom = (k: string) => /pom/i.test(k || '') && /cater/i.test(k || '')
   const isGalon = (k: string) => /galon/i.test(k || '')
-  const viewItems = items
+
+  const uniqueTujuan = useMemo(() => {
+    const s = new Set<string>()
+    for (const r of items) {
+      const t = String(r.destination || '').trim()
+      if (t && t !== '-') s.add(t)
+    }
+    return Array.from(s).sort((a, b) => a.localeCompare(b))
+  }, [items])
+
+  const uniquePetugas = useMemo(() => {
+    const s = new Set<string>()
+    for (const r of items) {
+      const nm = String(r.created_by_name || '').trim()
+      if (nm && nm !== '-') s.add(nm)
+    }
+    return Array.from(s).sort((a, b) => a.localeCompare(b))
+  }, [items])
+
+  const statusOptions = useMemo(
+    () => [
+      { value: 'active' as NonNullable<TaskEntry['status']>, label: 'Aktif', badge: <span className="badge badge-ok">Aktif</span> },
+      { value: 'void' as NonNullable<TaskEntry['status']>, label: 'Deleted', badge: <span className="badge badge-danger">Deleted</span> },
+    ],
+    [],
+  )
+
+  const hasActiveFilters = useMemo(() => {
+    return Boolean(filterJenis.trim() || filterTujuan.length || filterPetugas.length || filterStatus.length || waktuDateFrom || waktuDateTo || fromHm || toHm || clientSort.key)
+  }, [clientSort.key, filterJenis, filterPetugas.length, filterStatus.length, filterTujuan.length, fromHm, toHm, waktuDateFrom, waktuDateTo])
+
+  const resetAllHeaderFilters = () => {
+    setFilterJenis('')
+    setFilterTujuan([])
+    setFilterPetugas([])
+    setFilterStatus([])
+    setWaktuDateFrom('')
+    setWaktuDateTo('')
+    setFromHm('')
+    setToHm('')
+    setPetugasSearch('')
+    setTujuanSearch('')
+    setClientSort({ key: null, dir: 'asc' })
+    closeHeaderMenu()
+  }
+
+  const applyClientFilters = useCallback(
+    (rows: TaskEntry[]) => {
+      const fJenis = filterJenis.trim().toLowerCase()
+      const fTo = new Set(filterTujuan)
+      const fPet = new Set(filterPetugas)
+      const fStat = new Set(filterStatus)
+      const dateFromTs = waktuDateFrom ? Date.parse(`${waktuDateFrom}T00:00:00`) : null
+      const dateToTs = waktuDateTo ? Date.parse(`${waktuDateTo}T23:59:59`) : null
+      const fromMin = hmToMinutes(fromHm)
+      const toMin = hmToMinutes(toHm)
+
+      let out = rows.filter((r) => {
+        if (fJenis) {
+          const k = String(r.kind || '').toLowerCase()
+          if (!k.includes(fJenis)) return false
+        }
+        if (fTo.size) {
+          const t = String(r.destination || '').trim()
+          if (!fTo.has(t)) return false
+        }
+        if (fPet.size) {
+          const nm = String(r.created_by_name || '').trim() || '-'
+          if (!fPet.has(nm)) return false
+        }
+        if (fStat.size) {
+          const st = (r.status || 'active') as NonNullable<TaskEntry['status']>
+          if (!fStat.has(st)) return false
+        }
+        if (dateFromTs !== null || dateToTs !== null || fromMin !== null || toMin !== null) {
+          const ts = isoToTs(String(r.occurred_at || ''))
+          if (ts === null) return false
+          if (dateFromTs !== null && ts < dateFromTs) return false
+          if (dateToTs !== null && ts > dateToTs) return false
+          if (fromMin !== null || toMin !== null) {
+            const d = new Date(ts)
+            const minutes = d.getHours() * 60 + d.getMinutes()
+            if (fromMin !== null && minutes < fromMin) return false
+            if (toMin !== null && minutes > toMin) return false
+          }
+        }
+        return true
+      })
+
+      if (clientSort.key) {
+        const dir = clientSort.dir === 'desc' ? -1 : 1
+        out = out.slice().sort((a, b) => {
+          const av =
+            clientSort.key === 'jenis'
+              ? String(a.kind || '')
+              : clientSort.key === 'tujuan'
+                ? String(a.destination || '')
+                : clientSort.key === 'petugas'
+                  ? String(a.created_by_name || '')
+                  : String(a.status || '')
+          const bv =
+            clientSort.key === 'jenis'
+              ? String(b.kind || '')
+              : clientSort.key === 'tujuan'
+                ? String(b.destination || '')
+                : clientSort.key === 'petugas'
+                  ? String(b.created_by_name || '')
+                  : String(b.status || '')
+          return av.localeCompare(bv) * dir
+        })
+      }
+
+      return out
+    },
+    [clientSort.dir, clientSort.key, filterJenis, filterPetugas, filterStatus, filterTujuan, fromHm, toHm, waktuDateFrom, waktuDateTo],
+  )
+
+  const viewItems = useMemo(() => applyClientFilters(items), [applyClientFilters, items])
+
+  const filterSummary = useMemo(() => {
+    const parts: string[] = []
+    if (filterJenis.trim()) parts.push(`Jenis: ${filterJenis.trim()}`)
+    if (filterTujuan.length) parts.push(`Tujuan: ${filterTujuan.join(', ')}`)
+    if (filterPetugas.length) parts.push(`Petugas: ${filterPetugas.join(', ')}`)
+    if (filterStatus.length) {
+      const labels = filterStatus.map((s) => (s === 'active' ? 'Aktif' : 'Deleted')).join(', ')
+      parts.push(`Status: ${labels}`)
+    }
+    if (waktuDateFrom || waktuDateTo) parts.push(`Tanggal: ${waktuDateFrom || '...'} → ${waktuDateTo || '...'}`)
+    if (fromHm || toHm) parts.push(`Jam: ${fromHm || '...'} → ${toHm || '...'}`)
+    if (clientSort.key) {
+      const lbl = clientSort.key === 'jenis' ? 'Jenis' : clientSort.key === 'tujuan' ? 'Tujuan' : clientSort.key === 'petugas' ? 'Petugas' : 'Status'
+      parts.push(`Sort: ${lbl} ${clientSort.dir === 'desc' ? 'Z→A' : 'A→Z'}`)
+    }
+    return parts
+  }, [clientSort.dir, clientSort.key, filterJenis, filterPetugas, filterStatus, filterTujuan, fromHm, toHm, waktuDateFrom, waktuDateTo])
 
   const renderDetails = (r: TaskEntry) => {
     const e = r.extra || {}
@@ -1531,18 +1774,333 @@ export default function TasksPage({ me }: { me: Me }) {
               </button>
             </div>
           </div>
+          {hasActiveFilters && (
+            <div className="table-active-filters">
+              <div className="table-active-list">
+                {filterSummary.map((x) => (
+                  <span key={x} className="filter-chip">
+                    {x}
+                  </span>
+                ))}
+              </div>
+              <button className="button button-secondary button-sm" type="button" onClick={resetAllHeaderFilters}>
+                Reset semua filter
+              </button>
+            </div>
+          )}
           <div className="table-wrap" aria-busy={loading}>
-            <table className="table table-mobile-cards">
+            <table className="table table-mobile-cards table-sticky">
               <thead>
                 <tr>
-                  <th>Waktu</th>
-                  <th>Jenis</th>
-                  <th>Tujuan</th>
+                  <th className="th-col">
+                    <div className="th-head">
+                      <button
+                        className="th-label"
+                        type="button"
+                        onClick={() => {
+                          setClientSort({ key: null, dir: 'asc' })
+                          setSort((v) => (v === 'occurred_desc' ? 'occurred_asc' : 'occurred_desc'))
+                        }}
+                      >
+                        WAKTU
+                      </button>
+                      <span className={`th-sort ${sort.startsWith('occurred_') ? 'is-active' : ''}`}>{sort === 'occurred_asc' ? '▲' : sort === 'occurred_desc' ? '▼' : ''}</span>
+                      <button
+                        className={`th-icon ${waktuDateFrom || waktuDateTo || fromHm || toHm || sort.startsWith('occurred_') ? 'is-active' : ''}`}
+                        type="button"
+                        aria-label="Filter Waktu"
+                        onClick={(e) => openHeaderMenu('waktu', e.currentTarget)}
+                      >
+                        ⌄{waktuDateFrom || waktuDateTo || fromHm || toHm ? <span className="th-dot" /> : null}
+                      </button>
+                      {headerMenu === 'waktu' &&
+                        createPortal(
+                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                            <div className="th-menu-title">Waktu</div>
+                            <div className="th-menu-section">
+                              <label className="th-option">
+                                <input type="radio" name="sort-waktu" checked={sort === 'occurred_desc'} onChange={() => setSort('occurred_desc')} />
+                                Urutkan terbaru
+                              </label>
+                              <label className="th-option">
+                                <input type="radio" name="sort-waktu" checked={sort === 'occurred_asc'} onChange={() => setSort('occurred_asc')} />
+                                Urutkan terlama
+                              </label>
+                            </div>
+                            <div className="th-menu-section">
+                              <label className="label-sm">Filter tanggal (rentang)</label>
+                              <div className="th-two">
+                                <input className="input input-sm" type="date" value={waktuDateFrom} onChange={(e) => setWaktuDateFrom(e.target.value)} />
+                                <input className="input input-sm" type="date" value={waktuDateTo} onChange={(e) => setWaktuDateTo(e.target.value)} />
+                              </div>
+                            </div>
+                            <div className="th-menu-section">
+                              <label className="label-sm">Filter jam</label>
+                              <div className="th-two">
+                                <input className="input input-sm" type="time" value={fromHm} onChange={(e) => setFromHm(e.target.value)} />
+                                <input className="input input-sm" type="time" value={toHm} onChange={(e) => setToHm(e.target.value)} />
+                              </div>
+                            </div>
+                            <div className="th-menu-actions">
+                              <button className="button button-sm button-primary" type="button" onClick={closeHeaderMenu}>
+                                Terapkan
+                              </button>
+                              <button
+                                className="button button-sm button-secondary"
+                                type="button"
+                                onClick={() => {
+                                  setWaktuDateFrom('')
+                                  setWaktuDateTo('')
+                                  setFromHm('')
+                                  setToHm('')
+                                }}
+                              >
+                                Reset
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={closeHeaderMenu}>
+                                Tutup
+                              </button>
+                            </div>
+                          </div>,
+                          document.body,
+                        )}
+                    </div>
+                  </th>
+                  <th className="th-col">
+                    <div className="th-head">
+                      <button
+                        className="th-label"
+                        type="button"
+                        onClick={() => setClientSort((prev) => (prev.key === 'jenis' ? { key: 'jenis', dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key: 'jenis', dir: 'asc' }))}
+                      >
+                        JENIS
+                      </button>
+                      <span className={`th-sort ${clientSort.key === 'jenis' ? 'is-active' : ''}`}>{clientSort.key === 'jenis' ? (clientSort.dir === 'asc' ? '▲' : '▼') : ''}</span>
+                      <button
+                        className={`th-icon ${filterJenis.trim() || clientSort.key === 'jenis' ? 'is-active' : ''}`}
+                        type="button"
+                        aria-label="Filter Jenis"
+                        onClick={(e) => openHeaderMenu('jenis', e.currentTarget)}
+                      >
+                        ⌄{filterJenis.trim() || clientSort.key === 'jenis' ? <span className="th-dot" /> : null}
+                      </button>
+                      {headerMenu === 'jenis' &&
+                        createPortal(
+                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                            <div className="th-menu-title">Jenis</div>
+                            <div className="th-menu-section">
+                              <label className="th-option">
+                                <input type="radio" name="sort-jenis" checked={clientSort.key !== 'jenis'} onChange={() => setClientSort({ key: null, dir: 'asc' })} />
+                                Default
+                              </label>
+                              <label className="th-option">
+                                <input type="radio" name="sort-jenis" checked={clientSort.key === 'jenis' && clientSort.dir === 'asc'} onChange={() => setClientSort({ key: 'jenis', dir: 'asc' })} />
+                                Urutkan A-Z
+                              </label>
+                              <label className="th-option">
+                                <input type="radio" name="sort-jenis" checked={clientSort.key === 'jenis' && clientSort.dir === 'desc'} onChange={() => setClientSort({ key: 'jenis', dir: 'desc' })} />
+                                Urutkan Z-A
+                              </label>
+                            </div>
+                            <div className="th-menu-section">
+                              <label className="label-sm">Cari jenis</label>
+                              <input className="input input-sm" value={filterJenis} onChange={(e) => setFilterJenis(e.target.value)} placeholder="Cari..." />
+                            </div>
+                            <div className="th-menu-actions">
+                              <button className="button button-sm button-primary" type="button" onClick={closeHeaderMenu}>
+                                Terapkan
+                              </button>
+                              <button
+                                className="button button-sm button-secondary"
+                                type="button"
+                                onClick={() => {
+                                  setFilterJenis('')
+                                  if (clientSort.key === 'jenis') setClientSort({ key: null, dir: 'asc' })
+                                }}
+                              >
+                                Reset
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={closeHeaderMenu}>
+                                Tutup
+                              </button>
+                            </div>
+                          </div>,
+                          document.body,
+                        )}
+                    </div>
+                  </th>
+                  <th className="th-col">
+                    <div className="th-head">
+                      <button
+                        className="th-label"
+                        type="button"
+                        onClick={() => setClientSort((prev) => (prev.key === 'tujuan' ? { key: 'tujuan', dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key: 'tujuan', dir: 'asc' }))}
+                      >
+                        TUJUAN
+                      </button>
+                      <span className={`th-sort ${clientSort.key === 'tujuan' ? 'is-active' : ''}`}>{clientSort.key === 'tujuan' ? (clientSort.dir === 'asc' ? '▲' : '▼') : ''}</span>
+                      <button
+                        className={`th-icon ${filterTujuan.length || clientSort.key === 'tujuan' ? 'is-active' : ''}`}
+                        type="button"
+                        aria-label="Filter Tujuan"
+                        onClick={(e) => openHeaderMenu('tujuan', e.currentTarget)}
+                      >
+                        ⌄{filterTujuan.length || clientSort.key === 'tujuan' ? <span className="th-dot" /> : null}
+                      </button>
+                      {headerMenu === 'tujuan' &&
+                        createPortal(
+                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                            <div className="th-menu-title">Tujuan</div>
+                            <div className="th-menu-section">
+                              <label className="label-sm">Cari tujuan</label>
+                              <input className="input input-sm" value={tujuanSearch} onChange={(e) => setTujuanSearch(e.target.value)} placeholder="Cari..." />
+                            </div>
+                            <div className="th-menu-list">
+                              <label className="th-option">
+                                <input type="checkbox" checked={filterTujuan.length === 0} onChange={() => setFilterTujuan([])} />
+                                Semua tujuan
+                              </label>
+                              {uniqueTujuan
+                                .filter((x) => !tujuanSearch.trim() || x.toLowerCase().includes(tujuanSearch.trim().toLowerCase()))
+                                .slice(0, 120)
+                                .map((t) => (
+                                  <label key={t} className="th-option">
+                                    <input type="checkbox" checked={filterTujuan.includes(t)} onChange={() => setFilterTujuan((p) => toggleInList(p, t))} />
+                                    {t}
+                                  </label>
+                                ))}
+                            </div>
+                            <div className="th-menu-actions">
+                              <button className="button button-sm button-primary" type="button" onClick={closeHeaderMenu}>
+                                Terapkan
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={() => setFilterTujuan([])}>
+                                Reset
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={closeHeaderMenu}>
+                                Tutup
+                              </button>
+                            </div>
+                          </div>,
+                          document.body,
+                        )}
+                    </div>
+                  </th>
                   <th>Detail</th>
                   <th>Catatan</th>
-                  <th>Status</th>
+                  <th className="th-col">
+                    <div className="th-head">
+                      <button
+                        className="th-label"
+                        type="button"
+                        onClick={() => setClientSort((prev) => (prev.key === 'status' ? { key: 'status', dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key: 'status', dir: 'asc' }))}
+                      >
+                        STATUS
+                      </button>
+                      <span className={`th-sort ${clientSort.key === 'status' ? 'is-active' : ''}`}>{clientSort.key === 'status' ? (clientSort.dir === 'asc' ? '▲' : '▼') : ''}</span>
+                      <button
+                        className={`th-icon ${filterStatus.length || clientSort.key === 'status' ? 'is-active' : ''}`}
+                        type="button"
+                        aria-label="Filter Status"
+                        onClick={(e) => openHeaderMenu('status', e.currentTarget)}
+                      >
+                        ⌄{filterStatus.length || clientSort.key === 'status' ? <span className="th-dot" /> : null}
+                      </button>
+                      {headerMenu === 'status' &&
+                        createPortal(
+                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                            <div className="th-menu-title">Status</div>
+                            <div className="th-menu-list">
+                              <label className="th-option">
+                                <input type="checkbox" checked={filterStatus.length === 0} onChange={() => setFilterStatus([])} />
+                                Semua status
+                              </label>
+                              {statusOptions.map((s) => (
+                                <label key={s.value} className="th-option">
+                                  <input
+                                    type="checkbox"
+                                    checked={filterStatus.includes(s.value)}
+                                    onChange={() => setFilterStatus((p) => (p.includes(s.value) ? p.filter((x) => x !== s.value) : p.concat(s.value)))}
+                                  />
+                                  <span className="th-badge">{s.badge}</span>
+                                  <span>{s.label}</span>
+                                </label>
+                              ))}
+                            </div>
+                            <div className="th-menu-actions">
+                              <button className="button button-sm button-primary" type="button" onClick={closeHeaderMenu}>
+                                Terapkan
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={() => setFilterStatus([])}>
+                                Reset
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={closeHeaderMenu}>
+                                Tutup
+                              </button>
+                            </div>
+                          </div>,
+                          document.body,
+                        )}
+                    </div>
+                  </th>
                   <th>Foto</th>
-                  <th>Petugas</th>
+                  <th className="th-col">
+                    <div className="th-head">
+                      <button
+                        className="th-label"
+                        type="button"
+                        onClick={() => setClientSort((prev) => (prev.key === 'petugas' ? { key: 'petugas', dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key: 'petugas', dir: 'asc' }))}
+                      >
+                        PETUGAS
+                      </button>
+                      <span className={`th-sort ${clientSort.key === 'petugas' ? 'is-active' : ''}`}>{clientSort.key === 'petugas' ? (clientSort.dir === 'asc' ? '▲' : '▼') : ''}</span>
+                      <button
+                        className={`th-icon ${filterPetugas.length || clientSort.key === 'petugas' ? 'is-active' : ''}`}
+                        type="button"
+                        aria-label="Filter Petugas"
+                        onClick={(e) => openHeaderMenu('petugas', e.currentTarget)}
+                      >
+                        ⌄{filterPetugas.length || clientSort.key === 'petugas' ? <span className="th-dot" /> : null}
+                      </button>
+                      {headerMenu === 'petugas' &&
+                        createPortal(
+                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                            <div className="th-menu-title">Petugas</div>
+                            <div className="th-menu-section">
+                              <label className="label-sm">Cari petugas</label>
+                              <input className="input input-sm" value={petugasSearch} onChange={(e) => setPetugasSearch(e.target.value)} placeholder="Cari..." />
+                            </div>
+                            <div className="th-menu-list">
+                              <label className="th-option">
+                                <input type="checkbox" checked={filterPetugas.length === 0} onChange={() => setFilterPetugas([])} />
+                                Semua petugas
+                              </label>
+                              {uniquePetugas
+                                .filter((x) => !petugasSearch.trim() || x.toLowerCase().includes(petugasSearch.trim().toLowerCase()))
+                                .slice(0, 120)
+                                .map((nm) => (
+                                  <label key={nm} className="th-option">
+                                    <input type="checkbox" checked={filterPetugas.includes(nm)} onChange={() => setFilterPetugas((p) => toggleInList(p, nm))} />
+                                    {nm}
+                                  </label>
+                                ))}
+                            </div>
+                            <div className="th-menu-actions">
+                              <button className="button button-sm button-primary" type="button" onClick={closeHeaderMenu}>
+                                Terapkan
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={() => setFilterPetugas([])}>
+                                Reset
+                              </button>
+                              <button className="button button-sm button-secondary" type="button" onClick={closeHeaderMenu}>
+                                Tutup
+                              </button>
+                            </div>
+                          </div>,
+                          document.body,
+                        )}
+                    </div>
+                  </th>
                   {canAdmin && <th>Aksi</th>}
                 </tr>
               </thead>

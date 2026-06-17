@@ -268,11 +268,11 @@ export default function KeysPage({ me }: { me: Me }) {
     return Array.from(s).sort((a, b) => a.localeCompare(b))
   }, [closed, guards, open, petugasName])
 
-  const statusOptions: Array<{ value: KeyTx['status']; label: string; badge: JSX.Element }> = useMemo(
+  const statusOptions = useMemo(
     () => [
-      { value: 'open', label: 'Dititipkan', badge: <span className="badge badge-warn">Dititipkan</span> },
-      { value: 'closed', label: 'Diambil', badge: <span className="badge badge-ok">Diambil</span> },
-      { value: 'void', label: 'Deleted', badge: <span className="badge badge-danger">Deleted</span> },
+      { value: 'open' as KeyTx['status'], label: 'Dititipkan', badge: <span className="badge badge-warn">Dititipkan</span> },
+      { value: 'closed' as KeyTx['status'], label: 'Diambil', badge: <span className="badge badge-ok">Diambil</span> },
+      { value: 'void' as KeyTx['status'], label: 'Deleted', badge: <span className="badge badge-danger">Deleted</span> },
     ],
     [],
   )
