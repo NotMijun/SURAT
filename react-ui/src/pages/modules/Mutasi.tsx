@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { AttachmentItem, Me, MutasiEntry } from '../../types'
@@ -125,6 +125,56 @@ export default function MutasiPage({ me }: { me: Me }) {
     return prev.includes(v) ? prev.filter((x) => x !== v) : prev.concat(v)
   }
 
+  const getHeaderMenuFocusables = (root: HTMLElement) => {
+    const list = Array.from(
+      root.querySelectorAll<HTMLElement>('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])'),
+    ).filter((el) => {
+      const disabled = (el as any).disabled || el.getAttribute('aria-disabled') === 'true'
+      if (disabled) return false
+      if ((el as HTMLInputElement).type === 'hidden') return false
+      if (el.getAttribute('tabindex') === '-1') return false
+      return true
+    })
+    return list
+  }
+
+  const onHeaderMenuKeyDown = (e: ReactKeyboardEvent) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') {
+      const root = headerMenuRef.current
+      if (!root) return
+      const focusables = getHeaderMenuFocusables(root)
+      if (focusables.length === 0) return
+      e.preventDefault()
+      const active = document.activeElement as HTMLElement | null
+      const idx = active ? focusables.indexOf(active) : -1
+      const nextIdx =
+        e.key === 'Home'
+          ? 0
+          : e.key === 'End'
+            ? focusables.length - 1
+            : e.key === 'ArrowUp'
+              ? (idx <= 0 ? focusables.length - 1 : idx - 1)
+              : (idx >= focusables.length - 1 ? 0 : idx + 1)
+      focusables[nextIdx]?.focus()
+    }
+  }
+
+  useEffect(() => {
+    if (!headerMenu) return
+    const t = window.requestAnimationFrame(() => {
+      const root = headerMenuRef.current
+      if (!root) return
+      const preferred = root.querySelector<HTMLElement>('[data-autofocus="true"]')
+      if (preferred) {
+        preferred.focus()
+        return
+      }
+      const focusables = getHeaderMenuFocusables(root)
+      focusables[0]?.focus()
+    })
+    return () => window.cancelAnimationFrame(t)
+  }, [headerMenu])
+
   const hmToMinutes = (v: string) => {
     const s = String(v || '').trim()
     if (!s) return null
@@ -141,6 +191,7 @@ export default function MutasiPage({ me }: { me: Me }) {
   }
 
   const [editRow, setEditRow] = useState<MutasiEntry | null>(null)
+  const [detailRow, setDetailRow] = useState<MutasiEntry | null>(null)
   const [editKategori, setEditKategori] = useState('')
   const [editSubKategori, setEditSubKategori] = useState('')
   const [editTime, setEditTime] = useState('')
@@ -526,6 +577,42 @@ export default function MutasiPage({ me }: { me: Me }) {
 
   const viewItems = useMemo(() => applyClientFilters(items), [applyClientFilters, items])
 
+  const tableWrapRef = useRef<HTMLDivElement | null>(null)
+  const [tableScrollTop, setTableScrollTop] = useState(0)
+  const [tableViewportH, setTableViewportH] = useState(0)
+  const [virtualRowH, setVirtualRowH] = useState(56)
+  const useVirtualRows = !loading && viewItems.length > 120
+
+  useEffect(() => {
+    if (!useVirtualRows) return
+    const el = tableWrapRef.current
+    if (!el) return
+    const onScroll = () => setTableScrollTop(el.scrollTop)
+    const onResize = () => setTableViewportH(el.clientHeight)
+    onResize()
+    el.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onResize)
+    return () => {
+      el.removeEventListener('scroll', onScroll as any)
+      window.removeEventListener('resize', onResize as any)
+    }
+  }, [useVirtualRows])
+
+  const virtualRange = useMemo(() => {
+    if (!useVirtualRows) return null
+    const totalRows = viewItems.length
+    const overscan = 10
+    const viewportCount = Math.max(1, Math.ceil((tableViewportH || 1) / Math.max(1, virtualRowH)))
+    const start = Math.max(0, Math.floor(tableScrollTop / Math.max(1, virtualRowH)) - overscan)
+    const end = Math.min(totalRows, start + viewportCount + overscan * 2)
+    return {
+      start,
+      end,
+      topPad: start * virtualRowH,
+      bottomPad: (totalRows - end) * virtualRowH,
+    }
+  }, [tableScrollTop, tableViewportH, useVirtualRows, viewItems.length, virtualRowH])
+
   const filterSummary = useMemo(() => {
     const parts: string[] = []
     if (filterJenis.trim()) parts.push(`Jenis: ${filterJenis.trim()}`)
@@ -804,7 +891,7 @@ export default function MutasiPage({ me }: { me: Me }) {
               </button>
             </div>
           )}
-          <div className="table-wrap" aria-busy={loading}>
+          <div className="table-wrap" ref={tableWrapRef} aria-busy={loading} style={useVirtualRows ? { maxHeight: 520 } : undefined}>
             <table className="table table-mobile-cards table-sticky">
               <thead>
                 <tr>
@@ -831,7 +918,7 @@ export default function MutasiPage({ me }: { me: Me }) {
                       </button>
                       {headerMenu === 'jam' &&
                         createPortal(
-                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                          <div className="th-menu" ref={headerMenuRef} onKeyDown={onHeaderMenuKeyDown} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Jam</div>
                             <div className="th-menu-section">
                               <label className="th-option">
@@ -846,7 +933,7 @@ export default function MutasiPage({ me }: { me: Me }) {
                             <div className="th-menu-section">
                               <label className="label-sm">Filter tanggal (rentang)</label>
                               <div className="th-two">
-                                <input className="input input-sm" type="date" value={jamDateFrom} onChange={(e) => setJamDateFrom(e.target.value)} />
+                                <input className="input input-sm" data-autofocus="true" type="date" value={jamDateFrom} onChange={(e) => setJamDateFrom(e.target.value)} />
                                 <input className="input input-sm" type="date" value={jamDateTo} onChange={(e) => setJamDateTo(e.target.value)} />
                               </div>
                             </div>
@@ -897,7 +984,7 @@ export default function MutasiPage({ me }: { me: Me }) {
                       </button>
                       {headerMenu === 'jenis' &&
                         createPortal(
-                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                          <div className="th-menu" ref={headerMenuRef} onKeyDown={onHeaderMenuKeyDown} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Jenis</div>
                             <div className="th-menu-section">
                               <label className="th-option">
@@ -915,7 +1002,7 @@ export default function MutasiPage({ me }: { me: Me }) {
                             </div>
                             <div className="th-menu-section">
                               <label className="label-sm">Cari jenis</label>
-                              <input className="input input-sm" value={filterJenis} onChange={(e) => setFilterJenis(e.target.value)} placeholder="Cari..." />
+                              <input className="input input-sm" data-autofocus="true" value={filterJenis} onChange={(e) => setFilterJenis(e.target.value)} placeholder="Cari..." />
                             </div>
                             <div className="th-menu-actions">
                               <button className="button button-sm button-primary" type="button" onClick={closeHeaderMenu}>
@@ -955,7 +1042,7 @@ export default function MutasiPage({ me }: { me: Me }) {
                       </button>
                       {headerMenu === 'deskripsi' &&
                         createPortal(
-                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                          <div className="th-menu" ref={headerMenuRef} onKeyDown={onHeaderMenuKeyDown} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Deskripsi</div>
                             <div className="th-menu-section">
                               <label className="th-option">
@@ -973,7 +1060,7 @@ export default function MutasiPage({ me }: { me: Me }) {
                             </div>
                             <div className="th-menu-section">
                               <label className="label-sm">Cari deskripsi</label>
-                              <input className="input input-sm" value={filterDesc} onChange={(e) => setFilterDesc(e.target.value)} placeholder="Cari..." />
+                              <input className="input input-sm" data-autofocus="true" value={filterDesc} onChange={(e) => setFilterDesc(e.target.value)} placeholder="Cari..." />
                             </div>
                             <div className="th-menu-actions">
                               <button className="button button-sm button-primary" type="button" onClick={closeHeaderMenu}>
@@ -1013,7 +1100,7 @@ export default function MutasiPage({ me }: { me: Me }) {
                       </button>
                       {headerMenu === 'status' &&
                         createPortal(
-                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                          <div className="th-menu" ref={headerMenuRef} onKeyDown={onHeaderMenuKeyDown} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Status</div>
                             <div className="th-menu-list">
                               <label className="th-option">
@@ -1064,11 +1151,11 @@ export default function MutasiPage({ me }: { me: Me }) {
                       </button>
                       {headerMenu === 'petugas' &&
                         createPortal(
-                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                          <div className="th-menu" ref={headerMenuRef} onKeyDown={onHeaderMenuKeyDown} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Petugas</div>
                             <div className="th-menu-section">
                               <label className="label-sm">Cari petugas</label>
-                              <input className="input input-sm" value={petugasSearch} onChange={(e) => setPetugasSearch(e.target.value)} placeholder="Cari..." />
+                              <input className="input input-sm" data-autofocus="true" value={petugasSearch} onChange={(e) => setPetugasSearch(e.target.value)} placeholder="Cari..." />
                             </div>
                             <div className="th-menu-list">
                               <label className="th-option">
@@ -1118,55 +1205,86 @@ export default function MutasiPage({ me }: { me: Me }) {
                         </tr>
                       )
                     })
-                  : viewItems.map((r) => (
-                      <tr key={r.id} className={r.status === 'void' ? 'table-row-void' : undefined}>
-                        <td data-label="Jam">{fmtWhen(r.occurred_at)}</td>
-                        <td data-label="Jenis">{r.kind}</td>
-                        <td data-label="Deskripsi">
-                          {r.description}
-                          {r.status === 'void' && r.void_reason ? <div className="muted">Deleted: {r.void_reason}</div> : null}
-                        </td>
-                        <td data-label="Status">{r.status === 'void' ? <span className="badge badge-danger">Deleted</span> : <span className="badge badge-ok">Aktif</span>}</td>
-                        <td data-label="Foto">
-                          {r.has_photo && r.photo_url ? (
-                            <button
-                              className="button button-sm button-secondary"
-                              type="button"
-                              onClick={() => openMutasiPhotos(r)}
-                              aria-label={`Lihat foto mutasi ${r.kind} ${fmtWhen(r.occurred_at)}`}
-                            >
-                              {typeof r.photo_count === 'number' && r.photo_count > 1 ? `Foto (${r.photo_count})` : 'Foto'}
-                            </button>
-                          ) : (
-                            <span className="muted">-</span>
-                          )}
-                        </td>
-                        <td data-label="Petugas">
-                          <div className="row" style={{ gap: '8px', alignItems: 'center' }}>
-                            <Avatar name={r.created_by_name || '-'} />
-                            {r.created_by_name || '-'}
-                          </div>
-                        </td>
-                        {canAdmin && (
-                          <td data-label="Aksi">
-                            <div className="card-actions">
-                              {r.status === 'void' ? (
-                                <span className="muted">—</span>
-                              ) : (
-                                <>
-                                  <button className="button button-sm button-secondary" type="button" onClick={() => doEdit(r)} aria-label={`Edit mutasi ${r.kind} ${fmtWhen(r.occurred_at)}`}>
-                                    ✎ Edit
-                                  </button>
-                                  <button className="button button-sm button-danger" type="button" onClick={() => doDelete(r)} aria-label={`Hapus mutasi ${r.kind} ${fmtWhen(r.occurred_at)}`}>
-                                    Delete
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
+                  : (
+                      <>
+                        {useVirtualRows && virtualRange && virtualRange.topPad > 0 && (
+                          <tr aria-hidden={true}>
+                            <td colSpan={canAdmin ? 7 : 6} style={{ padding: 0, height: virtualRange.topPad }} />
+                          </tr>
                         )}
-                      </tr>
-                    ))}
+                        {(useVirtualRows && virtualRange ? viewItems.slice(virtualRange.start, virtualRange.end) : viewItems).map((r, idx) => (
+                          <tr
+                            key={r.id}
+                            ref={
+                              useVirtualRows && idx === 0
+                                ? (el) => {
+                                    if (!el) return
+                                    const h = el.getBoundingClientRect().height
+                                    if (h > 0 && Math.abs(h - virtualRowH) > 1) setVirtualRowH(Math.round(h))
+                                  }
+                                : undefined
+                            }
+                            className={r.status === 'void' ? 'table-row-void' : undefined}
+                            onClick={(e) => {
+                              const target = e.target as HTMLElement | null
+                              if (target && target.closest('button,a,input,select,textarea,label')) return
+                              setDetailRow(r)
+                            }}
+                          >
+                            <td data-label="Jam">{fmtWhen(r.occurred_at)}</td>
+                            <td data-label="Jenis">{r.kind}</td>
+                            <td data-label="Deskripsi">
+                              {r.description}
+                              {r.status === 'void' && r.void_reason ? <div className="muted">Deleted: {r.void_reason}</div> : null}
+                            </td>
+                            <td data-label="Status">{r.status === 'void' ? <span className="badge badge-danger">Deleted</span> : <span className="badge badge-ok">Aktif</span>}</td>
+                            <td data-label="Foto">
+                              {r.has_photo && r.photo_url ? (
+                                <button
+                                  className="button button-sm button-secondary"
+                                  type="button"
+                                  onClick={() => openMutasiPhotos(r)}
+                                  aria-label={`Lihat foto mutasi ${r.kind} ${fmtWhen(r.occurred_at)}`}
+                                >
+                                  {typeof r.photo_count === 'number' && r.photo_count > 1 ? `Foto (${r.photo_count})` : 'Foto'}
+                                </button>
+                              ) : (
+                                <span className="muted">-</span>
+                              )}
+                            </td>
+                            <td data-label="Petugas">
+                              <div className="row" style={{ gap: '8px', alignItems: 'center' }}>
+                                <Avatar name={r.created_by_name || '-'} />
+                                {r.created_by_name || '-'}
+                              </div>
+                            </td>
+                            {canAdmin && (
+                              <td data-label="Aksi">
+                                <div className="card-actions">
+                                  {r.status === 'void' ? (
+                                    <span className="muted">—</span>
+                                  ) : (
+                                    <>
+                                      <button className="button button-sm button-secondary" type="button" onClick={() => doEdit(r)} aria-label={`Edit mutasi ${r.kind} ${fmtWhen(r.occurred_at)}`}>
+                                        ✎ Edit
+                                      </button>
+                                      <button className="button button-sm button-danger" type="button" onClick={() => doDelete(r)} aria-label={`Hapus mutasi ${r.kind} ${fmtWhen(r.occurred_at)}`}>
+                                        Delete
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                        {useVirtualRows && virtualRange && virtualRange.bottomPad > 0 && (
+                          <tr aria-hidden={true}>
+                            <td colSpan={canAdmin ? 7 : 6} style={{ padding: 0, height: virtualRange.bottomPad }} />
+                          </tr>
+                        )}
+                      </>
+                    )}
                 {!loading && viewItems.length === 0 && (
                   <tr>
                     <td className="muted" colSpan={canAdmin ? 7 : 6}>
@@ -1196,6 +1314,71 @@ export default function MutasiPage({ me }: { me: Me }) {
           }}
           onClose={closePhoto}
         />
+      )}
+
+      {detailRow && (
+        <Modal open={true} ariaLabel="Detail mutasi" onClose={() => setDetailRow(null)}>
+          <div className="modal-header">
+            <div className="modal-title">Detail Mutasi</div>
+            <button className="button button-secondary button-sm" type="button" onClick={() => setDetailRow(null)}>
+              Tutup
+            </button>
+          </div>
+          <div className="modal-body">
+            <div className="grid" style={{ gap: 10 }}>
+              <div className="card" style={{ padding: 12, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--soft-bg)' }}>
+                <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                  Audit trail
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Petugas</div>
+                  <div style={{ fontWeight: 800 }}>{detailRow.created_by_name || '-'}</div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Shift</div>
+                  <div style={{ fontWeight: 800 }}>{detailRow.shift || '-'}</div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Pos</div>
+                  <div style={{ fontWeight: 800 }}>{detailRow.post || '-'}</div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>ID</div>
+                  <div style={{ fontWeight: 800 }}>{detailRow.id}</div>
+                </div>
+              </div>
+
+              <div className="card" style={{ padding: 12, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--soft-bg)' }}>
+                <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                  Detail
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Waktu</div>
+                  <div style={{ fontWeight: 800 }}>{fmtDateTime(detailRow.occurred_at)}</div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Jenis</div>
+                  <div style={{ fontWeight: 800 }}>{detailRow.kind || '-'}</div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Status</div>
+                  <div style={{ fontWeight: 800 }}>{detailRow.status === 'void' ? 'Deleted' : 'Aktif'}</div>
+                </div>
+                {detailRow.status === 'void' && detailRow.void_reason ? (
+                  <div className="muted" style={{ marginTop: 6 }}>
+                    Deleted: {detailRow.void_reason}
+                  </div>
+                ) : null}
+                <div style={{ marginTop: 10 }}>
+                  <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+                    Deskripsi
+                  </div>
+                  <div>{detailRow.description || '-'}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {editRow && (

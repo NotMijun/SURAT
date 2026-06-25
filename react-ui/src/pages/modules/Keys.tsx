@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { AttachmentItem, KeyMasterItem, KeyTx, Me } from '../../types'
@@ -34,6 +34,7 @@ export default function KeysPage({ me }: { me: Me }) {
   const [openTotal, setOpenTotal] = useState(0)
   const [closedTotal, setClosedTotal] = useState(0)
   const [editRow, setEditRow] = useState<KeyTx | null>(null)
+  const [detailRow, setDetailRow] = useState<KeyTx | null>(null)
   const [editBorrower, setEditBorrower] = useState('')
   const [editUnit, setEditUnit] = useState('')
   const [editKeyName, setEditKeyName] = useState('')
@@ -241,6 +242,56 @@ export default function KeysPage({ me }: { me: Me }) {
     if (!v) return prev
     return prev.includes(v) ? prev.filter((x) => x !== v) : prev.concat(v)
   }
+
+  const getHeaderMenuFocusables = (root: HTMLElement) => {
+    const list = Array.from(
+      root.querySelectorAll<HTMLElement>('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])'),
+    ).filter((el) => {
+      const disabled = (el as any).disabled || el.getAttribute('aria-disabled') === 'true'
+      if (disabled) return false
+      if ((el as HTMLInputElement).type === 'hidden') return false
+      if (el.getAttribute('tabindex') === '-1') return false
+      return true
+    })
+    return list
+  }
+
+  const onHeaderMenuKeyDown = (e: ReactKeyboardEvent) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') {
+      const root = headerMenuRef.current
+      if (!root) return
+      const focusables = getHeaderMenuFocusables(root)
+      if (focusables.length === 0) return
+      e.preventDefault()
+      const active = document.activeElement as HTMLElement | null
+      const idx = active ? focusables.indexOf(active) : -1
+      const nextIdx =
+        e.key === 'Home'
+          ? 0
+          : e.key === 'End'
+            ? focusables.length - 1
+            : e.key === 'ArrowUp'
+              ? (idx <= 0 ? focusables.length - 1 : idx - 1)
+              : (idx >= focusables.length - 1 ? 0 : idx + 1)
+      focusables[nextIdx]?.focus()
+    }
+  }
+
+  useEffect(() => {
+    if (!headerMenu) return
+    const t = window.requestAnimationFrame(() => {
+      const root = headerMenuRef.current
+      if (!root) return
+      const preferred = root.querySelector<HTMLElement>('[data-autofocus="true"]')
+      if (preferred) {
+        preferred.focus()
+        return
+      }
+      const focusables = getHeaderMenuFocusables(root)
+      focusables[0]?.focus()
+    })
+    return () => window.cancelAnimationFrame(t)
+  }, [headerMenu])
 
   const menuKey = (table: 'open' | 'closed', col: 'nama' | 'ruangan' | 'titip' | 'petugas' | 'status') => `${table}:${col}` as Exclude<HeaderMenuKey, null>
 
@@ -861,7 +912,7 @@ export default function KeysPage({ me }: { me: Me }) {
                         </button>
                         {headerMenu === menuKey('open', 'nama') &&
                           createPortal(
-                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                          <div className="th-menu" ref={headerMenuRef} onKeyDown={onHeaderMenuKeyDown} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Nama</div>
                             <div className="th-menu-section">
                               <label className="th-option">
@@ -894,7 +945,7 @@ export default function KeysPage({ me }: { me: Me }) {
                             </div>
                             <div className="th-menu-section">
                               <label className="label-sm">Cari nama</label>
-                              <input className="input input-sm" value={filterNama} onChange={(e) => setFilterNama(e.target.value)} placeholder="Cari..." />
+                              <input className="input input-sm" data-autofocus="true" value={filterNama} onChange={(e) => setFilterNama(e.target.value)} placeholder="Cari..." />
                             </div>
                             <div className="th-menu-actions">
                               <button className="button button-sm button-primary" type="button" onClick={closeHeaderMenu}>
@@ -940,11 +991,11 @@ export default function KeysPage({ me }: { me: Me }) {
                         </button>
                         {headerMenu === menuKey('open', 'ruangan') &&
                           createPortal(
-                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                          <div className="th-menu" ref={headerMenuRef} onKeyDown={onHeaderMenuKeyDown} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Ruangan</div>
                             <div className="th-menu-section">
                               <label className="label-sm">Cari ruangan</label>
-                              <input className="input input-sm" value={ruanganSearch} onChange={(e) => setRuanganSearch(e.target.value)} placeholder="Cari..." />
+                              <input className="input input-sm" data-autofocus="true" value={ruanganSearch} onChange={(e) => setRuanganSearch(e.target.value)} placeholder="Cari..." />
                             </div>
                             <div className="th-menu-list">
                               <label className="th-option">
@@ -999,7 +1050,7 @@ export default function KeysPage({ me }: { me: Me }) {
                         </button>
                         {headerMenu === menuKey('open', 'titip') &&
                           createPortal(
-                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                          <div className="th-menu" ref={headerMenuRef} onKeyDown={onHeaderMenuKeyDown} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Titip</div>
                             <div className="th-menu-section">
                               <label className="th-option">
@@ -1014,7 +1065,7 @@ export default function KeysPage({ me }: { me: Me }) {
                             <div className="th-menu-section">
                               <label className="label-sm">Filter tanggal (rentang)</label>
                               <div className="th-two">
-                                <input className="input input-sm" type="date" value={titipDateFrom} onChange={(e) => setTitipDateFrom(e.target.value)} />
+                                <input className="input input-sm" data-autofocus="true" type="date" value={titipDateFrom} onChange={(e) => setTitipDateFrom(e.target.value)} />
                                 <input className="input input-sm" type="date" value={titipDateTo} onChange={(e) => setTitipDateTo(e.target.value)} />
                               </div>
                             </div>
@@ -1084,11 +1135,11 @@ export default function KeysPage({ me }: { me: Me }) {
                         </button>
                         {headerMenu === menuKey('open', 'petugas') &&
                           createPortal(
-                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                          <div className="th-menu" ref={headerMenuRef} onKeyDown={onHeaderMenuKeyDown} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Petugas</div>
                             <div className="th-menu-section">
                               <label className="label-sm">Cari petugas</label>
-                              <input className="input input-sm" value={petugasSearch} onChange={(e) => setPetugasSearch(e.target.value)} placeholder="Cari..." />
+                              <input className="input input-sm" data-autofocus="true" value={petugasSearch} onChange={(e) => setPetugasSearch(e.target.value)} placeholder="Cari..." />
                             </div>
                             <div className="th-menu-list">
                               <label className="th-option">
@@ -1142,7 +1193,7 @@ export default function KeysPage({ me }: { me: Me }) {
                         </button>
                         {headerMenu === menuKey('open', 'status') &&
                           createPortal(
-                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                          <div className="th-menu" ref={headerMenuRef} onKeyDown={onHeaderMenuKeyDown} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Status</div>
                             <div className="th-menu-list">
                               <label className="th-option">
@@ -1188,7 +1239,15 @@ export default function KeysPage({ me }: { me: Me }) {
                         </tr>
                       ))
                     : openView.map((r) => (
-                        <tr key={r.id} className="table-row-active">
+                        <tr
+                          key={r.id}
+                          className="table-row-active"
+                          onClick={(e) => {
+                            const target = e.target as HTMLElement | null
+                            if (target && target.closest('button,a,input,select,textarea,label')) return
+                            setDetailRow(r)
+                          }}
+                        >
                           <td data-label="Nama">{r.borrower_name}</td>
                           <td data-label="Ruangan">{r.key_name}</td>
                           <td data-label="Titip">{fmtDateTime(r.checkout_at)}</td>
@@ -1381,7 +1440,7 @@ export default function KeysPage({ me }: { me: Me }) {
                         </button>
                         {headerMenu === menuKey('closed', 'nama') &&
                           createPortal(
-                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                          <div className="th-menu" ref={headerMenuRef} onKeyDown={onHeaderMenuKeyDown} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Nama</div>
                             <div className="th-menu-section">
                               <label className="th-option">
@@ -1399,7 +1458,7 @@ export default function KeysPage({ me }: { me: Me }) {
                             </div>
                             <div className="th-menu-section">
                               <label className="label-sm">Cari nama</label>
-                              <input className="input input-sm" value={filterNama} onChange={(e) => setFilterNama(e.target.value)} placeholder="Cari..." />
+                              <input className="input input-sm" data-autofocus="true" value={filterNama} onChange={(e) => setFilterNama(e.target.value)} placeholder="Cari..." />
                             </div>
                             <div className="th-menu-actions">
                               <button className="button button-sm button-primary" type="button" onClick={closeHeaderMenu}>
@@ -1445,11 +1504,11 @@ export default function KeysPage({ me }: { me: Me }) {
                         </button>
                         {headerMenu === menuKey('closed', 'ruangan') &&
                           createPortal(
-                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                          <div className="th-menu" ref={headerMenuRef} onKeyDown={onHeaderMenuKeyDown} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Ruangan</div>
                             <div className="th-menu-section">
                               <label className="label-sm">Cari ruangan</label>
-                              <input className="input input-sm" value={ruanganSearch} onChange={(e) => setRuanganSearch(e.target.value)} placeholder="Cari..." />
+                              <input className="input input-sm" data-autofocus="true" value={ruanganSearch} onChange={(e) => setRuanganSearch(e.target.value)} placeholder="Cari..." />
                             </div>
                             <div className="th-menu-list">
                               <label className="th-option">
@@ -1504,7 +1563,7 @@ export default function KeysPage({ me }: { me: Me }) {
                         </button>
                         {headerMenu === menuKey('closed', 'titip') &&
                           createPortal(
-                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                          <div className="th-menu" ref={headerMenuRef} onKeyDown={onHeaderMenuKeyDown} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Titip</div>
                             <div className="th-menu-section">
                               <label className="th-option">
@@ -1519,7 +1578,7 @@ export default function KeysPage({ me }: { me: Me }) {
                             <div className="th-menu-section">
                               <label className="label-sm">Filter tanggal (rentang)</label>
                               <div className="th-two">
-                                <input className="input input-sm" type="date" value={titipDateFrom} onChange={(e) => setTitipDateFrom(e.target.value)} />
+                                <input className="input input-sm" data-autofocus="true" type="date" value={titipDateFrom} onChange={(e) => setTitipDateFrom(e.target.value)} />
                                 <input className="input input-sm" type="date" value={titipDateTo} onChange={(e) => setTitipDateTo(e.target.value)} />
                               </div>
                             </div>
@@ -1604,11 +1663,11 @@ export default function KeysPage({ me }: { me: Me }) {
                         </button>
                         {headerMenu === menuKey('closed', 'petugas') &&
                           createPortal(
-                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                          <div className="th-menu" ref={headerMenuRef} onKeyDown={onHeaderMenuKeyDown} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Petugas</div>
                             <div className="th-menu-section">
                               <label className="label-sm">Cari petugas</label>
-                              <input className="input input-sm" value={petugasSearch} onChange={(e) => setPetugasSearch(e.target.value)} placeholder="Cari..." />
+                              <input className="input input-sm" data-autofocus="true" value={petugasSearch} onChange={(e) => setPetugasSearch(e.target.value)} placeholder="Cari..." />
                             </div>
                             <div className="th-menu-list">
                               <label className="th-option">
@@ -1662,7 +1721,7 @@ export default function KeysPage({ me }: { me: Me }) {
                         </button>
                         {headerMenu === menuKey('closed', 'status') &&
                           createPortal(
-                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                          <div className="th-menu" ref={headerMenuRef} onKeyDown={onHeaderMenuKeyDown} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Status</div>
                             <div className="th-menu-list">
                               <label className="th-option">
@@ -1708,7 +1767,15 @@ export default function KeysPage({ me }: { me: Me }) {
                         </tr>
                       ))
                     : closedView.map((r) => (
-                        <tr key={r.id} className={r.status === 'void' ? 'table-row-void' : undefined}>
+                        <tr
+                          key={r.id}
+                          className={r.status === 'void' ? 'table-row-void' : undefined}
+                          onClick={(e) => {
+                            const target = e.target as HTMLElement | null
+                            if (target && target.closest('button,a,input,select,textarea,label')) return
+                            setDetailRow(r)
+                          }}
+                        >
                           <td data-label="Nama">{r.borrower_name}</td>
                           <td data-label="Ruangan">{r.key_name}</td>
                           <td data-label="Titip">{fmtDateTime(r.checkout_at)}</td>
@@ -1792,6 +1859,83 @@ export default function KeysPage({ me }: { me: Me }) {
           }}
           onClose={closePhoto}
         />
+      )}
+
+      {detailRow && (
+        <Modal open={true} ariaLabel="Detail transaksi kunci" onClose={() => setDetailRow(null)}>
+          <div className="modal-header">
+            <div className="modal-title">Detail Transaksi Kunci</div>
+            <button className="button button-secondary button-sm" type="button" onClick={() => setDetailRow(null)}>
+              Tutup
+            </button>
+          </div>
+          <div className="modal-body">
+            <div className="grid" style={{ gap: 10 }}>
+              <div className="card" style={{ padding: 12, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--soft-bg)' }}>
+                <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                  Audit trail
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Petugas</div>
+                  <div style={{ fontWeight: 800 }}>{petugasName(detailRow) || '-'}</div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>ID</div>
+                  <div style={{ fontWeight: 800 }}>{detailRow.id}</div>
+                </div>
+                {detailRow.created_at ? (
+                  <div className="row" style={{ justifyContent: 'space-between' }}>
+                    <div>Dibuat</div>
+                    <div style={{ fontWeight: 800 }}>{fmtDateTime(detailRow.created_at)}</div>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="card" style={{ padding: 12, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--soft-bg)' }}>
+                <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                  Detail
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Nama</div>
+                  <div style={{ fontWeight: 800 }}>{detailRow.borrower_name || '-'}</div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Ruangan</div>
+                  <div style={{ fontWeight: 800 }}>{detailRow.key_name || '-'}</div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Unit</div>
+                  <div style={{ fontWeight: 800 }}>{detailRow.unit || '-'}</div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Titip</div>
+                  <div style={{ fontWeight: 800 }}>{fmtDateTime(detailRow.checkout_at)}</div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Ambil</div>
+                  <div style={{ fontWeight: 800 }}>{detailRow.checkin_at ? fmtDateTime(detailRow.checkin_at) : '-'}</div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Status</div>
+                  <div style={{ fontWeight: 800 }}>{detailRow.status}</div>
+                </div>
+                {detailRow.notes ? (
+                  <div style={{ marginTop: 10 }}>
+                    <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+                      Catatan
+                    </div>
+                    <div>{detailRow.notes}</div>
+                  </div>
+                ) : null}
+                {detailRow.status === 'void' && detailRow.void_reason ? (
+                  <div className="muted" style={{ marginTop: 6 }}>
+                    Deleted: {detailRow.void_reason}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {editRow && (

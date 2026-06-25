@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { AttachmentItem, GuestEntry, Me } from '../../types'
@@ -30,6 +30,7 @@ export default function GuestsPage({ me }: { me: Me }) {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [editRow, setEditRow] = useState<GuestEntry | null>(null)
+  const [detailRow, setDetailRow] = useState<GuestEntry | null>(null)
   const [editName, setEditName] = useState('')
   const [editInstansi, setEditInstansi] = useState('')
   const [editPurpose, setEditPurpose] = useState('')
@@ -146,6 +147,56 @@ export default function GuestsPage({ me }: { me: Me }) {
     if (!v) return prev
     return prev.includes(v) ? prev.filter((x) => x !== v) : prev.concat(v)
   }
+
+  const getHeaderMenuFocusables = (root: HTMLElement) => {
+    const list = Array.from(
+      root.querySelectorAll<HTMLElement>('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])'),
+    ).filter((el) => {
+      const disabled = (el as any).disabled || el.getAttribute('aria-disabled') === 'true'
+      if (disabled) return false
+      if ((el as HTMLInputElement).type === 'hidden') return false
+      if (el.getAttribute('tabindex') === '-1') return false
+      return true
+    })
+    return list
+  }
+
+  const onHeaderMenuKeyDown = (e: ReactKeyboardEvent) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') {
+      const root = headerMenuRef.current
+      if (!root) return
+      const focusables = getHeaderMenuFocusables(root)
+      if (focusables.length === 0) return
+      e.preventDefault()
+      const active = document.activeElement as HTMLElement | null
+      const idx = active ? focusables.indexOf(active) : -1
+      const nextIdx =
+        e.key === 'Home'
+          ? 0
+          : e.key === 'End'
+            ? focusables.length - 1
+            : e.key === 'ArrowUp'
+              ? (idx <= 0 ? focusables.length - 1 : idx - 1)
+              : (idx >= focusables.length - 1 ? 0 : idx + 1)
+      focusables[nextIdx]?.focus()
+    }
+  }
+
+  useEffect(() => {
+    if (!headerMenu) return
+    const t = window.requestAnimationFrame(() => {
+      const root = headerMenuRef.current
+      if (!root) return
+      const preferred = root.querySelector<HTMLElement>('[data-autofocus="true"]')
+      if (preferred) {
+        preferred.focus()
+        return
+      }
+      const focusables = getHeaderMenuFocusables(root)
+      focusables[0]?.focus()
+    })
+    return () => window.cancelAnimationFrame(t)
+  }, [headerMenu])
 
   const hmToMinutes = (v: string) => {
     const s = String(v || '').trim()
@@ -1009,7 +1060,7 @@ export default function GuestsPage({ me }: { me: Me }) {
                       </button>
                       {headerMenu === 'nama' &&
                         createPortal(
-                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                          <div className="th-menu" ref={headerMenuRef} onKeyDown={onHeaderMenuKeyDown} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Nama</div>
                             <div className="th-menu-section">
                               <label className="th-option">
@@ -1027,7 +1078,7 @@ export default function GuestsPage({ me }: { me: Me }) {
                             </div>
                             <div className="th-menu-section">
                               <label className="label-sm">Cari nama</label>
-                              <input className="input input-sm" value={filterNama} onChange={(e) => setFilterNama(e.target.value)} placeholder="Cari..." />
+                              <input className="input input-sm" data-autofocus="true" value={filterNama} onChange={(e) => setFilterNama(e.target.value)} placeholder="Cari..." />
                             </div>
                             <div className="th-menu-actions">
                               <button className="button button-sm button-primary" type="button" onClick={closeHeaderMenu}>
@@ -1068,11 +1119,11 @@ export default function GuestsPage({ me }: { me: Me }) {
                       </button>
                       {headerMenu === 'tujuan' &&
                         createPortal(
-                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                          <div className="th-menu" ref={headerMenuRef} onKeyDown={onHeaderMenuKeyDown} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Tujuan</div>
                             <div className="th-menu-section">
                               <label className="label-sm">Cari tujuan</label>
-                              <input className="input input-sm" value={tujuanSearch} onChange={(e) => setTujuanSearch(e.target.value)} placeholder="Cari..." />
+                              <input className="input input-sm" data-autofocus="true" value={tujuanSearch} onChange={(e) => setTujuanSearch(e.target.value)} placeholder="Cari..." />
                             </div>
                             <div className="th-menu-list">
                               <label className="th-option">
@@ -1130,7 +1181,7 @@ export default function GuestsPage({ me }: { me: Me }) {
                       </button>
                       {headerMenu === 'masuk' &&
                         createPortal(
-                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                          <div className="th-menu" ref={headerMenuRef} onKeyDown={onHeaderMenuKeyDown} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Masuk</div>
                             <div className="th-menu-section">
                               <label className="th-option">
@@ -1145,7 +1196,7 @@ export default function GuestsPage({ me }: { me: Me }) {
                             <div className="th-menu-section">
                               <label className="label-sm">Filter tanggal (rentang)</label>
                               <div className="th-two">
-                                <input className="input input-sm" type="date" value={masukDateFrom} onChange={(e) => setMasukDateFrom(e.target.value)} />
+                                <input className="input input-sm" data-autofocus="true" type="date" value={masukDateFrom} onChange={(e) => setMasukDateFrom(e.target.value)} />
                                 <input className="input input-sm" type="date" value={masukDateTo} onChange={(e) => setMasukDateTo(e.target.value)} />
                               </div>
                             </div>
@@ -1198,7 +1249,7 @@ export default function GuestsPage({ me }: { me: Me }) {
                       </button>
                       {headerMenu === 'status' &&
                         createPortal(
-                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                          <div className="th-menu" ref={headerMenuRef} onKeyDown={onHeaderMenuKeyDown} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Status</div>
                             <div className="th-menu-list">
                               <label className="th-option">
@@ -1244,11 +1295,11 @@ export default function GuestsPage({ me }: { me: Me }) {
                       </button>
                       {headerMenu === 'petugas' &&
                         createPortal(
-                          <div className="th-menu" ref={headerMenuRef} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
+                          <div className="th-menu" ref={headerMenuRef} onKeyDown={onHeaderMenuKeyDown} style={headerMenuPos ? { position: 'fixed', top: headerMenuPos.top, left: headerMenuPos.left, right: 'auto' } : undefined}>
                             <div className="th-menu-title">Petugas</div>
                             <div className="th-menu-section">
                               <label className="label-sm">Cari petugas</label>
-                              <input className="input input-sm" value={petugasSearch} onChange={(e) => setPetugasSearch(e.target.value)} placeholder="Cari..." />
+                              <input className="input input-sm" data-autofocus="true" value={petugasSearch} onChange={(e) => setPetugasSearch(e.target.value)} placeholder="Cari..." />
                             </div>
                             <div className="th-menu-list">
                               <label className="th-option">
@@ -1300,7 +1351,15 @@ export default function GuestsPage({ me }: { me: Me }) {
                       )
                     })
                   : viewItems.map((r, idx) => (
-                      <tr key={r.id} className={r.status === 'in' ? 'table-row-active' : r.status === 'void' ? 'table-row-void' : undefined}>
+                      <tr
+                        key={r.id}
+                        className={r.status === 'in' ? 'table-row-active' : r.status === 'void' ? 'table-row-void' : undefined}
+                        onClick={(e) => {
+                          const target = e.target as HTMLElement | null
+                          if (target && target.closest('button,a,input,select,textarea,label')) return
+                          setDetailRow(r)
+                        }}
+                      >
                         {view === 'riwayat' && postFilter === 'IGD' && <td data-label="No">{idx + 1}</td>}
                         <td data-label="Nama">{r.name}</td>
                         {view === 'riwayat' && postFilter === 'IGD' && <td data-label="Asal/Instansi">{r.instansi}</td>}
@@ -1399,6 +1458,87 @@ export default function GuestsPage({ me }: { me: Me }) {
           }}
           onClose={closePhoto}
         />
+      )}
+
+      {detailRow && (
+        <Modal open={true} ariaLabel="Detail tamu" onClose={() => setDetailRow(null)}>
+          <div className="modal-header">
+            <div className="modal-title">Detail Tamu</div>
+            <button className="button button-secondary button-sm" type="button" onClick={() => setDetailRow(null)}>
+              Tutup
+            </button>
+          </div>
+          <div className="modal-body">
+            <div className="grid" style={{ gap: 10 }}>
+              <div className="card" style={{ padding: 12, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--soft-bg)' }}>
+                <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                  Audit trail
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Petugas</div>
+                  <div style={{ fontWeight: 800 }}>{detailRow.created_by_name || '-'}</div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Shift</div>
+                  <div style={{ fontWeight: 800 }}>{detailRow.shift || '-'}</div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Pos</div>
+                  <div style={{ fontWeight: 800 }}>{detailRow.post || '-'}</div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>ID</div>
+                  <div style={{ fontWeight: 800 }}>{detailRow.id}</div>
+                </div>
+                {detailRow.created_at ? (
+                  <div className="row" style={{ justifyContent: 'space-between' }}>
+                    <div>Dibuat</div>
+                    <div style={{ fontWeight: 800 }}>{fmtDateTime(detailRow.created_at)}</div>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="card" style={{ padding: 12, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--soft-bg)' }}>
+                <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                  Detail
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Nama</div>
+                  <div style={{ fontWeight: 800 }}>{detailRow.name || '-'}</div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Tujuan</div>
+                  <div style={{ fontWeight: 800 }}>{tujuanText(detailRow) || '-'}</div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Masuk</div>
+                  <div style={{ fontWeight: 800 }}>{fmtDateTime(detailRow.checkin_at)}</div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Keluar</div>
+                  <div style={{ fontWeight: 800 }}>{detailRow.checkout_at ? fmtDateTime(detailRow.checkout_at) : '-'}</div>
+                </div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div>Status</div>
+                  <div style={{ fontWeight: 800 }}>{detailRow.status}</div>
+                </div>
+                {detailRow.status === 'void' && detailRow.void_reason ? (
+                  <div className="muted" style={{ marginTop: 6 }}>
+                    Deleted: {detailRow.void_reason}
+                  </div>
+                ) : null}
+                {detailRow.notes ? (
+                  <div style={{ marginTop: 10 }}>
+                    <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+                      Catatan
+                    </div>
+                    <div>{detailRow.notes}</div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {editRow && (
