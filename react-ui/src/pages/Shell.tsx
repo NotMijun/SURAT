@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import { apiGet, apiPost } from '../lib/api'
 import { clearToken, compactKey, themeKey, tokenKey } from '../lib/storage'
@@ -6,12 +6,13 @@ import type { Me } from '../types'
 import { useConfirm, useToast } from '../components/ToastHost'
 import Modal from '../components/Modal'
 import LoadingScreen from '../components/LoadingScreen'
-import DashboardPage from './modules/Dashboard'
-import KeysPage from './modules/Keys'
-import GuestsPage from './modules/Guests'
-import TasksPage from './modules/Tasks'
-import MutasiPage from './modules/Mutasi'
-import AdminPage from './modules/Admin'
+
+const DashboardPage = lazy(() => import('./modules/Dashboard'))
+const KeysPage = lazy(() => import('./modules/Keys'))
+const GuestsPage = lazy(() => import('./modules/Guests'))
+const TasksPage = lazy(() => import('./modules/Tasks'))
+const MutasiPage = lazy(() => import('./modules/Mutasi'))
+const AdminPage = lazy(() => import('./modules/Admin'))
 
 const tabClass = ({ isActive }: { isActive: boolean }) => `tab${isActive ? ' tab-active' : ''}`
 
@@ -310,12 +311,58 @@ export default function Shell() {
         )}
         {!loading && (
           <Routes>
-            <Route path="/" element={<DashboardPage me={me!} />} />
-            <Route path="/kunci" element={<KeysPage me={me!} />} />
-            <Route path="/tamu" element={<GuestsPage me={me!} />} />
-            <Route path="/tugas" element={<TasksPage me={me!} />} />
-            <Route path="/mutasi" element={<MutasiPage me={me!} />} />
-            <Route path="/admin" element={me?.user.role === 'admin' ? <AdminPage me={me!} /> : <Navigate to="/" replace />} />
+            <Route
+              path="/"
+              element={
+                <Suspense fallback={<LoadingScreen mode="inline" label="Memuat Dashboard..." minHeight={260} />}>
+                  <DashboardPage me={me!} />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/kunci"
+              element={
+                <Suspense fallback={<LoadingScreen mode="inline" label="Memuat modul Kunci..." minHeight={260} />}>
+                  <KeysPage me={me!} />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/tamu"
+              element={
+                <Suspense fallback={<LoadingScreen mode="inline" label="Memuat modul Tamu..." minHeight={260} />}>
+                  <GuestsPage me={me!} />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/tugas"
+              element={
+                <Suspense fallback={<LoadingScreen mode="inline" label="Memuat modul Tugas..." minHeight={260} />}>
+                  <TasksPage me={me!} />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/mutasi"
+              element={
+                <Suspense fallback={<LoadingScreen mode="inline" label="Memuat modul Mutasi..." minHeight={260} />}>
+                  <MutasiPage me={me!} />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                me?.user.role === 'admin' ? (
+                  <Suspense fallback={<LoadingScreen mode="inline" label="Memuat modul Admin..." minHeight={260} />}>
+                    <AdminPage me={me!} />
+                  </Suspense>
+                ) : (
+                  <Navigate to="/" replace />
+                )
+              }
+            />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         )}
