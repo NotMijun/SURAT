@@ -1,5 +1,6 @@
 import { FormEvent, type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useLocation } from 'react-router-dom'
 import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { AttachmentItem, GuestEntry, Me } from '../../types'
 import { compressImageFile } from '../../lib/image'
@@ -13,6 +14,7 @@ import Avatar from '../../components/Avatar'
 export default function GuestsPage({ me }: { me: Me }) {
   const toast = useToast()
   const confirm = useConfirm()
+  const location = useLocation()
   const today = useMemo(() => toYmd(new Date()), [])
   const draftKey = useMemo(() => `draft:guests:${me.user.id}`, [me.user.id])
   type GuestView = 'inhouse' | 'riwayat'
@@ -54,8 +56,17 @@ export default function GuestsPage({ me }: { me: Me }) {
   const [attachments, setAttachments] = useState<AttachmentItem[]>([])
   const [activeAttachment, setActiveAttachment] = useState<AttachmentItem | null>(null)
   const [photoView, setPhotoView] = useState<string | null>(null)
+  const [filtersSheetOpen, setFiltersSheetOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string>('')
+
+  const didInitFromUrlRef = useRef(false)
+  useEffect(() => {
+    if (didInitFromUrlRef.current) return
+    didInitFromUrlRef.current = true
+    const qp = new URLSearchParams(location.search).get('q')
+    if (qp && qp.trim()) setQ(qp)
+  }, [location.search])
 
   type HeaderMenuKey = null | 'nama' | 'tujuan' | 'masuk' | 'petugas' | 'status'
   const [headerMenu, setHeaderMenu] = useState<HeaderMenuKey>(null)
@@ -926,9 +937,12 @@ export default function GuestsPage({ me }: { me: Me }) {
             >
               Riwayat
             </button>
+            <button className="button button-secondary button-sm section-filter-toggle" type="button" onClick={() => setFiltersSheetOpen(true)}>
+              Filter
+            </button>
           </div>
         </header>
-        <div className="card-body">
+        <div className="card-body filters-responsive">
           <div className="table-footer-filters">
             <div className="filter-group">
               <label className="label-sm">Cari</label>
@@ -1459,6 +1473,184 @@ export default function GuestsPage({ me }: { me: Me }) {
           onClose={closePhoto}
         />
       )}
+
+      <Modal open={filtersSheetOpen} ariaLabel="Filter tamu" onClose={() => setFiltersSheetOpen(false)} variant="sheet">
+        <div className="modal-header">
+          <div className="modal-title">Filter</div>
+          <button className="button button-secondary button-sm" type="button" onClick={() => setFiltersSheetOpen(false)}>
+            Tutup
+          </button>
+        </div>
+        <div className="modal-body">
+          <div className="form grid grid-2" style={{ gap: 10 }}>
+            <div className="field grid-span-2">
+              <label className="label">Cari</label>
+              <input
+                className="input"
+                data-autofocus="true"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder={postFilter === 'IGD' ? 'Cari tamu / instansi...' : 'Cari tamu...'}
+              />
+            </div>
+
+            {view === 'riwayat' && (
+              <div className="field">
+                <label className="label">Tanggal</label>
+                <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              </div>
+            )}
+            {view === 'riwayat' && (
+              <div className="field">
+                <label className="label">Urutan</label>
+                <select className="select" value={sort} onChange={(e) => setSort(e.target.value as any)}>
+                  <option value="checkin_desc">Masuk terbaru</option>
+                  <option value="checkin_asc">Masuk terlama</option>
+                </select>
+              </div>
+            )}
+
+            <div className="field">
+              <label className="label">Limit</label>
+              <select className="select" value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))}>
+                <option value={50}>50</option>
+                <option value={200}>200</option>
+                <option value={500}>500</option>
+              </select>
+            </div>
+
+            <div className="field">
+              <label className="label">Sort (kolom)</label>
+              <select
+                className="select"
+                value={clientSort.key ? `${clientSort.key}_${clientSort.dir}` : 'default'}
+                onChange={(e) => {
+                  const v = String(e.target.value || '')
+                  if (v === 'default') {
+                    setClientSort({ key: null, dir: 'asc' })
+                    return
+                  }
+                  const m = /^(nama|tujuan|petugas|status)_(asc|desc)$/.exec(v)
+                  if (!m) return
+                  setClientSort({ key: m[1] as any, dir: m[2] as any })
+                }}
+              >
+                <option value="default">Default</option>
+                <option value="nama_asc">Nama A-Z</option>
+                <option value="nama_desc">Nama Z-A</option>
+                <option value="tujuan_asc">Tujuan A-Z</option>
+                <option value="tujuan_desc">Tujuan Z-A</option>
+                <option value="petugas_asc">Petugas A-Z</option>
+                <option value="petugas_desc">Petugas Z-A</option>
+                <option value="status_asc">Status A-Z</option>
+                <option value="status_desc">Status Z-A</option>
+              </select>
+            </div>
+
+            <div className="field grid-span-2">
+              <label className="label">Filter Nama (kolom)</label>
+              <input className="input" value={filterNama} onChange={(e) => setFilterNama(e.target.value)} placeholder="Cari..." />
+            </div>
+
+            <div className="field">
+              <label className="label">Tujuan (kolom)</label>
+              <input className="input input-sm" value={tujuanSearch} onChange={(e) => setTujuanSearch(e.target.value)} placeholder="Cari tujuan..." />
+              <div className="th-menu-list" style={{ maxHeight: 240 }}>
+                <label className="th-option">
+                  <input type="checkbox" checked={filterTujuan.length === 0} onChange={() => setFilterTujuan([])} />
+                  Semua tujuan
+                </label>
+                {uniqueTujuan
+                  .filter((x) => !tujuanSearch.trim() || x.toLowerCase().includes(tujuanSearch.trim().toLowerCase()))
+                  .slice(0, 120)
+                  .map((t) => (
+                    <label key={t} className="th-option">
+                      <input type="checkbox" checked={filterTujuan.includes(t)} onChange={() => setFilterTujuan((p) => toggleInList(p, t))} />
+                      {t}
+                    </label>
+                  ))}
+              </div>
+            </div>
+
+            <div className="field">
+              <label className="label">Petugas (kolom)</label>
+              <input className="input input-sm" value={petugasSearch} onChange={(e) => setPetugasSearch(e.target.value)} placeholder="Cari petugas..." />
+              <div className="th-menu-list" style={{ maxHeight: 240 }}>
+                <label className="th-option">
+                  <input type="checkbox" checked={filterPetugas.length === 0} onChange={() => setFilterPetugas([])} />
+                  Semua petugas
+                </label>
+                {uniquePetugas
+                  .filter((x) => !petugasSearch.trim() || x.toLowerCase().includes(petugasSearch.trim().toLowerCase()))
+                  .slice(0, 120)
+                  .map((nm) => (
+                    <label key={nm} className="th-option">
+                      <input type="checkbox" checked={filterPetugas.includes(nm)} onChange={() => setFilterPetugas((p) => toggleInList(p, nm))} />
+                      {nm}
+                    </label>
+                  ))}
+              </div>
+            </div>
+
+            <div className="field">
+              <label className="label">Status (kolom)</label>
+              <div className="th-menu-list" style={{ maxHeight: 240 }}>
+                <label className="th-option">
+                  <input type="checkbox" checked={filterStatus.length === 0} onChange={() => setFilterStatus([])} />
+                  Semua status
+                </label>
+                <label className="th-option">
+                  <input type="checkbox" checked={filterStatus.includes('in')} onChange={() => setFilterStatus((p) => (p.includes('in') ? p.filter((x) => x !== 'in') : p.concat('in')))} />
+                  Inhouse
+                </label>
+                <label className="th-option">
+                  <input type="checkbox" checked={filterStatus.includes('out')} onChange={() => setFilterStatus((p) => (p.includes('out') ? p.filter((x) => x !== 'out') : p.concat('out')))} />
+                  Checkout
+                </label>
+                <label className="th-option">
+                  <input type="checkbox" checked={filterStatus.includes('void')} onChange={() => setFilterStatus((p) => (p.includes('void') ? p.filter((x) => x !== 'void') : p.concat('void')))} />
+                  Deleted
+                </label>
+              </div>
+            </div>
+
+            <div className="field grid-span-2">
+              <label className="label">Tanggal masuk (rentang)</label>
+              <div className="th-two">
+                <input className="input input-sm" type="date" value={masukDateFrom} onChange={(e) => setMasukDateFrom(e.target.value)} />
+                <input className="input input-sm" type="date" value={masukDateTo} onChange={(e) => setMasukDateTo(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="field grid-span-2">
+              <label className="label">Jam masuk</label>
+              <div className="th-two">
+                <input className="input input-sm" type="time" value={fromHm} onChange={(e) => setFromHm(e.target.value)} />
+                <input className="input input-sm" type="time" value={toHm} onChange={(e) => setToHm(e.target.value)} />
+              </div>
+            </div>
+          </div>
+
+          <div className="row row-right" style={{ marginTop: 14, gap: 8, flexWrap: 'wrap' }}>
+            {view === 'riwayat' && (
+              <button className="button button-secondary" type="button" onClick={() => setDate(today)}>
+                Hari ini
+              </button>
+            )}
+            {view === 'riwayat' && (
+              <button className="button button-secondary" type="button" onClick={() => setDate('')}>
+                Semua
+              </button>
+            )}
+            <button className="button button-secondary" type="button" onClick={resetAllHeaderFilters}>
+              Reset filter kolom
+            </button>
+            <button className="button button-primary" type="button" onClick={() => setFiltersSheetOpen(false)}>
+              Terapkan
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {detailRow && (
         <Modal open={true} ariaLabel="Detail tamu" onClose={() => setDetailRow(null)}>

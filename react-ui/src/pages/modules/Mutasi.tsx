@@ -1,5 +1,6 @@
 import { FormEvent, type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useLocation } from 'react-router-dom'
 import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { AttachmentItem, Me, MutasiEntry } from '../../types'
 import { compressImageFile } from '../../lib/image'
@@ -19,6 +20,7 @@ const KATEGORI_OPTS: Record<string, string[]> = {
 export default function MutasiPage({ me }: { me: Me }) {
   const toast = useToast()
   const confirm = useConfirm()
+  const location = useLocation()
   const today = toYmd(new Date())
   const draftKey = `draft:mutasi:${me.user.id}`
   const [q, setQ] = useState('')
@@ -34,6 +36,14 @@ export default function MutasiPage({ me }: { me: Me }) {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string>('')
+
+  const didInitFromUrlRef = useRef(false)
+  useEffect(() => {
+    if (didInitFromUrlRef.current) return
+    didInitFromUrlRef.current = true
+    const qp = new URLSearchParams(location.search).get('q')
+    if (qp && qp.trim()) setQ(qp)
+  }, [location.search])
 
   type HeaderMenuKey = null | 'jam' | 'jenis' | 'deskripsi' | 'status' | 'petugas'
   const [headerMenu, setHeaderMenu] = useState<HeaderMenuKey>(null)
@@ -207,6 +217,7 @@ export default function MutasiPage({ me }: { me: Me }) {
   const [attachments, setAttachments] = useState<AttachmentItem[]>([])
   const [activeAttachment, setActiveAttachment] = useState<AttachmentItem | null>(null)
   const [photoView, setPhotoView] = useState<string | null>(null)
+  const [filtersSheetOpen, setFiltersSheetOpen] = useState(false)
   const photoTabs = (attachments || []).filter((a) => a && typeof a.id === 'number').map((a) => ({ id: a.id as number, label: a.kind || 'Foto' }))
 
   useEffect(() => {
@@ -785,10 +796,17 @@ export default function MutasiPage({ me }: { me: Me }) {
 
       <section className="card">
         <header className="card-header">
-          <div className="card-title">Daftar mutasi</div>
-          <div className="muted">{loading ? 'Memuat...' : `${items.length} entri`}</div>
+          <div>
+            <div className="card-title">Daftar mutasi</div>
+            <div className="muted">{loading ? 'Memuat...' : `${items.length} entri`}</div>
+          </div>
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <button className="button button-secondary button-sm section-filter-toggle" type="button" onClick={() => setFiltersSheetOpen(true)}>
+              Filter
+            </button>
+          </div>
         </header>
-        <div className="card-body">
+        <div className="card-body filters-responsive">
           <div className="table-footer-filters">
             <div className="filter-group">
               <label className="label-sm">Cari</label>
@@ -1315,6 +1333,192 @@ export default function MutasiPage({ me }: { me: Me }) {
           onClose={closePhoto}
         />
       )}
+
+      <Modal open={filtersSheetOpen} ariaLabel="Filter mutasi" onClose={() => setFiltersSheetOpen(false)} variant="sheet">
+        <div className="modal-header">
+          <div className="modal-title">Filter</div>
+          <button className="button button-secondary button-sm" type="button" onClick={() => setFiltersSheetOpen(false)}>
+            Tutup
+          </button>
+        </div>
+        <div className="modal-body">
+          <div className="form grid grid-2" style={{ gap: 10 }}>
+            <div className="field grid-span-2">
+              <label className="label">Cari</label>
+              <input className="input" data-autofocus="true" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari kejadian..." />
+            </div>
+
+            <div className="field">
+              <label className="label">Kategori</label>
+              <select
+                className="select"
+                value={filterKategori}
+                onChange={(e) => {
+                  setFilterKategori(e.target.value)
+                  setFilterSub('')
+                }}
+              >
+                <option value="">Semua Kategori</option>
+                {Object.keys(KATEGORI_OPTS).map((k) => (
+                  <option key={k} value={k}>
+                    {k}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {filterKategori && filterKategori !== 'Lainnya' ? (
+              <div className="field">
+                <label className="label">Sub-Kategori</label>
+                <select className="select" value={filterSub} onChange={(e) => setFilterSub(e.target.value)}>
+                  <option value="">Semua Sub</option>
+                  {KATEGORI_OPTS[filterKategori].map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="field" />
+            )}
+
+            <div className="field">
+              <label className="label">Tanggal</label>
+              <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            </div>
+            <div className="field">
+              <label className="label">Urutan</label>
+              <select className="select" value={sort} onChange={(e) => setSort(e.target.value as any)}>
+                <option value="occurred_desc">Terbaru</option>
+                <option value="occurred_asc">Terlama</option>
+              </select>
+            </div>
+            <div className="field">
+              <label className="label">Limit</label>
+              <select className="select" value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))}>
+                <option value={50}>50</option>
+                <option value={200}>200</option>
+                <option value={500}>500</option>
+              </select>
+            </div>
+
+            <div className="field grid-span-2">
+              <label className="label">Filter Jenis (kolom)</label>
+              <input className="input" value={filterJenis} onChange={(e) => setFilterJenis(e.target.value)} placeholder="Cari..." />
+            </div>
+            <div className="field grid-span-2">
+              <label className="label">Filter Deskripsi (kolom)</label>
+              <input className="input" value={filterDesc} onChange={(e) => setFilterDesc(e.target.value)} placeholder="Cari..." />
+            </div>
+
+            <div className="field">
+              <label className="label">Petugas (kolom)</label>
+              <input className="input input-sm" value={petugasSearch} onChange={(e) => setPetugasSearch(e.target.value)} placeholder="Cari petugas..." />
+              <div className="th-menu-list" style={{ maxHeight: 240 }}>
+                <label className="th-option">
+                  <input type="checkbox" checked={filterPetugas.length === 0} onChange={() => setFilterPetugas([])} />
+                  Semua petugas
+                </label>
+                {uniquePetugas
+                  .filter((x) => !petugasSearch.trim() || x.toLowerCase().includes(petugasSearch.trim().toLowerCase()))
+                  .slice(0, 120)
+                  .map((nm) => (
+                    <label key={nm} className="th-option">
+                      <input type="checkbox" checked={filterPetugas.includes(nm)} onChange={() => setFilterPetugas((p) => toggleInList(p, nm))} />
+                      {nm}
+                    </label>
+                  ))}
+              </div>
+            </div>
+
+            <div className="field">
+              <label className="label">Status (kolom)</label>
+              <div className="th-menu-list" style={{ maxHeight: 240 }}>
+                <label className="th-option">
+                  <input type="checkbox" checked={filterStatus.length === 0} onChange={() => setFilterStatus([])} />
+                  Semua status
+                </label>
+                <label className="th-option">
+                  <input
+                    type="checkbox"
+                    checked={filterStatus.includes('active')}
+                    onChange={() => setFilterStatus((p) => (p.includes('active') ? p.filter((x) => x !== 'active') : p.concat('active')))}
+                  />
+                  Aktif
+                </label>
+                <label className="th-option">
+                  <input
+                    type="checkbox"
+                    checked={filterStatus.includes('void')}
+                    onChange={() => setFilterStatus((p) => (p.includes('void') ? p.filter((x) => x !== 'void') : p.concat('void')))}
+                  />
+                  Deleted
+                </label>
+              </div>
+            </div>
+
+            <div className="field">
+              <label className="label">Sort (kolom)</label>
+              <select
+                className="select"
+                value={clientSort.key ? `${clientSort.key}_${clientSort.dir}` : 'default'}
+                onChange={(e) => {
+                  const v = String(e.target.value || '')
+                  if (v === 'default') {
+                    setClientSort({ key: null, dir: 'asc' })
+                    return
+                  }
+                  const m = /^(jenis|deskripsi|petugas|status)_(asc|desc)$/.exec(v)
+                  if (!m) return
+                  setClientSort({ key: m[1] as any, dir: m[2] as any })
+                }}
+              >
+                <option value="default">Default</option>
+                <option value="jenis_asc">Jenis A-Z</option>
+                <option value="jenis_desc">Jenis Z-A</option>
+                <option value="deskripsi_asc">Deskripsi A-Z</option>
+                <option value="deskripsi_desc">Deskripsi Z-A</option>
+                <option value="petugas_asc">Petugas A-Z</option>
+                <option value="petugas_desc">Petugas Z-A</option>
+                <option value="status_asc">Status A-Z</option>
+                <option value="status_desc">Status Z-A</option>
+              </select>
+            </div>
+
+            <div className="field grid-span-2">
+              <label className="label">Tanggal (kolom, rentang)</label>
+              <div className="th-two">
+                <input className="input input-sm" type="date" value={jamDateFrom} onChange={(e) => setJamDateFrom(e.target.value)} />
+                <input className="input input-sm" type="date" value={jamDateTo} onChange={(e) => setJamDateTo(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="field grid-span-2">
+              <label className="label">Jam (kolom)</label>
+              <div className="th-two">
+                <input className="input input-sm" type="time" value={fromHm} onChange={(e) => setFromHm(e.target.value)} />
+                <input className="input input-sm" type="time" value={toHm} onChange={(e) => setToHm(e.target.value)} />
+              </div>
+            </div>
+          </div>
+
+          <div className="row row-right" style={{ marginTop: 14, gap: 8, flexWrap: 'wrap' }}>
+            <button className="button button-secondary" type="button" onClick={() => setDate(today)}>
+              Hari ini
+            </button>
+            <button className="button button-secondary" type="button" onClick={() => setDate('')}>
+              Semua
+            </button>
+            <button className="button button-secondary" type="button" onClick={resetAllHeaderFilters}>
+              Reset filter kolom
+            </button>
+            <button className="button button-primary" type="button" onClick={() => setFiltersSheetOpen(false)}>
+              Terapkan
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {detailRow && (
         <Modal open={true} ariaLabel="Detail mutasi" onClose={() => setDetailRow(null)}>

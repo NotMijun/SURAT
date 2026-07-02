@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import { apiGet, apiPost } from '../lib/api'
 import { clearToken, compactKey, themeKey, tokenKey } from '../lib/storage'
@@ -27,9 +27,23 @@ export default function Shell() {
   const [theme, setTheme] = useState<'light' | 'dark'>(localStorage.getItem(themeKey) === 'light' ? 'light' : 'dark')
   const [compact] = useState(localStorage.getItem(compactKey) === 'true')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQ, setSearchQ] = useState('')
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchRes, setSearchRes] = useState<{
+    keys: Array<{ id: number; key_name?: string; borrower_name?: string; unit?: string; checkout_at?: string; status?: string }>
+    guests: Array<{ id: number; name?: string; instansi?: string; purpose?: string; checkin_at?: string; status?: string }>
+    tasks: Array<{ id: number; kind?: string; destination?: string; occurred_at?: string; status?: string; created_by_name?: string }>
+    mutasi: Array<{ id: number; kind?: string; description?: string; occurred_at?: string; status?: string; created_by_name?: string }>
+  }>({ keys: [], guests: [], tasks: [], mutasi: [] })
   const themeTimeoutRef = useRef<number | null>(null)
   const themeRafRef = useRef<number | null>(null)
   const themeLabel = theme === 'light' ? 'Terang' : 'Gelap'
+
+  const openSearch = useCallback(() => {
+    setMenuOpen(false)
+    setSearchOpen(true)
+  }, [])
 
   useEffect(() => {
     const root = document.documentElement
@@ -140,6 +154,68 @@ export default function Shell() {
   }, [loading])
 
   useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const key = String(e.key || '')
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName || ''
+      const typing =
+        tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (target && (target as any).isContentEditable) || target?.getAttribute('role') === 'textbox'
+
+      const combo = (e.ctrlKey || e.metaKey) && (key === 'k' || key === 'K')
+      if (combo && !typing) {
+        e.preventDefault()
+        openSearch()
+        return
+      }
+      if (key === '/' && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault()
+        openSearch()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown, { capture: true })
+    return () => window.removeEventListener('keydown', onKeyDown, { capture: true } as any)
+  }, [openSearch])
+
+  useEffect(() => {
+    if (!searchOpen) return
+    const q = searchQ.trim()
+    if (q.length < 2) {
+      setSearchRes({ keys: [], guests: [], tasks: [], mutasi: [] })
+      setSearchLoading(false)
+      return
+    }
+    let cancelled = false
+    const t = window.setTimeout(() => {
+      setSearchLoading(true)
+      Promise.all([
+        apiGet<{ items: any[] }>(
+          `/api/keys?status=open&q=${encodeURIComponent(q)}&date=&date_field=checkout&from_hm=&to_hm=&sort=checkout_desc&limit=5&offset=0`,
+        ).catch(() => ({ items: [] })),
+        apiGet<{ items: any[] }>(`/api/guests?status=in&q=${encodeURIComponent(q)}&date=&sort=checkin_desc&limit=5&post=&offset=0`).catch(() => ({ items: [] })),
+        apiGet<{ items: any[] }>(`/api/tasks?q=${encodeURIComponent(q)}&date=&sort=occurred_desc&limit=5&offset=0&status=active&tab=umum`).catch(() => ({ items: [] })),
+        apiGet<{ items: any[] }>(`/api/mutasi?q=${encodeURIComponent(q)}&kategori=&sub=&date=&sort=occurred_desc&limit=5&offset=0&status=active`).catch(() => ({ items: [] })),
+      ])
+        .then(([keys, guests, tasks, mutasi]) => {
+          if (cancelled) return
+          setSearchRes({
+            keys: (keys.items || []) as any,
+            guests: (guests.items || []) as any,
+            tasks: (tasks.items || []) as any,
+            mutasi: (mutasi.items || []) as any,
+          })
+        })
+        .finally(() => {
+          if (cancelled) return
+          setSearchLoading(false)
+        })
+    }, 220)
+    return () => {
+      cancelled = true
+      window.clearTimeout(t)
+    }
+  }, [searchOpen, searchQ])
+
+  useEffect(() => {
     if (loading) return
     if (!me) return
     let cancelled = false
@@ -220,6 +296,21 @@ export default function Shell() {
             </div>
           </NavLink>
         </div>
+        <div className="topbar-center">
+          <div className="search topbar-search">
+            <span className="search-icon">⌕</span>
+            <input
+              className="search-input"
+              value={searchQ}
+              onChange={(e) => {
+                setSearchQ(e.target.value)
+                if (!searchOpen) setSearchOpen(true)
+              }}
+              onFocus={() => setSearchOpen(true)}
+              placeholder="Cari (Ctrl+K)"
+            />
+          </div>
+        </div>
         <div className="topbar-right">
           <div className="pill">{me ? `Shift: ${me.shift} · Pos: ${me.post}` : 'Shift: -'}</div>
           <div className="pill pill-muted">{me ? `Petugas: ${me.user.display_name}` : 'Petugas: -'}</div>
@@ -228,6 +319,9 @@ export default function Shell() {
               Sesi: {sessionLabel}
             </div>
           )}
+          <button className="topbar-search-btn" type="button" onClick={openSearch} aria-haspopup="dialog" aria-expanded={searchOpen}>
+            Cari
+          </button>
           <button className="button button-secondary button-sm topbar-menu" type="button" onClick={() => setMenuOpen(true)} aria-haspopup="dialog" aria-expanded={menuOpen}>
             ⋯
           </button>
@@ -271,6 +365,166 @@ export default function Shell() {
               Keluar
             </button>
           </div>
+        </div>
+      </Modal>
+
+      <Modal open={searchOpen} ariaLabel="Cari" onClose={() => setSearchOpen(false)} variant="sheet">
+        <div className="modal-header">
+          <div className="modal-title">Cari</div>
+          <button className="button button-secondary button-sm" type="button" onClick={() => setSearchOpen(false)}>
+            Tutup
+          </button>
+        </div>
+        <div className="modal-body">
+          <form
+            className="row"
+            onSubmit={(e: FormEvent) => {
+              e.preventDefault()
+            }}
+            style={{ marginBottom: 10 }}
+          >
+            <input className="input" data-autofocus="true" value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="Cari nama, ruangan, tugas, mutasi..." />
+          </form>
+          {searchQ.trim().length < 2 ? (
+            <div className="muted">Ketik minimal 2 karakter.</div>
+          ) : searchLoading ? (
+            <div className="muted">Mencari...</div>
+          ) : (
+            <div className="grid" style={{ gap: 10 }}>
+              <div>
+                <div className="label-sm" style={{ marginBottom: 6 }}>
+                  Kunci
+                </div>
+                {searchRes.keys.length === 0 ? (
+                  <div className="muted">Tidak ada hasil.</div>
+                ) : (
+                  <div className="grid" style={{ gap: 8 }}>
+                    {searchRes.keys.map((r) => (
+                      <button
+                        key={`k-${r.id}`}
+                        type="button"
+                        className="button button-secondary"
+                        style={{ justifyContent: 'space-between', textAlign: 'left' }}
+                        onClick={() => {
+                          setSearchOpen(false)
+                          nav(`/kunci?q=${encodeURIComponent(searchQ.trim())}`)
+                        }}
+                      >
+                        <span style={{ display: 'grid' }}>
+                          <span style={{ fontWeight: 850 }}>{r.key_name || '-'}</span>
+                          <span className="muted" style={{ fontSize: 12 }}>
+                            {r.borrower_name ? `${r.borrower_name}${r.unit ? ` · ${r.unit}` : ''}` : '-'}
+                          </span>
+                        </span>
+                        <span className="muted" style={{ fontSize: 12 }}>
+                          {r.checkout_at ? String(r.checkout_at).slice(0, 16).replace('T', ' ') : ''}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="label-sm" style={{ marginBottom: 6 }}>
+                  Tamu
+                </div>
+                {searchRes.guests.length === 0 ? (
+                  <div className="muted">Tidak ada hasil.</div>
+                ) : (
+                  <div className="grid" style={{ gap: 8 }}>
+                    {searchRes.guests.map((r) => (
+                      <button
+                        key={`g-${r.id}`}
+                        type="button"
+                        className="button button-secondary"
+                        style={{ justifyContent: 'space-between', textAlign: 'left' }}
+                        onClick={() => {
+                          setSearchOpen(false)
+                          nav(`/tamu?q=${encodeURIComponent(searchQ.trim())}`)
+                        }}
+                      >
+                        <span style={{ display: 'grid' }}>
+                          <span style={{ fontWeight: 850 }}>{r.name || '-'}</span>
+                          <span className="muted" style={{ fontSize: 12 }}>
+                            {r.instansi ? `${r.instansi}${r.purpose ? ` · ${r.purpose}` : ''}` : r.purpose || '-'}
+                          </span>
+                        </span>
+                        <span className="muted" style={{ fontSize: 12 }}>
+                          {r.checkin_at ? String(r.checkin_at).slice(0, 16).replace('T', ' ') : ''}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="label-sm" style={{ marginBottom: 6 }}>
+                  Tugas
+                </div>
+                {searchRes.tasks.length === 0 ? (
+                  <div className="muted">Tidak ada hasil.</div>
+                ) : (
+                  <div className="grid" style={{ gap: 8 }}>
+                    {searchRes.tasks.map((r) => (
+                      <button
+                        key={`t-${r.id}`}
+                        type="button"
+                        className="button button-secondary"
+                        style={{ justifyContent: 'space-between', textAlign: 'left' }}
+                        onClick={() => {
+                          setSearchOpen(false)
+                          nav(`/tugas?q=${encodeURIComponent(searchQ.trim())}`)
+                        }}
+                      >
+                        <span style={{ display: 'grid' }}>
+                          <span style={{ fontWeight: 850 }}>{r.kind || '-'}</span>
+                          <span className="muted" style={{ fontSize: 12 }}>
+                            {r.destination || '-'}
+                          </span>
+                        </span>
+                        <span className="muted" style={{ fontSize: 12 }}>
+                          {r.occurred_at ? String(r.occurred_at).slice(0, 16).replace('T', ' ') : ''}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="label-sm" style={{ marginBottom: 6 }}>
+                  Mutasi
+                </div>
+                {searchRes.mutasi.length === 0 ? (
+                  <div className="muted">Tidak ada hasil.</div>
+                ) : (
+                  <div className="grid" style={{ gap: 8 }}>
+                    {searchRes.mutasi.map((r) => (
+                      <button
+                        key={`m-${r.id}`}
+                        type="button"
+                        className="button button-secondary"
+                        style={{ justifyContent: 'space-between', textAlign: 'left' }}
+                        onClick={() => {
+                          setSearchOpen(false)
+                          nav(`/mutasi?q=${encodeURIComponent(searchQ.trim())}`)
+                        }}
+                      >
+                        <span style={{ display: 'grid' }}>
+                          <span style={{ fontWeight: 850 }}>{r.kind || '-'}</span>
+                          <span className="muted" style={{ fontSize: 12 }}>
+                            {r.description ? String(r.description).slice(0, 80) : '-'}
+                          </span>
+                        </span>
+                        <span className="muted" style={{ fontSize: 12 }}>
+                          {r.occurred_at ? String(r.occurred_at).slice(0, 16).replace('T', ' ') : ''}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
 

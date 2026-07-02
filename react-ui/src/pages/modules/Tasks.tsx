@@ -1,5 +1,6 @@
 import { FormEvent, type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useLocation } from 'react-router-dom'
 import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
 import type { AttachmentItem, Me, TaskEntry } from '../../types'
 import { compressImageFile } from '../../lib/image'
@@ -13,6 +14,7 @@ import Avatar from '../../components/Avatar'
 export default function TasksPage({ me }: { me: Me }) {
   const toast = useToast()
   const confirm = useConfirm()
+  const location = useLocation()
   const today = toYmd(new Date())
   const draftKey = useMemo(() => `draft:tasks:${me.user.id}`, [me.user.id])
   const [q, setQ] = useState('')
@@ -26,6 +28,8 @@ export default function TasksPage({ me }: { me: Me }) {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string>('')
+  const [filtersSheetOpen, setFiltersSheetOpen] = useState(false)
+  const didInitFromUrlRef = useRef(false)
 
   type HeaderMenuKey = null | 'waktu' | 'jenis' | 'tujuan' | 'petugas' | 'status'
   const [headerMenu, setHeaderMenu] = useState<HeaderMenuKey>(null)
@@ -218,6 +222,13 @@ export default function TasksPage({ me }: { me: Me }) {
   const [photoKey, setPhotoKey] = useState(0)
   const [attachments, setAttachments] = useState<AttachmentItem[]>([])
   const [activeAttachment, setActiveAttachment] = useState<AttachmentItem | null>(null)
+
+  useEffect(() => {
+    if (didInitFromUrlRef.current) return
+    didInitFromUrlRef.current = true
+    const qp = new URLSearchParams(location.search).get('q')
+    if (qp && qp.trim()) setQ(qp)
+  }, [location.search])
   const [photoView, setPhotoView] = useState<string | null>(null)
 
   type PomShiftKey = 'siang' | 'sore' | 'malam'
@@ -1786,14 +1797,21 @@ export default function TasksPage({ me }: { me: Me }) {
 
       <section className="card">
         <header className="card-header">
-          <div className="card-title">{tab === 'pom' ? 'Daftar tugas (Log POM)' : 'Daftar tugas'}</div>
-          <div className="muted">
-            {loading ? 'Memuat...' : `${viewItems.length} entri`}
-            {summary.kind === 'pom' ? ` · Total box: ${summary.totalBox}${summary.lastArrived ? ` · Terakhir datang: ${fmtTime(summary.lastArrived)}` : ''}${summary.bermasalah ? ` · Bermasalah: ${summary.bermasalah}` : ''}` : ''}
-            {summary.kind === 'galon' ? ` · Galon Yang Diambil: ${summary.used} · Stok Galon: ${summary.unused} · Galon Kosong / Tidak berisi air: ${summary.returned}` : ''}
+          <div>
+            <div className="card-title">{tab === 'pom' ? 'Daftar tugas (Log POM)' : 'Daftar tugas'}</div>
+            <div className="muted">
+              {loading ? 'Memuat...' : `${viewItems.length} entri`}
+              {summary.kind === 'pom'
+                ? ` · Total box: ${summary.totalBox}${summary.lastArrived ? ` · Terakhir datang: ${fmtTime(summary.lastArrived)}` : ''}${summary.bermasalah ? ` · Bermasalah: ${summary.bermasalah}` : ''}`
+                : ''}
+              {summary.kind === 'galon' ? ` · Galon Yang Diambil: ${summary.used} · Stok Galon: ${summary.unused} · Galon Kosong / Tidak berisi air: ${summary.returned}` : ''}
+            </div>
           </div>
+          <button className="button button-secondary button-sm section-filter-toggle" type="button" onClick={() => setFiltersSheetOpen(true)}>
+            Filter
+          </button>
         </header>
-        <div className="card-body">
+        <div className="card-body filters-responsive">
           <div className="table-footer-filters">
             <div className="filter-group">
               <label className="label-sm">Cari</label>
@@ -1861,6 +1879,74 @@ export default function TasksPage({ me }: { me: Me }) {
               </button>
             </div>
           </div>
+          <Modal open={filtersSheetOpen} ariaLabel="Filter tugas" onClose={() => setFiltersSheetOpen(false)} variant="sheet">
+            <div className="modal-header">
+              <div className="modal-title">Filter</div>
+              <button className="button button-secondary button-sm" type="button" onClick={() => setFiltersSheetOpen(false)}>
+                Tutup
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="table-footer-filters">
+                <div className="filter-group">
+                  <label className="label-sm">Cari</label>
+                  <input className="input input-sm" data-autofocus="true" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari tugas..." />
+                </div>
+                <div className="filter-group">
+                  <label className="label-sm">Tanggal</label>
+                  <input className="input input-sm" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                </div>
+                <div className="filter-group">
+                  <label className="label-sm">Urutan</label>
+                  <select className="select select-sm" value={sort} onChange={(e) => setSort(e.target.value as any)}>
+                    <option value="occurred_desc">Terbaru</option>
+                    <option value="occurred_asc">Terlama</option>
+                  </select>
+                </div>
+                <div className="filter-group">
+                  <label className="label-sm">Limit</label>
+                  <select className="select select-sm" value={limit} onChange={(e) => setLimit(parseInt(e.target.value, 10))}>
+                    <option value={50}>50</option>
+                    <option value={200}>200</option>
+                    <option value={500}>500</option>
+                  </select>
+                </div>
+                <div className="filter-actions">
+                  <button className="button button-secondary button-sm" type="button" onClick={() => setDate(today)}>
+                    Hari ini
+                  </button>
+                  <button className="button button-secondary button-sm" type="button" onClick={() => setDate('')}>
+                    Semua
+                  </button>
+                  <button
+                    className="button button-secondary button-sm"
+                    type="button"
+                    onClick={() => {
+                      setPage(1)
+                      refresh({ q, date, sort, limit, tab, offset: 0 }).catch(() => {})
+                      setFiltersSheetOpen(false)
+                    }}
+                  >
+                    Terapkan
+                  </button>
+                </div>
+              </div>
+              {hasActiveFilters && (
+                <div className="table-active-filters">
+                  <div className="table-active-list">
+                    {filterSummary.map((x) => (
+                      <span key={x} className="filter-chip">
+                        {x}
+                      </span>
+                    ))}
+                  </div>
+                  <button className="button button-secondary button-sm" type="button" onClick={resetAllHeaderFilters}>
+                    Reset semua filter
+                  </button>
+                </div>
+              )}
+            </div>
+          </Modal>
           {hasActiveFilters && (
             <div className="table-active-filters">
               <div className="table-active-list">

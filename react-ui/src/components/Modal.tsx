@@ -4,12 +4,14 @@ type Props = {
   open: boolean
   ariaLabel: string
   onClose: () => void
+  variant?: 'default' | 'sheet'
+  className?: string
   children: ReactNode
 }
 
 const selector = 'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])'
 
-export default function Modal({ open, ariaLabel, onClose, children }: Props) {
+export default function Modal({ open, ariaLabel, onClose, children, variant = 'default', className }: Props) {
   const modalRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -57,9 +59,12 @@ export default function Modal({ open, ariaLabel, onClose, children }: Props) {
 
   if (!open) return null
 
+  const modalClass = `modal${variant === 'sheet' ? ' modal-sheet' : ''}${className ? ` ${className}` : ''}`
+  const overlayClass = `modal-overlay${variant === 'sheet' ? ' modal-overlay-sheet' : ''}`
+
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label={ariaLabel} onClick={(e) => (e.currentTarget === e.target ? onClose() : null)}>
-      <div className="modal" ref={modalRef}>
+    <div className={overlayClass} role="dialog" aria-modal="true" aria-label={ariaLabel} onClick={(e) => (e.currentTarget === e.target ? onClose() : null)}>
+      <div className={modalClass} ref={modalRef}>
         {children}
       </div>
     </div>
