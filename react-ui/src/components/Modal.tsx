@@ -13,6 +13,11 @@ const selector = 'a[href],button:not([disabled]),textarea,input,select,[tabindex
 
 export default function Modal({ open, ariaLabel, onClose, children, variant = 'default', className }: Props) {
   const modalRef = useRef<HTMLDivElement | null>(null)
+  const onCloseRef = useRef(onClose)
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
 
   useEffect(() => {
     if (!open) return
@@ -28,7 +33,7 @@ export default function Modal({ open, ariaLabel, onClose, children, variant = 'd
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
-        onClose()
+        onCloseRef.current()
         return
       }
       if (e.key !== 'Tab') return
@@ -55,7 +60,7 @@ export default function Modal({ open, ariaLabel, onClose, children, variant = 'd
       window.removeEventListener('keydown', onKeyDown, { capture: true } as any)
       previous?.focus()
     }
-  }, [onClose, open])
+  }, [open])
 
   if (!open) return null
 
