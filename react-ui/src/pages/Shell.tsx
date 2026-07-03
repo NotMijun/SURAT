@@ -36,6 +36,7 @@ export default function Shell() {
     tasks: Array<{ id: number; kind?: string; destination?: string; occurred_at?: string; status?: string; created_by_name?: string }>
     mutasi: Array<{ id: number; kind?: string; description?: string; occurred_at?: string; status?: string; created_by_name?: string }>
   }>({ keys: [], guests: [], tasks: [], mutasi: [] })
+  const searchReqIdRef = useRef(0)
   const themeTimeoutRef = useRef<number | null>(null)
   const themeRafRef = useRef<number | null>(null)
   const themeLabel = theme === 'light' ? 'Terang' : 'Gelap'
@@ -44,6 +45,18 @@ export default function Shell() {
     setMenuOpen(false)
     setSearchOpen(true)
   }, [])
+
+  useEffect(() => {
+    if (searchOpen) return
+    searchReqIdRef.current += 1
+    setSearchLoading(false)
+    const t = window.setTimeout(() => {
+      const el = document.activeElement as HTMLElement | null
+      if (!el) return
+      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || (el as any).isContentEditable) el.blur()
+    }, 0)
+    return () => window.clearTimeout(t)
+  }, [searchOpen])
 
   useEffect(() => {
     const root = document.documentElement
@@ -184,8 +197,8 @@ export default function Shell() {
       setSearchLoading(false)
       return
     }
-    let cancelled = false
     const t = window.setTimeout(() => {
+      const reqId = (searchReqIdRef.current += 1)
       setSearchLoading(true)
       Promise.all([
         apiGet<{ items: any[] }>(
@@ -196,7 +209,7 @@ export default function Shell() {
         apiGet<{ items: any[] }>(`/api/mutasi?q=${encodeURIComponent(q)}&kategori=&sub=&date=&sort=occurred_desc&limit=5&offset=0&status=active`).catch(() => ({ items: [] })),
       ])
         .then(([keys, guests, tasks, mutasi]) => {
-          if (cancelled) return
+          if (searchReqIdRef.current !== reqId) return
           setSearchRes({
             keys: (keys.items || []) as any,
             guests: (guests.items || []) as any,
@@ -205,12 +218,11 @@ export default function Shell() {
           })
         })
         .finally(() => {
-          if (cancelled) return
+          if (searchReqIdRef.current !== reqId) return
           setSearchLoading(false)
         })
     }, 220)
     return () => {
-      cancelled = true
       window.clearTimeout(t)
     }
   }, [searchOpen, searchQ])
@@ -304,9 +316,8 @@ export default function Shell() {
               value={searchQ}
               onChange={(e) => {
                 setSearchQ(e.target.value)
-                if (!searchOpen) setSearchOpen(true)
               }}
-              onFocus={() => setSearchOpen(true)}
+              onFocus={openSearch}
               placeholder="Cari (Ctrl+K)"
             />
           </div>
