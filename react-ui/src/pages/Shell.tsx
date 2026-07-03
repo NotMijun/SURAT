@@ -37,6 +37,7 @@ export default function Shell() {
     mutasi: Array<{ id: number; kind?: string; description?: string; occurred_at?: string; status?: string; created_by_name?: string }>
   }>({ keys: [], guests: [], tasks: [], mutasi: [] })
   const searchReqIdRef = useRef(0)
+  const suppressSearchFocusRef = useRef(false)
   const themeTimeoutRef = useRef<number | null>(null)
   const themeRafRef = useRef<number | null>(null)
   const themeLabel = theme === 'light' ? 'Terang' : 'Gelap'
@@ -44,6 +45,11 @@ export default function Shell() {
   const openSearch = useCallback(() => {
     setMenuOpen(false)
     setSearchOpen(true)
+  }, [])
+
+  const closeSearch = useCallback(() => {
+    suppressSearchFocusRef.current = true
+    setSearchOpen(false)
   }, [])
 
   useEffect(() => {
@@ -317,7 +323,13 @@ export default function Shell() {
               onChange={(e) => {
                 setSearchQ(e.target.value)
               }}
-              onFocus={openSearch}
+              onFocus={() => {
+                if (suppressSearchFocusRef.current) {
+                  suppressSearchFocusRef.current = false
+                  return
+                }
+                openSearch()
+              }}
               placeholder="Cari (Ctrl+K)"
             />
           </div>
@@ -379,10 +391,10 @@ export default function Shell() {
         </div>
       </Modal>
 
-      <Modal open={searchOpen} ariaLabel="Cari" onClose={() => setSearchOpen(false)} variant="sheet">
+      <Modal open={searchOpen} ariaLabel="Cari" onClose={closeSearch} variant="sheet">
         <div className="modal-header">
           <div className="modal-title">Cari</div>
-          <button className="button button-secondary button-sm" type="button" onClick={() => setSearchOpen(false)}>
+          <button className="button button-secondary button-sm" type="button" onClick={closeSearch}>
             Tutup
           </button>
         </div>
@@ -417,7 +429,7 @@ export default function Shell() {
                         className="button button-secondary"
                         style={{ justifyContent: 'space-between', textAlign: 'left' }}
                         onClick={() => {
-                          setSearchOpen(false)
+                          closeSearch()
                           nav(`/kunci?q=${encodeURIComponent(searchQ.trim())}`)
                         }}
                       >
@@ -450,7 +462,7 @@ export default function Shell() {
                         className="button button-secondary"
                         style={{ justifyContent: 'space-between', textAlign: 'left' }}
                         onClick={() => {
-                          setSearchOpen(false)
+                          closeSearch()
                           nav(`/tamu?q=${encodeURIComponent(searchQ.trim())}`)
                         }}
                       >
@@ -483,7 +495,7 @@ export default function Shell() {
                         className="button button-secondary"
                         style={{ justifyContent: 'space-between', textAlign: 'left' }}
                         onClick={() => {
-                          setSearchOpen(false)
+                          closeSearch()
                           nav(`/tugas?q=${encodeURIComponent(searchQ.trim())}`)
                         }}
                       >
@@ -516,7 +528,7 @@ export default function Shell() {
                         className="button button-secondary"
                         style={{ justifyContent: 'space-between', textAlign: 'left' }}
                         onClick={() => {
-                          setSearchOpen(false)
+                          closeSearch()
                           nav(`/mutasi?q=${encodeURIComponent(searchQ.trim())}`)
                         }}
                       >
