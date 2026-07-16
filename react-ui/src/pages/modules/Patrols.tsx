@@ -1,39 +1,13 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { apiGet, apiGetBlob, apiPatch, apiPost, apiPostForm } from '../../lib/api'
-import type { Me } from '../../types'
+import type { Me, PatrolEntry } from '../../types'
 import { compressImageFile } from '../../lib/image'
 import { fmtDateTime, toYmd } from '../../lib/time'
 import { useConfirm, useToast } from '../../components/ToastHost'
 import Modal from '../../components/Modal'
 import PhotoModal from '../../components/PhotoModal'
 import Pagination from '../../components/Pagination'
-
-type PatrolEntry = {
-  id: number
-  security_name: string
-  patrol_date: string
-  patrol_time: string
-  location: string
-  findings: string
-  status?: string
-  void_reason?: string | null
-  voided_by?: number | null
-  voided_at?: string | null
-  photo_b64?: string | null
-  photo_mime?: string | null
-  photo_name?: string | null
-  photo_uploaded_at?: string | null
-  created_by: number
-  created_by_name?: string
-  shift: string
-  post: string
-  created_at: string
-  updated_at: string
-  photo_count?: number
-  has_photo?: boolean
-  photo_url?: string
-}
 
 export default function PatrolsPage({ me }: { me: Me }) {
   const toast = useToast()

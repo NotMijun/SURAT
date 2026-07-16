@@ -1043,6 +1043,7 @@ def _audit(conn, sess: dict[str, Any], table_name: str, record_id: str, action: 
         "target_guest_entry_id": None,
         "target_mutasi_entry_id": None,
         "target_task_entry_id": None,
+        "target_patrol_entry_id": None,
         "target_user_id": None,
         "target_key_master_id": None,
     }
@@ -1059,6 +1060,8 @@ def _audit(conn, sess: dict[str, Any], table_name: str, record_id: str, action: 
         target["target_mutasi_entry_id"] = rec_int
     elif t == "task_entries":
         target["target_task_entry_id"] = rec_int
+    elif t == "patrol_entries":
+        target["target_patrol_entry_id"] = rec_int
     elif t == "key_master":
         target["target_key_master_id"] = rec_int
     elif t in ("users", "auth"):
@@ -1067,9 +1070,9 @@ def _audit(conn, sess: dict[str, Any], table_name: str, record_id: str, action: 
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO audit_log(actor_user_id, target_key_transaction_id, target_guest_entry_id, target_mutasi_entry_id, target_task_entry_id, target_user_id, target_key_master_id,
+            INSERT INTO audit_log(actor_user_id, target_key_transaction_id, target_guest_entry_id, target_mutasi_entry_id, target_task_entry_id, target_patrol_entry_id, target_user_id, target_key_master_id,
                                   action, actor_shift, actor_post, before_json, after_json, created_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """,
             (
                 sess["user_id"],
@@ -1077,6 +1080,7 @@ def _audit(conn, sess: dict[str, Any], table_name: str, record_id: str, action: 
                 target["target_guest_entry_id"],
                 target["target_mutasi_entry_id"],
                 target["target_task_entry_id"],
+                target["target_patrol_entry_id"],
                 target["target_user_id"],
                 target["target_key_master_id"],
                 action,
@@ -1090,7 +1094,7 @@ def _audit(conn, sess: dict[str, Any], table_name: str, record_id: str, action: 
 
 
 def _delete_related_and_record(conn, table_name: str, record_id: int) -> dict[str, int]:
-    allowed = {"key_transactions", "guest_entries", "mutasi_entries", "task_entries"}
+    allowed = {"key_transactions", "guest_entries", "mutasi_entries", "task_entries", "patrol_entries"}
     if table_name not in allowed:
         raise HTTPException(status_code=400, detail="Table tidak diizinkan")
     audit_col = {
@@ -1098,6 +1102,7 @@ def _delete_related_and_record(conn, table_name: str, record_id: int) -> dict[st
         "guest_entries": "target_guest_entry_id",
         "mutasi_entries": "target_mutasi_entry_id",
         "task_entries": "target_task_entry_id",
+        "patrol_entries": "target_patrol_entry_id",
     }.get(table_name)
     deleted_attach = 0
     deleted_audit = 0
