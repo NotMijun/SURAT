@@ -265,7 +265,7 @@ def _read_photo_upload(photo: UploadFile | None) -> tuple[str | None, str | None
     return (b64, ctype, name, utc_now_iso())
 
 
-_ATTACH_ALLOWED_TABLES = {"key_transactions", "guest_entries", "mutasi_entries", "task_entries"}
+_ATTACH_ALLOWED_TABLES = {"key_transactions", "guest_entries", "mutasi_entries", "task_entries", "patrol_entries"}
 
 _ATTACH_TABLE_ALIASES = {
     "key_transaction": "key_transactions",
@@ -277,6 +277,9 @@ _ATTACH_TABLE_ALIASES = {
     "mutasi": "mutasi_entries",
     "task": "task_entries",
     "tasks": "task_entries",
+    "patrol": "patrol_entries",
+    "patrols": "patrol_entries",
+    "patroli": "patrol_entries",
 }
 
 
@@ -712,6 +715,36 @@ def _ensure_schema(conn) -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_task_occurred ON task_entries(occurred_at)")
             cur.execute(
                 """
+                CREATE TABLE IF NOT EXISTS patrol_entries (
+                  id BIGSERIAL PRIMARY KEY,
+                  security_name TEXT NOT NULL,
+                  patrol_date TEXT NOT NULL,
+                  patrol_time TEXT NOT NULL,
+                  location TEXT NOT NULL,
+                  findings TEXT NOT NULL,
+                  created_by BIGINT NOT NULL REFERENCES users(id),
+                  shift TEXT NOT NULL,
+                  post TEXT NOT NULL,
+                  photo_b64 TEXT,
+                  photo_mime TEXT,
+                  photo_name TEXT,
+                  photo_uploaded_at TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                )
+                """
+            )
+            cur.execute("ALTER TABLE patrol_entries ADD COLUMN IF NOT EXISTS photo_b64 TEXT")
+            cur.execute("ALTER TABLE patrol_entries ADD COLUMN IF NOT EXISTS photo_mime TEXT")
+            cur.execute("ALTER TABLE patrol_entries ADD COLUMN IF NOT EXISTS photo_name TEXT")
+            cur.execute("ALTER TABLE patrol_entries ADD COLUMN IF NOT EXISTS photo_uploaded_at TEXT")
+            cur.execute("ALTER TABLE patrol_entries ADD COLUMN IF NOT EXISTS status TEXT")
+            cur.execute("ALTER TABLE patrol_entries ADD COLUMN IF NOT EXISTS void_reason TEXT")
+            cur.execute("ALTER TABLE patrol_entries ADD COLUMN IF NOT EXISTS voided_by BIGINT REFERENCES users(id)")
+            cur.execute("ALTER TABLE patrol_entries ADD COLUMN IF NOT EXISTS voided_at TEXT")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_patrol_date ON patrol_entries(patrol_date)")
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS key_master (
                   id BIGSERIAL PRIMARY KEY,
                   name TEXT NOT NULL UNIQUE,
@@ -831,6 +864,7 @@ def _ensure_schema(conn) -> None:
                   target_guest_entry_id BIGINT REFERENCES guest_entries(id),
                   target_mutasi_entry_id BIGINT REFERENCES mutasi_entries(id),
                   target_task_entry_id BIGINT REFERENCES task_entries(id),
+                  target_patrol_entry_id BIGINT REFERENCES patrol_entries(id),
                   target_user_id BIGINT REFERENCES users(id),
                   action TEXT NOT NULL,
                   actor_shift TEXT NOT NULL,
@@ -843,12 +877,14 @@ def _ensure_schema(conn) -> None:
                      (target_guest_entry_id IS NOT NULL)::int +
                      (target_mutasi_entry_id IS NOT NULL)::int +
                      (target_task_entry_id IS NOT NULL)::int +
+                     (target_patrol_entry_id IS NOT NULL)::int +
                      (target_user_id IS NOT NULL)::int) = 1
                   )
                 )
                 """
             )
             cur.execute("ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS target_key_master_id BIGINT REFERENCES key_master(id)")
+            cur.execute("ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS target_patrol_entry_id BIGINT REFERENCES patrol_entries(id)")
             cur.execute("ALTER TABLE audit_log DROP CONSTRAINT IF EXISTS audit_log_one_target")
             cur.execute(
                 """
@@ -857,6 +893,7 @@ def _ensure_schema(conn) -> None:
                    (target_guest_entry_id IS NOT NULL)::int +
                    (target_mutasi_entry_id IS NOT NULL)::int +
                    (target_task_entry_id IS NOT NULL)::int +
+                   (target_patrol_entry_id IS NOT NULL)::int +
                    (target_user_id IS NOT NULL)::int +
                    (target_key_master_id IS NOT NULL)::int) = 1
                 )
@@ -1202,6 +1239,21 @@ class PatchTaskBody(BaseModel):
 class PatchMutasiBody(BaseModel):
     kind: str | None = None
     description: str | None = None
+
+class CreatePatrolBody(BaseModel):
+    security_name: str
+    patrol_date: str
+    patrol_time: str
+    location: str
+    findings: str
+    force: bool | None = None
+
+class PatchPatrolBody(BaseModel):
+    security_name: str | None = None
+    patrol_date: str | None = None
+    patrol_time: str | None = None
+    location: str | None = None
+    findings: str | None = None
 
 class CreateKeyMasterBody(BaseModel):
     name: str
@@ -3449,6 +3501,257 @@ def void_task_compat(task_id: int, body: VoidBody, request: Request):
     return delete_task(task_id=task_id, request=request)
 
 
+@app.get("/api/patrols")
+def list_patrols(request: Request, q: str = "", date: str = "", sort: str = "date_desc", limit: int = 200, status: str = "active", offset: int = 0):
+    with db_connect() as conn:
+        _require_session(conn, request)
+        qn = normalize_text(q)
+        bounds = _day_bounds(date)
+        sort = (sort or "date_desc").strip()
+        limit = max(1, min(500, int(limit or 200)))
+        offset = max(0, min(100_000, int(offset or 0)))
+        status = (status or "active").strip().lower()
+        where = []
+        params: list[Any] = []
+        if status in ("active", "void"):
+            where.append("COALESCE(p.status,'active') = %s")
+            params.append(status)
+        elif status != "all":
+            where.append("COALESCE(p.status,'active') <> 'void'")
+        if qn:
+            where.append("(lower(p.security_name) LIKE %s OR lower(p.location) LIKE %s OR lower(p.findings) LIKE %s)")
+            params.extend([f"%{qn}%", f"%{qn}%", f"%{qn}%"])
+        if bounds:
+            where.append("p.patrol_date BETWEEN %s AND %s")
+            params.extend([bounds[0][:10], bounds[1][:10]])
+        order = "p.patrol_date DESC, p.patrol_time DESC"
+        if sort == "date_asc":
+            order = "p.patrol_date ASC, p.patrol_time ASC"
+        sql = """
+          SELECT p.id, p.security_name, p.patrol_date, p.patrol_time, p.location, p.findings,
+                 COALESCE(p.status,'active') AS status,
+                 p.void_reason,
+                 (CASE WHEN p.photo_b64 IS NULL OR p.photo_b64='' THEN 0 ELSE 1 END + COALESCE(att.c,0))::int AS photo_count,
+                 u.display_name AS created_by_name, p.shift, p.post
+          FROM patrol_entries p
+          JOIN users u ON u.id = p.created_by
+          LEFT JOIN LATERAL (
+            SELECT COUNT(*)::int AS c
+            FROM media_attachments ma
+            WHERE ma.target_table='patrol_entries' AND ma.target_id=p.id
+          ) att ON true
+        """
+        count_sql = "SELECT COUNT(*)::int AS c FROM patrol_entries p"
+        if where:
+            count_sql += " WHERE " + " AND ".join(where)
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += f" ORDER BY {order} LIMIT %s OFFSET %s"
+        count_params = list(params)
+        params.append(limit)
+        params.append(offset)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(count_sql, tuple(count_params))
+            total = int(cur.fetchone()["c"] or 0)
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+        for r in rows:
+            r["photo_count"] = int(r.get("photo_count") or 0)
+            r["has_photo"] = r["photo_count"] > 0
+            if r["has_photo"]:
+                r["photo_url"] = f"/api/patrols/{int(r['id'])}/photo"
+        return {"items": rows, "total": total}
+
+
+@app.get("/api/patrols/{patrol_id}/photo")
+def get_patrol_photo(patrol_id: str, request: Request):
+    with db_connect() as conn:
+        _require_session(conn, request)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT photo_b64, photo_mime, photo_name FROM patrol_entries WHERE id=%s", (patrol_id,))
+            row = cur.fetchone()
+            if row and (row.get("photo_b64") or ""):
+                data = base64.b64decode((row["photo_b64"] or "").encode("ascii"))
+                mime = (row.get("photo_mime") or "application/octet-stream").strip()
+                name = (row.get("photo_name") or "photo").strip()
+                headers = {"Content-Disposition": f'inline; filename="{name}"'}
+                return Response(content=data, media_type=mime, headers=headers)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT photo_b64, photo_mime, photo_name FROM media_attachments WHERE target_table='patrol_entries' AND target_id=%s ORDER BY id ASC LIMIT 1",
+                (patrol_id,),
+            )
+            a = cur.fetchone()
+            if not a or not (a.get("photo_b64") or ""):
+                raise HTTPException(status_code=404, detail="Foto tidak ditemukan")
+            data = base64.b64decode((a["photo_b64"] or "").encode("ascii"))
+            mime = (a.get("photo_mime") or "application/octet-stream").strip()
+            name = (a.get("photo_name") or "photo").strip()
+            headers = {"Content-Disposition": f'inline; filename="{name}"'}
+            return Response(content=data, media_type=mime, headers=headers)
+
+
+def _create_patrol(
+    conn,
+    sess,
+    security_name: str | None,
+    patrol_date: str | None,
+    patrol_time: str | None,
+    location: str | None,
+    findings: str | None,
+    force: bool,
+    photo_b64: str | None,
+    photo_mime: str | None,
+    photo_name: str | None,
+    photo_uploaded_at: str | None,
+) -> int:
+    security_name = _text_field(security_name, field="Nama security", max_len=80, default="-")
+    patrol_date = _text_field(patrol_date, field="Tanggal patroli", max_len=20, default=datetime.now().strftime("%Y-%m-%d"))
+    patrol_time = _text_field(patrol_time, field="Waktu patroli", max_len=20, default=datetime.now().strftime("%H:%M"))
+    location = _text_field(location, field="Lokasi pemantauan", max_len=160, default="-")
+    findings = _text_field(findings, field="Temuan/hasil patroli", max_len=500, default="-")
+    now = utc_now_iso()
+    with conn.cursor() as cur:
+        if not force:
+            cutoff = _recent_cutoff_iso(DEDUPE_WINDOW_SECONDS)
+            cur.execute(
+                """
+                SELECT id, created_at
+                FROM patrol_entries
+                WHERE COALESCE(status,'active') <> 'void'
+                  AND lower(security_name)=lower(%s)
+                  AND patrol_date=%s
+                  AND patrol_time=%s
+                  AND lower(location)=lower(%s)
+                  AND created_at > %s
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (security_name, patrol_date, patrol_time, location, cutoff),
+            )
+            dup = cur.fetchone()
+            if dup:
+                raise HTTPException(status_code=409, detail=f"Data serupa sudah ada (ID {int(dup[0])}).")
+        cur.execute(
+            """
+            INSERT INTO patrol_entries(security_name, patrol_date, patrol_time, location, findings, status, void_reason, voided_by, voided_at, created_by, shift, post, photo_b64, photo_mime, photo_name, photo_uploaded_at, created_at, updated_at)
+            VALUES (%s,%s,%s,%s,%s,'active',NULL,NULL,NULL,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+            """,
+            (security_name, patrol_date, patrol_time, location, findings, sess["user_id"], sess["shift"], sess["post"], photo_b64, photo_mime, photo_name, photo_uploaded_at, now, now),
+        )
+        pid = int(cur.fetchone()[0])
+        _audit(
+            conn,
+            sess,
+            "patrol_entries",
+            str(pid),
+            "create",
+            None,
+            {"security_name": security_name, "patrol_date": patrol_date, "patrol_time": patrol_time, "location": location, "findings": findings, "has_photo": bool(photo_b64), "photo_name": photo_name if photo_b64 else None},
+        )
+    return pid
+
+
+@app.post("/api/patrols")
+def create_patrol(body: CreatePatrolBody, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        pid = _create_patrol(conn, sess, body.security_name, body.patrol_date, body.patrol_time, body.location, body.findings, bool(body.force), None, None, None, None)
+        conn.commit()
+        return {"ok": True, "id": pid}
+
+
+@app.post("/api/patrols_with_photo")
+def create_patrol_with_photo(
+    request: Request,
+    security_name: str = Form(...),
+    patrol_date: str | None = Form(None),
+    patrol_time: str | None = Form(None),
+    location: str = Form(...),
+    findings: str | None = Form(None),
+    force: str | None = Form(None),
+    photo: UploadFile | None = File(None),
+):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        photo_b64, photo_mime, photo_name, photo_uploaded_at = None, None, None, None
+        if photo:
+            photo_b64, photo_mime, photo_name, photo_uploaded_at = _process_photo_upload(photo)
+        pid = _create_patrol(conn, sess, security_name, patrol_date, patrol_time, location, findings, _parse_truthy(force), photo_b64, photo_mime, photo_name, photo_uploaded_at)
+        conn.commit()
+        return {"ok": True, "id": pid}
+
+
+@app.patch("/api/patrols/{patrol_id}")
+def patch_patrol(patrol_id: int, body: PatchPatrolBody, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM patrol_entries WHERE id=%s", (int(patrol_id),))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Data patroli tidak ditemukan")
+            updates: dict[str, Any] = {}
+            if body.security_name is not None:
+                updates["security_name"] = _text_field(body.security_name, field="Nama security", max_len=80, default="-")
+            if body.patrol_date is not None:
+                updates["patrol_date"] = _text_field(body.patrol_date, field="Tanggal patroli", max_len=20, default=datetime.now().strftime("%Y-%m-%d"))
+            if body.patrol_time is not None:
+                updates["patrol_time"] = _text_field(body.patrol_time, field="Waktu patroli", max_len=20, default=datetime.now().strftime("%H:%M"))
+            if body.location is not None:
+                updates["location"] = _text_field(body.location, field="Lokasi pemantauan", max_len=160, default="-")
+            if body.findings is not None:
+                updates["findings"] = _text_field(body.findings, field="Temuan/hasil patroli", max_len=500, default="-")
+            if updates:
+                updates["updated_at"] = utc_now_iso()
+                cols = []
+                params = []
+                for k, v in updates.items():
+                    cols.append(f"{k} = %s")
+                    params.append(v)
+                params.append(int(patrol_id))
+                cur.execute(f"UPDATE patrol_entries SET {', '.join(cols)} WHERE id=%s", tuple(params))
+                cur.execute("SELECT * FROM patrol_entries WHERE id=%s", (int(patrol_id),))
+                after = cur.fetchone()
+                _audit(
+                    conn,
+                    sess,
+                    "patrol_entries",
+                    str(patrol_id),
+                    "update",
+                    dict(row),
+                    dict(after) if after else None,
+                )
+        conn.commit()
+        return {"ok": True}
+
+
+@app.post("/api/patrols/{patrol_id}/delete")
+def delete_patrol(patrol_id: int, request: Request):
+    with db_connect() as conn:
+        sess = _require_session(conn, request)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM patrol_entries WHERE id=%s", (int(patrol_id),))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Data patroli tidak ditemukan")
+            void_at = utc_now_iso()
+            cur.execute(
+                "UPDATE patrol_entries SET status='void', void_reason='Dihapus', voided_by=%s, voided_at=%s, updated_at=%s WHERE id=%s",
+                (sess["user_id"], void_at, void_at, int(patrol_id)),
+            )
+            _audit(conn, sess, "patrol_entries", str(patrol_id), "delete", dict(row), None)
+            _delete_related_and_record(conn, "patrol_entries", int(patrol_id))
+        conn.commit()
+        return {"ok": True}
+
+
+@app.post("/api/patrols/{patrol_id}/void")
+def void_patrol_compat(patrol_id: int, body: VoidBody, request: Request):
+    return delete_patrol(patrol_id=patrol_id, request=request)
+
+
 @app.get("/api/report/shift")
 def report_shift(request: Request, date: str = "", shift: str = "", post: str = ""):
     with db_connect() as conn:
@@ -3514,6 +3817,17 @@ def report_shift(request: Request, date: str = "", shift: str = "", post: str = 
                 mutasi_params.append(f_post)
             cur.execute(f"SELECT COUNT(1) FROM mutasi_entries WHERE {' AND '.join(mutasi_where)}", tuple(mutasi_params))
             mutasi_total = int(cur.fetchone()[0] or 0)
+
+            patrol_where = ["patrol_date BETWEEN %s AND %s"]
+            patrol_params: list[Any] = [date, date]
+            if f_shift:
+                patrol_where.append("shift=%s")
+                patrol_params.append(f_shift)
+            if f_post:
+                patrol_where.append("post=%s")
+                patrol_params.append(f_post)
+            cur.execute(f"SELECT COUNT(1) FROM patrol_entries WHERE {' AND '.join(patrol_where)}", tuple(patrol_params))
+            patrols_total = int(cur.fetchone()[0] or 0)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 f"""
@@ -3538,13 +3852,26 @@ def report_shift(request: Request, date: str = "", shift: str = "", post: str = 
                 tuple(task_params),
             )
             task_rows = cur.fetchall() or []
+
+            cur.execute(
+                f"""
+                SELECT id, patrol_date, patrol_time, security_name, location, findings, COALESCE(status, 'active') AS status, void_reason
+                FROM patrol_entries
+                WHERE {' AND '.join(patrol_where)}
+                ORDER BY patrol_date DESC, patrol_time DESC
+                LIMIT 30
+                """,
+                tuple(patrol_params),
+            )
+            patrol_rows = cur.fetchall() or []
         return {
             "date": date,
             "shift": f_shift,
             "post": f_post,
-            "counts": {"keys_total": key_total, "keys_open": key_open, "guests_total": guest_total, "tasks_total": task_total, "mutasi_total": mutasi_total},
+            "counts": {"keys_total": key_total, "keys_open": key_open, "guests_total": guest_total, "tasks_total": task_total, "mutasi_total": mutasi_total, "patrols_total": patrols_total},
             "mutasi": mutasi_rows,
             "tasks": task_rows,
+            "patrols": patrol_rows,
         }
 
 
@@ -3569,6 +3896,7 @@ def audit_record(record: str, request: Request):
                     WHEN %s = 'guest_entries' THEN a.target_guest_entry_id = CAST(%s AS BIGINT)
                     WHEN %s = 'mutasi_entries' THEN a.target_mutasi_entry_id = CAST(%s AS BIGINT)
                     WHEN %s = 'task_entries' THEN a.target_task_entry_id = CAST(%s AS BIGINT)
+                    WHEN %s = 'patrol_entries' THEN a.target_patrol_entry_id = CAST(%s AS BIGINT)
                     WHEN %s = 'users' THEN a.target_user_id = CAST(%s AS BIGINT)
                     WHEN %s = 'auth' THEN a.target_user_id = CAST(%s AS BIGINT)
                     ELSE false
@@ -3576,7 +3904,7 @@ def audit_record(record: str, request: Request):
                 ORDER BY a.id DESC
                 LIMIT 50
                 """,
-                (table_name, record_id, table_name, record_id, table_name, record_id, table_name, record_id, table_name, record_id, table_name, record_id),
+                (table_name, record_id, table_name, record_id, table_name, record_id, table_name, record_id, table_name, record_id, table_name, record_id, table_name, record_id),
             )
             rows = cur.fetchall()
         items = []
@@ -4255,11 +4583,12 @@ def admin_audit(
               WHEN a.target_guest_entry_id IS NOT NULL THEN 'guest_entries'
               WHEN a.target_mutasi_entry_id IS NOT NULL THEN 'mutasi_entries'
               WHEN a.target_task_entry_id IS NOT NULL THEN 'task_entries'
+              WHEN a.target_patrol_entry_id IS NOT NULL THEN 'patrol_entries'
               WHEN a.target_user_id IS NOT NULL THEN 'users'
               WHEN a.target_key_master_id IS NOT NULL THEN 'key_master'
               ELSE 'unknown'
             END AS table_name,
-            COALESCE(a.target_key_transaction_id, a.target_guest_entry_id, a.target_mutasi_entry_id, a.target_task_entry_id, a.target_user_id, a.target_key_master_id) AS record_id,
+            COALESCE(a.target_key_transaction_id, a.target_guest_entry_id, a.target_mutasi_entry_id, a.target_task_entry_id, a.target_patrol_entry_id, a.target_user_id, a.target_key_master_id) AS record_id,
             CASE
               WHEN a.target_key_transaction_id IS NOT NULL THEN (
                 SELECT COALESCE(k.borrower_name, '') || CASE WHEN COALESCE(k.key_name, '') <> '' THEN ' · ' || k.key_name ELSE '' END
@@ -4281,15 +4610,10 @@ def admin_audit(
                 FROM task_entries t
                 WHERE t.id = a.target_task_entry_id
               )
-              WHEN a.target_user_id IS NOT NULL THEN (
-                SELECT COALESCE(u2.display_name, '') || CASE WHEN COALESCE(u2.username, '') <> '' THEN ' · ' || u2.username ELSE '' END
-                FROM users u2
-                WHERE u2.id = a.target_user_id
-              )
-              WHEN a.target_key_master_id IS NOT NULL THEN (
-                SELECT COALESCE(km.name, '')
-                FROM key_master km
-                WHERE km.id = a.target_key_master_id
+              WHEN a.target_patrol_entry_id IS NOT NULL THEN (
+                SELECT COALESCE(p.security_name, '') || ' · ' || COALESCE(p.location, '')
+                FROM patrol_entries p
+                WHERE p.id = a.target_patrol_entry_id
               )
               ELSE NULL
             END AS target_label,
@@ -4302,11 +4626,11 @@ def admin_audit(
         params: list[Any] = []
         if tn:
             filters.append(
-                "lower(CASE WHEN a.target_key_transaction_id IS NOT NULL THEN 'key_transactions' WHEN a.target_guest_entry_id IS NOT NULL THEN 'guest_entries' WHEN a.target_mutasi_entry_id IS NOT NULL THEN 'mutasi_entries' WHEN a.target_task_entry_id IS NOT NULL THEN 'task_entries' WHEN a.target_user_id IS NOT NULL THEN 'users' WHEN a.target_key_master_id IS NOT NULL THEN 'key_master' ELSE 'unknown' END) = %s"
+                "lower(CASE WHEN a.target_key_transaction_id IS NOT NULL THEN 'key_transactions' WHEN a.target_guest_entry_id IS NOT NULL THEN 'guest_entries' WHEN a.target_mutasi_entry_id IS NOT NULL THEN 'mutasi_entries' WHEN a.target_task_entry_id IS NOT NULL THEN 'task_entries' WHEN a.target_patrol_entry_id IS NOT NULL THEN 'patrol_entries' WHEN a.target_user_id IS NOT NULL THEN 'users' WHEN a.target_key_master_id IS NOT NULL THEN 'key_master' ELSE 'unknown' END) = %s"
             )
             params.append(tn)
         if rid:
-            filters.append("COALESCE(a.target_key_transaction_id, a.target_guest_entry_id, a.target_mutasi_entry_id, a.target_task_entry_id, a.target_user_id, a.target_key_master_id) = CAST(%s AS BIGINT)")
+            filters.append("COALESCE(a.target_key_transaction_id, a.target_guest_entry_id, a.target_mutasi_entry_id, a.target_task_entry_id, a.target_patrol_entry_id, a.target_user_id, a.target_key_master_id) = CAST(%s AS BIGINT)")
             params.append(rid)
         if auid:
             filters.append("a.actor_user_id = CAST(%s AS BIGINT)")
@@ -4327,6 +4651,7 @@ def admin_audit(
                       WHEN a.target_guest_entry_id IS NOT NULL THEN (SELECT COALESCE(g.name, '') || CASE WHEN COALESCE(g.instansi, '') <> '' THEN ' · ' || g.instansi ELSE '' END FROM guest_entries g WHERE g.id = a.target_guest_entry_id)
                       WHEN a.target_mutasi_entry_id IS NOT NULL THEN (SELECT COALESCE(m.kind, '') || CASE WHEN COALESCE(m.description, '') <> '' THEN ' · ' || m.description ELSE '' END FROM mutasi_entries m WHERE m.id = a.target_mutasi_entry_id)
                       WHEN a.target_task_entry_id IS NOT NULL THEN (SELECT COALESCE(t.kind, '') || CASE WHEN COALESCE(t.destination, '') <> '' THEN ' · ' || t.destination ELSE '' END FROM task_entries t WHERE t.id = a.target_task_entry_id)
+                      WHEN a.target_patrol_entry_id IS NOT NULL THEN (SELECT COALESCE(p.security_name, '') || ' · ' || COALESCE(p.location, '') || ' · ' || COALESCE(p.findings, '') FROM patrol_entries p WHERE p.id = a.target_patrol_entry_id)
                       WHEN a.target_user_id IS NOT NULL THEN (SELECT COALESCE(u2.display_name, '') || CASE WHEN COALESCE(u2.username, '') <> '' THEN ' · ' || u2.username ELSE '' END FROM users u2 WHERE u2.id = a.target_user_id)
                       WHEN a.target_key_master_id IS NOT NULL THEN (SELECT COALESCE(km.name,'') FROM key_master km WHERE km.id = a.target_key_master_id)
                       ELSE NULL

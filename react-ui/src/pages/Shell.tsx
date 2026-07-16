@@ -12,6 +12,7 @@ const KeysPage = lazy(() => import('./modules/Keys'))
 const GuestsPage = lazy(() => import('./modules/Guests'))
 const TasksPage = lazy(() => import('./modules/Tasks'))
 const MutasiPage = lazy(() => import('./modules/Mutasi'))
+const PatrolsPage = lazy(() => import('./modules/Patrols'))
 const AdminPage = lazy(() => import('./modules/Admin'))
 
 const tabClass = ({ isActive }: { isActive: boolean }) => `tab${isActive ? ' tab-active' : ''}`
@@ -35,7 +36,8 @@ export default function Shell() {
     guests: Array<{ id: number; name?: string; instansi?: string; purpose?: string; checkin_at?: string; status?: string }>
     tasks: Array<{ id: number; kind?: string; destination?: string; occurred_at?: string; status?: string; created_by_name?: string }>
     mutasi: Array<{ id: number; kind?: string; description?: string; occurred_at?: string; status?: string; created_by_name?: string }>
-  }>({ keys: [], guests: [], tasks: [], mutasi: [] })
+    patrols: Array<{ id: number; security_name?: string; location?: string; findings?: string; patrol_date?: string; patrol_time?: string; status?: string; created_by_name?: string }>
+  }>({ keys: [], guests: [], tasks: [], mutasi: [], patrols: [] })
   const searchReqIdRef = useRef(0)
   const suppressSearchFocusRef = useRef(false)
   const themeTimeoutRef = useRef<number | null>(null)
@@ -199,7 +201,7 @@ export default function Shell() {
     if (!searchOpen) return
     const q = searchQ.trim()
     if (q.length < 2) {
-      setSearchRes({ keys: [], guests: [], tasks: [], mutasi: [] })
+      setSearchRes({ keys: [], guests: [], tasks: [], mutasi: [], patrols: [] })
       setSearchLoading(false)
       return
     }
@@ -213,14 +215,16 @@ export default function Shell() {
         apiGet<{ items: any[] }>(`/api/guests?status=in&q=${encodeURIComponent(q)}&date=&sort=checkin_desc&limit=5&post=&offset=0`).catch(() => ({ items: [] })),
         apiGet<{ items: any[] }>(`/api/tasks?q=${encodeURIComponent(q)}&date=&sort=occurred_desc&limit=5&offset=0&status=active&tab=umum`).catch(() => ({ items: [] })),
         apiGet<{ items: any[] }>(`/api/mutasi?q=${encodeURIComponent(q)}&kategori=&sub=&date=&sort=occurred_desc&limit=5&offset=0&status=active`).catch(() => ({ items: [] })),
+        apiGet<{ items: any[] }>(`/api/patrols?q=${encodeURIComponent(q)}&date=&sort=date_desc&limit=5&offset=0&status=active`).catch(() => ({ items: [] })),
       ])
-        .then(([keys, guests, tasks, mutasi]) => {
+        .then(([keys, guests, tasks, mutasi, patrols]) => {
           if (searchReqIdRef.current !== reqId) return
           setSearchRes({
             keys: (keys.items || []) as any,
             guests: (guests.items || []) as any,
             tasks: (tasks.items || []) as any,
             mutasi: (mutasi.items || []) as any,
+            patrols: (patrols.items || []) as any,
           })
         })
         .finally(() => {
@@ -546,6 +550,39 @@ export default function Shell() {
                   </div>
                 )}
               </div>
+              <div>
+                <div className="label-sm" style={{ marginBottom: 6 }}>
+                  Patroli
+                </div>
+                {searchRes.patrols.length === 0 ? (
+                  <div className="muted">Tidak ada hasil.</div>
+                ) : (
+                  <div className="grid" style={{ gap: 8 }}>
+                    {searchRes.patrols.map((r) => (
+                      <button
+                        key={`p-${r.id}`}
+                        type="button"
+                        className="button button-secondary"
+                        style={{ justifyContent: 'space-between', textAlign: 'left' }}
+                        onClick={() => {
+                          closeSearch()
+                          nav(`/patrols?q=${encodeURIComponent(searchQ.trim())}`)
+                        }}
+                      >
+                        <span style={{ display: 'grid' }}>
+                          <span style={{ fontWeight: 850 }}>{r.security_name || '-'}</span>
+                          <span className="muted" style={{ fontSize: 12 }}>
+                            {r.location ? `${r.location} · ${r.findings ? String(r.findings).slice(0, 40) : '-'}` : r.findings || '-'}
+                          </span>
+                        </span>
+                        <span className="muted" style={{ fontSize: 12 }}>
+                          {r.patrol_date ? `${r.patrol_date} ${r.patrol_time || ''}` : ''}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -569,6 +606,9 @@ export default function Shell() {
           </NavLink>
           <NavLink className={tabClass} to="/mutasi">
             Mutasi
+          </NavLink>
+          <NavLink className={tabClass} to="/patrols">
+            Patroli
           </NavLink>
           {me?.user.role === 'admin' && (
             <NavLink className={tabClass} to="/admin">
@@ -625,6 +665,14 @@ export default function Shell() {
               element={
                 <Suspense fallback={<LoadingScreen mode="inline" label="Memuat modul Mutasi..." minHeight={260} />}>
                   <MutasiPage me={me!} />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/patrols"
+              element={
+                <Suspense fallback={<LoadingScreen mode="inline" label="Memuat modul Patroli..." minHeight={260} />}>
+                  <PatrolsPage me={me!} />
                 </Suspense>
               }
             />

@@ -1,4 +1,4 @@
-﻿﻿export type Role = 'guard' | 'supervisor' | 'admin'
+﻿export type Role = 'guard' | 'supervisor' | 'admin'
 
 export type Me = {
   user: { id: number; username: string; display_name: string; role: Role }
@@ -19,9 +19,11 @@ export type ShiftReport = {
     guests_total: number
     tasks_total: number
     mutasi_total: number
+    patrols_total: number
   }
   mutasi?: MutasiEntry[]
   tasks?: TaskEntry[]
+  patrols?: PatrolEntry[]
 }
 
 export type KeyTx = {
@@ -96,6 +98,32 @@ export type MutasiEntry = {
   post?: string
   has_photo?: boolean
   photo_count?: number
+  photo_url?: string
+}
+
+export type PatrolEntry = {
+  id: number
+  security_name: string
+  patrol_date: string
+  patrol_time: string
+  location: string
+  findings: string
+  status?: 'active' | 'void'
+  void_reason?: string | null
+  voided_by?: number | null
+  voided_at?: string | null
+  photo_b64?: string | null
+  photo_mime?: string | null
+  photo_name?: string | null
+  photo_uploaded_at?: string | null
+  created_by: number
+  created_by_name?: string
+  shift: string
+  post: string
+  created_at: string
+  updated_at: string
+  photo_count?: number
+  has_photo?: boolean
   photo_url?: string
 }
 
