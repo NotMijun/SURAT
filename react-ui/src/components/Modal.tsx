@@ -1,4 +1,5 @@
 import { ReactNode, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 
 type Props = {
   open: boolean
@@ -67,11 +68,18 @@ export default function Modal({ open, ariaLabel, onClose, children, variant = 'd
   const modalClass = `modal${variant === 'sheet' ? ' modal-sheet' : ''}${className ? ` ${className}` : ''}`
   const overlayClass = `modal-overlay${variant === 'sheet' ? ' modal-overlay-sheet' : ''}`
 
-  return (
-    <div className={overlayClass} role="dialog" aria-modal="true" aria-label={ariaLabel} onClick={(e) => (e.currentTarget === e.target ? onClose() : null)}>
+  return createPortal(
+    <div
+      className={overlayClass}
+      role="dialog"
+      aria-modal="true"
+      aria-label={ariaLabel}
+      onClick={(e) => (e.currentTarget === e.target ? onClose() : null)}
+    >
       <div className={modalClass} ref={modalRef}>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
