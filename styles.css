@@ -1473,6 +1473,24 @@ html.theme-transition .theme-toggle-icon{transition-duration:250ms}
   background:var(--soft-bg);
 }
 
+.modal-patrol{
+  width:min(760px, 100%);
+}
+
+.modal-patrol .modal-body{
+  max-height:calc(100vh - 220px);
+}
+
+.patrol-form-grid{
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+  gap:12px;
+}
+
+.patrol-form-span-2{
+  grid-column:1 / -1;
+}
+
 @media (max-width: 560px){
   .modal-sheet{
     width:100%;
@@ -1482,6 +1500,16 @@ html.theme-transition .theme-toggle-icon{transition-duration:250ms}
   .modal-overlay-sheet{
     align-items:flex-end;
     padding:0;
+  }
+}
+
+@media (max-width: 720px){
+  .patrol-form-grid{
+    grid-template-columns:1fr;
+  }
+
+  .patrol-form-span-2{
+    grid-column:auto;
   }
 }
 .modal-photo{

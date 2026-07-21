@@ -325,7 +325,7 @@ export default function PatrolsPage({ me }: { me: Me }) {
         )}
       </div>
 
-      <Modal open={addOpen} ariaLabel="Tambah/Edit Patroli" onClose={() => setAddOpen(false)}>
+      <Modal open={addOpen} ariaLabel="Tambah/Edit Patroli" onClose={() => setAddOpen(false)} className="modal-patrol">
         <div className="modal-header">
           <div className="modal-title">{editRow ? 'Edit Patroli' : 'Tambah Patroli'}</div>
           <button
@@ -348,7 +348,7 @@ export default function PatrolsPage({ me }: { me: Me }) {
                 </div>
               </div>
             )}
-            <div className="grid" style={{ gap: 12 }}>
+            <div className="patrol-form-grid">
               <div>
                 <label className="label">Nama Security</label>
                 <input
@@ -360,27 +360,25 @@ export default function PatrolsPage({ me }: { me: Me }) {
                   required
                 />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <label className="label">Tanggal</label>
-                  <input
-                    type="date"
-                    className="input"
-                    value={editPatrolDate}
-                    onChange={(e) => setEditPatrolDate(e.target.value)}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="label">Waktu</label>
-                  <input
-                    type="time"
-                    className="input"
-                    value={editPatrolTime}
-                    onChange={(e) => setEditPatrolTime(e.target.value)}
-                    required
-                  />
-                </div>
+              <div>
+                <label className="label">Tanggal</label>
+                <input
+                  type="date"
+                  className="input"
+                  value={editPatrolDate}
+                  onChange={(e) => setEditPatrolDate(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className="label">Waktu</label>
+                <input
+                  type="time"
+                  className="input"
+                  value={editPatrolTime}
+                  onChange={(e) => setEditPatrolTime(e.target.value)}
+                  required
+                />
               </div>
               <div>
                 <label className="label">Lokasi</label>
@@ -392,19 +390,19 @@ export default function PatrolsPage({ me }: { me: Me }) {
                   required
                 />
               </div>
-              <div>
+              <div className="patrol-form-span-2">
                 <label className="label">Temuan / Hasil</label>
                 <textarea
                   className="textarea"
                   value={editFindings}
                   onChange={(e) => setEditFindings(e.target.value)}
                   placeholder="Temuan atau hasil patroli"
-                  rows={4}
+                  rows={3}
                   required
                 />
               </div>
               {!editRow && (
-                <div>
+                <div className="patrol-form-span-2">
                   <label className="label">Foto (opsional)</label>
                   <input
                     type="file"
