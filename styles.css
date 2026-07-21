@@ -1441,7 +1441,7 @@ html.theme-transition .theme-toggle-icon{transition-duration:250ms}
   border-radius:14px;
   overflow:hidden;
   display:grid;
-  grid-template-rows:auto 1fr;
+  grid-template-rows:auto 1fr auto;
 }
 .modal-sheet{
   width:min(720px, 100%);
@@ -1460,6 +1460,17 @@ html.theme-transition .theme-toggle-icon{transition-duration:250ms}
   padding:12px;
   overflow:auto;
   -webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+}
+
+.modal-footer{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:10px;
+  padding:10px 12px;
+  border-top:1px solid var(--border);
+  background:var(--soft-bg);
 }
 
 @media (max-width: 560px){

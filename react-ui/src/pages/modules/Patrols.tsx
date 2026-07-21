@@ -39,7 +39,7 @@ export default function PatrolsPage({ me }: { me: Me }) {
   )
   const [editLocation, setEditLocation] = useState('')
   const [editFindings, setEditFindings] = useState('')
-  const [editPhotoFiles, setEditPhotoFiles] = useState<File[]>([])
+  const [editPhotoFile, setEditPhotoFile] = useState<File | null>(null)
 
   useEffect(() => {
     if (didInitFromUrlRef.current) return
@@ -75,7 +75,7 @@ export default function PatrolsPage({ me }: { me: Me }) {
     setEditPatrolTime(new Date().toTimeString().slice(0, 5))
     setEditLocation('')
     setEditFindings('')
-    setEditPhotoFiles([])
+    setEditPhotoFile(null)
     setFormError('')
   }
 
@@ -110,7 +110,7 @@ export default function PatrolsPage({ me }: { me: Me }) {
         })
         toast.push('Patroli diperbarui', 'success')
       } else {
-        if (editPhotoFiles.length > 0) {
+        if (editPhotoFile) {
           const fd = new FormData()
           fd.set('security_name', editSecurityName)
           fd.set('patrol_date', editPatrolDate)
@@ -118,10 +118,8 @@ export default function PatrolsPage({ me }: { me: Me }) {
           fd.set('location', editLocation)
           fd.set('findings', editFindings)
           fd.set('force', 'true')
-          for (const f of editPhotoFiles) {
-            const compressed = await compressImageFile(f)
-            fd.append('photo', compressed, compressed.name)
-          }
+          const compressed = await compressImageFile(editPhotoFile)
+          fd.append('photo', compressed, compressed.name)
           await apiPostForm('/api/patrols_with_photo', fd)
         } else {
           await apiPost('/api/patrols', {
@@ -338,18 +336,18 @@ export default function PatrolsPage({ me }: { me: Me }) {
             Tutup
           </button>
         </div>
-        <div className="modal-body">
-          {formError && (
-            <div
-              className="card"
-              style={{ marginBottom: 16, background: 'var(--color-danger-5)', border: '1px solid var(--color-danger-30)' }}
-            >
-              <div className="card-body">
-                <strong style={{ color: 'var(--color-danger-60)' }}>Kesalahan:</strong> {formError}
+        <form onSubmit={handleSave} style={{ display: 'grid', gridTemplateRows: '1fr auto', minHeight: 0 }}>
+          <div className="modal-body">
+            {formError && (
+              <div
+                className="card"
+                style={{ marginBottom: 16, background: 'var(--color-danger-5)', border: '1px solid var(--color-danger-30)' }}
+              >
+                <div className="card-body">
+                  <strong style={{ color: 'var(--color-danger-60)' }}>Kesalahan:</strong> {formError}
+                </div>
               </div>
-            </div>
-          )}
-          <form onSubmit={handleSave}>
+            )}
             <div className="grid" style={{ gap: 12 }}>
               <div>
                 <label className="label">Nama Security</label>
@@ -412,35 +410,34 @@ export default function PatrolsPage({ me }: { me: Me }) {
                     type="file"
                     className="input"
                     accept="image/*"
-                    multiple
                     onChange={(e) => {
-                      const files = Array.from(e.target.files || [])
-                      setEditPhotoFiles(files)
+                      const file = (e.target.files || [])[0] || null
+                      setEditPhotoFile(file)
                     }}
                   />
-                  {editPhotoFiles.length > 0 && (
+                  {editPhotoFile && (
                     <div style={{ marginTop: 8, fontSize: 13 }}>
-                      <span className="muted">{editPhotoFiles.length} foto dipilih</span>
+                      <span className="muted">{editPhotoFile.name}</span>
                     </div>
                   )}
                 </div>
               )}
             </div>
-            <div className="row" style={{ marginTop: 16, gap: 8, justifyContent: 'flex-end' }}>
-              <button
-                className="button button-secondary"
-                type="button"
-                onClick={() => setAddOpen(false)}
-                disabled={busy}
-              >
-                Batal
-              </button>
-              <button className="button button-primary" type="submit" disabled={busy}>
-                {busy ? 'Menyimpan...' : editRow ? 'Simpan Perubahan' : 'Tambah'}
-              </button>
-            </div>
-          </form>
-        </div>
+          </div>
+          <div className="modal-footer">
+            <button
+              className="button button-secondary"
+              type="button"
+              onClick={() => setAddOpen(false)}
+              disabled={busy}
+            >
+              Batal
+            </button>
+            <button className="button button-primary" type="submit" disabled={busy}>
+              {busy ? 'Menyimpan...' : editRow ? 'Simpan Perubahan' : 'Tambah'}
+            </button>
+          </div>
+        </form>
       </Modal>
 
       <Modal open={!!detailRow} ariaLabel="Detail Patroli" onClose={() => setDetailRow(null)}>
