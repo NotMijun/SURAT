@@ -1,0 +1,292 @@
+
+----- PAGE 1 -----
+Learning Plan Log Book Assignment Questionnair e Fin
+ACTIVITY DET AILS
+FEBRU ARY MARCH APRIL MAY JUNE JULY ●
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Wed, 01 Apr 2026 08:00 AM 05:00 PM ProjectMelanjutkan pr oject
+Security Logbook,
+menggunakan Supabase
+untuk database
+Postgr eSQL,
+menyambungkan
+project k e GitHub untuk
+commit push pull,
+mencoba deplo yment
+website.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Thu, 02 Apr 2026 08:00 AM 05:00 PM Project Deplo yment berhasil
+tetapi database masih
+menggunakan lokal,
+maka saya mencoba
+untuk memperbaiki bug
+dimana URL sudah
+mengar ah ke dir ectAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorShow 50  entriesActivity Enrichment Server Time: August 6th 2026, 6:12:56 pm RIZKY HAFIYY AN0
+----- PAGE 2 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+connection database
+supabase tetapi masih
+menggunakan database
+dari lokal.
+Fri, 03 Apr 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sat, 04 Apr 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sun, 05 Apr 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Mon, 06 Apr 2026 08:00 AM 05:00 PM ProjectMenggunakan session
+pooler dan bukan dir ect
+connection untuk
+menghubungkan
+database, dan membuat
+website berjalan
+sepenuhnya. Untuk
+sekar ang sedang
+memperbaiki k esalahan-
+kesalahan yang ada
+ketika ingin
+menggunakan website
+dari smartphone.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Tue, 07 Apr 2026 08:00 AM 05:00 PM Project
+Karena hari ini
+merupakan hari sibuk
+untuk IT Support
+lainnya, saya
+mengerjakan pr ojectAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:12:56 pm RIZKY HAFIYY AN0
+----- PAGE 3 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+saya / memperbaiki
+kesalahan yang ada
+untuk website saya,
+serta mencari judul
+untuk thesis yang
+mendatang, yang
+dimana identik dengan
+project saya ini,
+persiapan diri ... Read
+more
+Wed, 08 Apr 2026 08:00 AM 05:00 PM ProjectLanjut mengerjakan
+project.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Thu, 09 Apr 2026 08:00 AM 05:00 PM ProjectMengerjakan side
+project selagi menunggu
+selang waktu, membuat
+health-based website
+'CalmPulse ' untuk cek
+kesehatan sendiri
+menggunakan heart
+rate, pulse, dst.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Fri, 10 Apr 2026 08:00 AM 05:00 PM ProjectMemperbaiki bugs yang
+ada dalam pr oject,
+mencoba
+memperlihatkan k e
+security mengenai
+project yang saya buat,
+memperlihatkan
+demonya, dan k embail
+membenarkan masalah-
+masalah yang ada.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:12:56 pm RIZKY HAFIYY AN0
+----- PAGE 4 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Sat, 11 Apr 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sun, 12 Apr 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Mon, 13 Apr 2026 08:00 AM 05:00 PM ProjectFinalisasi pr oject,
+memperlihatkan k e IT
+Support, memberikan
+poin-poin penting yang
+seharusnya ada dengan
+mencoba case
+menggunakan Logbook
+seperti Security pada
+umumnya, mencari
+celah k esalahan yang
+ada.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Tue, 14 Apr 2026 08:00 AM 05:00 PM ProjectDengan r evisi yang ada
+pada hari sebelum ini,
+saya mulai
+membenarkan website
+dengan
+mengimplementasikan
+perbaikan satu per satu.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Wed, 15 Apr 2026 08:00 AM 05:00 PMProgram Orientasi
+UmumSetelah dua bulan lebih,
+saya akhirnya
+mengalami POU
+mengenai Rumah Sakit
+BSH, tata kr ama, belajar
+etika, Code yang ada di
+Rumah Sakit k etika
+terjadi bencana alam,
+dst.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:12:56 pm RIZKY HAFIYY AN0
+----- PAGE 5 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Thu, 16 Apr 2026 08:00 AM 05:00 PMProgram Orientasi
+UmumSesi k edua pada POU ,
+menjelaskan lebih
+mengenai apa yang
+Perawat harus lakukan,
+cara cek infus, dan pada
+akhirnya car a
+melakukan BLS (Basic
+Life Support) paling
+umum yaitu memompa
+jantung/membantu
+orang yang pingsan.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Fri, 17 Apr 2026 08:00 AM 05:00 PM ProjectMenyelesaikan semua
+masalah yang ada pada
+revisi sebelumnya, serta
+tweeks terhadap
+website yang dibuat.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sat, 18 Apr 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sun, 19 Apr 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Mon, 20 Apr 2026 08:00 AM 05:00 PM ProjectMendapatkan r evisi
+yang harus dilakukan
+pada jam ter akhir, lalu
+mempersiapkan apa
+saja yang harus diubah
+nantinya.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Tue, 21 Apr 2026 08:00 AM 05:00 PM Project Karenna hari ini tidak
+ada masalah bar ang
+elektr onik ﬁsik pada
+Rumah Sakit, sayaAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:12:56 pm RIZKY HAFIYY AN0
+----- PAGE 6 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+melanjutkan perbaikan
+pada pr oject saya.
+Wed, 22 Apr 2026 08:00 AM 05:00 PM ProjectSaya melanjutkan
+surve y untuk Pos yang
+berada di Pintu Utama,
+karena POS IGD dan
+POS Pintu Utama
+mempunyai buku tamu
+yang berbeda dan car a
+yang berbeda dalam
+menangani tamu.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Thu, 23 Apr 2026 08:00 AM 05:00 PM ProjectPembelajar an mandiri
+mengenai React agar
+tidak selalu
+bergantungan terhadap
+html, dan mencoba
+merubah penggunaan
+html dan mencoba
+integr asi k e React.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Fri, 24 Apr 2026 08:00 AM 05:00 PM ProjectMemﬁnalisasi
+menggunakan React
+dan pon-poin yang
+harus dir evisi, agar siap
+untuk diperlihatkan
+pada hari senin
+mendatang.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sat, 25 Apr 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sun, 26 Apr 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:12:56 pm RIZKY HAFIYY AN0
+----- PAGE 7 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Mon, 27 Apr 2026 08:00 AM 05:00 PM ProjectRevisi pr oject, bagian
+ﬁlter masih jelek
+penempatanAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Tue, 28 Apr 2026 08:00 AM 05:00 PM Project KlinikLanjutkan side pr oject
+untuk klinik lain dalam
+freetime yang ada
+sambil mer evisi pr oject
+sendiriAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Wed, 29 Apr 2026 08:00 AM 05:00 PM Project KlinikMelanjutkan pembuatan
+website untuk klinik,
+tentang stok obat, untuk
+nantinya digunakan
+pada apotek dalam
+klinik tersebutAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Thu, 30 Apr 2026 08:00 AM 05:00 PM Project & LapanganMengerjakan lanjutan
+project dan juga
+menjadi IT Support
+dalam membawa
+komputer yang rusak
+dari salah satu ruang
+poli untuk dibawa k e
+tempat service ASUSAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:12:56 pm RIZKY HAFIYY AN0
+----- PAGE 8 -----
+Copyright © BINUS University . All rights r eserved.Activity Enrichment Server Time: August 6th 2026, 6:12:56 pm RIZKY HAFIYY AN0

@@ -1,0 +1,249 @@
+
+----- PAGE 1 -----
+Learning Plan Log Book Assignment Questionnair e Fin
+ACTIVITY DET AILS
+FEBRU ARY MARCH APRIL MAY JUNE JULY ●
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Mon, 09 Feb 2026 08:00 AM 05:00 PMPengenalan k e
+lingkungan k erja, k elilingMelaksanakan
+pembelajar an ulang dan
+pembaruan
+pemahaman (r efresh)
+mengenai dasar-dasar
+HTML, CSS, dan
+JavaScript, serta
+memberikan penjelasan
+kompr ehensif tentang
+alur database pada
+oper asional Rumah
+Sakit, termasuk
+mekanisme integr asi
+dengan platform lay ...
+Read mor eAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorShow 50  entriesActivity Enrichment Server Time: August 6th 2026, 6:12:10 pm RIZKY HAFIYY AN0
+----- PAGE 2 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Tue, 10 Feb 2026 08:00 AM 05:00 PM OrientasiTour Rumah Sakit
+dipandu oleh SDM Pak
+Dani, memperlihatkan
+struktur or ganisasi,
+peraturan kerja, melihat-
+lihat ruangan k euangan,
+management dan lain-
+lain serta pembuatan
+nametag perusahaan.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Wed, 11 Feb 2026 08:00 AM 05:00 PM Dashboar d Rumah SakitMencoba membuat
+Dashboar d Rumah Sakit
+dengan menggunakan
+basics dari HTML dan
+CSSAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Thu, 12 Feb 2026 08:00 AM 05:00 PM Learning FundamentalsBelajar fundamentals
+dari Java, JavaScript,
+MySQL, HTML, CSSAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Fri, 13 Feb 2026 08:00 AM 05:00 PM Dashboar d Rumah SakitMengimplementasikan
+Javascript untuk
+mengubah teks yang
+statis seperti misal pada
+bagian 'Re venue ' di
+dashboar d.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sat, 14 Feb 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sun, 15 Feb 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:12:10 pm RIZKY HAFIYY AN0
+----- PAGE 3 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Mon, 16 Feb 2026 08:00 AM 05:00 PM CodeIgniterBelajar mengenai
+pembuatan login–
+register sederhana di
+CodeIgniter 4, mulai dari
+koneksi database dan
+migr ation tabel users,
+routing GET/POST ,
+pembuatan MV C
+(Model–Contr oller–
+View), session untuk
+mengunci halaman
+setelah login, serta
+keamanan passwor d
+den... Read mor eAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Tue, 17 Feb 2026 OFF OFF Tahun Baru Imlek 2577 OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Wed, 18 Feb 2026 08:00 AM 05:00 PMPener apan Desain UI
+yang Bersih dan
+KonsistenHari ini berfokus pada
+upaya membuat
+tampilan website lebih
+profesional melalui
+prinsip desain yang
+bersih dan minimalis.
+Pener apan palet warna
+yang harmonis,
+penggunaan ruang
+putih, serta tata letak
+berbasis grid membantu
+mengur angi k ekacauan
+visual dan ... Read mor eAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:12:10 pm RIZKY HAFIYY AN0
+----- PAGE 4 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Thu, 19 Feb 2026 08:00 AM 04:30 PM Peningkatan UXMenekankan
+peningkatan
+pengalaman pengguna
+(UX) dengan
+memastikan navigasi
+mudah dipahami dan
+diakses. Selain itu,
+desain diuji agar
+responsif pada berbagai
+ukur an layar (mobile,
+tablet, desktop)
+sehingga tampilan tetap
+rapi di semua
+perangkat.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Fri, 20 Feb 2026 08:00 AM 04:30 PMOptimasi Performa, dan
+Visibilitas W ebsiteHari ini berfokus pada
+aspek teknis yang
+berpengaruh langsung
+pada kualitas website:
+kecepatan, k eper cayaan
+pengguna, dan SEO .
+Optimasi aset (k ompr esi
+gambar, lazy loading,
+pengur angan ukur an
+ﬁle) dilakukan untuk
+memper cepat waktu
+muat halaman.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sat, 21 Feb 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sun, 22 Feb 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:12:10 pm RIZKY HAFIYY AN0
+----- PAGE 5 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Mon, 23 Feb 2026 08:00 AM 04:30 PMIdentiﬁkasi Platform
+Sertiﬁkasi Gr atis
+Responsive W eb DesignMelakukan
+pembelajar an mandiri
+dengan mencari
+platform yang
+menyediakan sertiﬁkat
+gratis untuk Responsive
+Web Design
+Certiﬁcation. Dari hasil
+penelusur an, ditemukan
+satu website dengan
+materi pembelajar an
+sangat k ompr ehensif
+(lebih dari 1000 step).Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Tue, 24 Feb 2026 08:00 AM 04:30 PMPerencanaan dan
+Memulai Pr ogram
+Pembelajar an BertahapMelanjutkan
+pembelajar an mandiri
+dengan mulai mengikuti
+alur pembelajar an pada
+program sertiﬁkasi
+Responsive W eb Design.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Wed, 25 Feb 2026 08:00 AM 04:30 PMPembelajar an Mandiri
+dan Penguatan Dasar
+Pengembangan W ebHari ini k egiatan
+difokuskan pada
+pembelajar an mandiri
+tanpa agenda terjadwal.
+Materi yang dipelajari
+berkaitan dengan
+penguatan dasar
+pengembangan web,
+khususnya pr aktik HTML
+dan CSS melalui
+penyelesaian latihan
+bertahap. Membantu
+memper dalam
+pemahaman s ... Read
+moreAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:12:10 pm RIZKY HAFIYY AN0
+----- PAGE 6 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Thu, 26 Feb 2026 08:00 AM 04:30 PMPembelajar an CSS
+Flexbox Photo GalleryHari ini mempelajari
+pembuatan galeri foto
+responsif menggunakan
+CSS Fle xbox. Saya
+mener apkan ﬂe x-wr ap,
+justify-content, align-
+items, dan gap untuk
+mengatur tata letak
+gambar agar r api dan
+menyesuaikan ukur an
+layar. Selain itu, saya
+menggunakan object-ﬁ ...
+Read mor eAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Fri, 27 Feb 2026 08:00 AM 04:30 PMImplementasi UI Piano &
+Animasi Ferris Wheel
+(HTML/CSS)Saya mengerjakan dua
+latihan fr ont-end
+menggunakan HTML
+dan CSS. Pertama,
+membuat tampilan
+piano dengan container
+utama, ar ea tombol, tuts
+putih dan tuts hitam
+(menggunakan pseudo-
+element ::after), serta
+mengatur posisi logo
+dan r esponsivitas
+dengan media ... Read
+moreAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sat, 28 Feb 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:12:10 pm RIZKY HAFIYY AN0
+----- PAGE 7 -----
+Copyright © BINUS University . All rights r eserved.Activity Enrichment Server Time: August 6th 2026, 6:12:10 pm RIZKY HAFIYY AN0

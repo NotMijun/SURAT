@@ -1,0 +1,282 @@
+
+----- PAGE 1 -----
+Learning Plan Log Book Assignment Questionnair e Fin
+ACTIVITY DET AILS
+FEBRU ARY MARCH APRIL MAY JUNE JULY
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Wed, 01 Jul 2026 08:00 AM 05:00 PMPenambahan dasar
+struktur ﬁlter r esponsifMenyiapkan struktur
+awal pada modul T asks
+agar panel ﬁlter dapat
+dikembangkan untuk
+kebutuhan tampilan
+desktop dan mobile
+tanpa mengubah logika
+utama daftar tugas.Awaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Thu, 02 Jul 2026 08:00 AM 05:00 PMRefactor state pencarian
+modul T asksMerapikan pengelolaan
+state pencarian dan
+ﬁlter pada halaman
+Tasks untuk
+memudahkan integr asi
+dengan ﬁtur pencarian
+global dan navigasi
+berbasis URL.Awaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty SupervShow 50  entriesActivity Enrichment Server Time: August 6th 2026, 6:49:59 pm RIZKY HAFIYY AN0
+----- PAGE 2 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Fri, 03 Jul 2026 08:00 AM 05:00 PMPenyesuaian inter aksi
+tombol aksi pada T asksMemperbarui perilaku
+tombol aksi pada
+halaman T asks agar
+lebih k onsisten dengan
+pola inter aksi yang
+digunakan di modul lain
+dalam aplikasi.Awaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Sat, 04 Jul 2026 OFF OFF OFF OFFAwaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Sun, 05 Jul 2026 OFF OFF OFF OFFAwaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Mon, 06 Jul 2026 08:00 AM 05:00 PMPenyempurnaan
+tampilan daftar tugas di
+perangkat k ecilMelakukan penyesuaian
+tampilan daftar tugas
+supaya informasi utama
+tetap terbaca dengan
+baik saat diakses
+melalui smartphone
+atau layar berukur an
+kecil.Awaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Tue, 07 Jul 2026 08:00 AM 05:00 PMPenguatan integr asi
+query pencarianMenyiapkan dukungan
+agar halaman T asks
+dapat mer espons
+parameter pencarian
+dari URL secar a lebih
+stabil dan mendukung
+alur pencarian lintas
+halamanAwaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty SupervActivity Enrichment Server Time: August 6th 2026, 6:49:59 pm RIZKY HAFIYY AN0
+----- PAGE 3 -----
+ DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Wed, 08 Jul 2026 08:00 AM 05:00 PMPenyelar asan perilaku
+ﬁlter dengan k ebutuhan
+oper asionalMenyesuaikan elemen
+ﬁlter pada modul T asks
+agar lebih r elevan
+dengan k ebutuhan
+oper asional harian,
+termasuk pencarian
+cepat dan pemilihan
+data ber dasarkan
+kondisi tertentu.Awaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Thu, 09 Jul 2026 08:00 AM 05:00 PMPerapihan k ode dan
+kesiapan
+pengembangan lanjutanMerapikan bagian k ode
+pada T asks.tsx sebagai
+persiapan untuk
+pengembangan ﬁtur
+pencarian, ﬁlter
+responsif, dan
+peningkatan
+pengalaman pengguna
+pada tahap berikutnya.Awaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Fri, 10 Jul 2026 08:00 AM 05:00 PMPener apan query ﬁlter
+lintas modul
+berdasarkan URLParsing ?q= di
+Keys/Guests/Mutasi/Patr oli
+untuk integr asi Global
+Sear chAwaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Sat, 11 Jul 2026 OFF OFF OFF OFFAwaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Sun, 12 Jul 2026 OFF OFF OFF OFFAwaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty SupervActivity Enrichment Server Time: August 6th 2026, 6:49:59 pm RIZKY HAFIYY AN0
+----- PAGE 4 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Mon, 13 Jul 2026 08:00 AM 05:00 PMPerbaikan bug modal
+sear ch tidak bisa ditutup
+di desktopFix reopen terus kar ena
+focus balik k e input
+topbarAwaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Tue, 14 Jul 2026 08:00 AM 05:00 PMPerbaikan bug focus
+input pada modal
+sear chFix cuma bisa k etik 1
+karakter lalu blur kar ena
+efek focus tr ap dalam
+waktu luang. Lalu
+menjawab telfon dari
+komplain-k omplain
+terhadap Wi-Fi Rumah
+Sakit, cek k eadaan
+server lokal.Awaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Wed, 15 Jul 2026 08:00 AM 05:00 PMRender Modal melalui
+portal agar tidak
+kepotong containerFix masalah modal
+kepotong (k eseringan
+error di form
+Patroli/Kunci). Lalu juga
+kedatangan server lokal
+baru, dan melihat
+proses IT Support senior
+dalam menyambungkan
+server baru.Awaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Thu, 16 Jul 2026 08:00 AM 05:00 PMRefactor modul Kunci
+agar support r esponsive
+ﬁlter sheetTombol Filter mobile +
+bottom sheet ﬁlters +
+wrapper r esponsive.
+Juga mengangkat telfon
+dari k omplain-k omplain
+IT seperti printer rusak,
+membantu user yang
+mengalami k esulitan
+dalam inginnya
+memblok ﬁle di
+MacBook agar bisa
+select satu per satu.Awaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty SupervActivity Enrichment Server Time: August 6th 2026, 6:49:59 pm RIZKY HAFIYY AN0
+----- PAGE 5 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Fri, 17 Jul 2026 08:00 AM 05:00 PMRefactor modul T amu
+agar support r esponsive
+ﬁlter sheetPola yang sama dengan
+Kunci (tombol Filter +
+sheet)Awaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Sat, 18 Jul 2026 OFF OFF OFF OFFAwaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Sun, 19 Jul 2026 OFF OFF OFF OFFAwaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Mon, 20 Jul 2026 08:00 AM 05:00 PMDesain awal sk ema
+database modul Patr oliSchema patr oli_entries
+(nama, tgl, jam, lokasi,
+foto, temuan, audit)Awaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Tue, 21 Jul 2026 08:00 AM 05:00 PMImplementasi API
+back end modul Patr oliEndpoint CRUD + POST
+with photoAwaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Wed, 22 Jul 2026 08:00 AM 05:00 PMIntegr asi modul Patr oli
+ke Audit T rail & Shift
+ReportPatrol masuk audit log
+dan ringkasan per shiftAwaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Thu, 23 Jul 2026 08:00 AM 05:00 PMImplementasi halaman
+frontend modul Patr oli
+(list)Tabel list + detail +
+pagination + mobile
+cards wr apperAwaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty SupervActivity Enrichment Server Time: August 6th 2026, 6:49:59 pm RIZKY HAFIYY AN0
+----- PAGE 6 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Fri, 24 Jul 2026 08:00 AM 05:00 PMMenambahkan ﬁlter &
+sear ch pada modul
+PatroliCari, tanggal r ange, urut,
+limitAwaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Sat, 25 Jul 2026 OFF OFF OFF OFFAwaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Sun, 26 Jul 2026 OFF OFF OFF OFFAwaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Mon, 27 Jul 2026 08:00 AM 05:00 PMImplementasi form
+tambah dan edit Patr oli
+(frontend)Form lengkap, validasi
+requir ed, loading stateAwaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Tue, 28 Jul 2026 08:00 AM 05:00 PMIntegr asi modul Patr oli
+ke Shell Navigation &
+Global Sear chTab Patr oli di topbar,
+cari modul Patr oli via
+Ctrl+KAwaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Wed, 29 Jul 2026 08:00 AM 05:00 PMPerbaikan bug upload
+foto tunggal pada form
+PatroliFix multiple ﬁle vs single
+photo di endpoint +
+toast err orAwaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Thu, 30 Jul 2026 08:00 AM 05:00 PMRefactor layout popup
+form Patr oli agar
+compact di desktop2 kolom desktop,
+textarea pendek, modal
+class khusus patr oliAwaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty SupervActivity Enrichment Server Time: August 6th 2026, 6:49:59 pm RIZKY HAFIYY AN0
+----- PAGE 7 -----
+Copyright © BINUS University . All rights r eserved.DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Fri, 31 Jul 2026 08:00 AM 05:00 PMMembuat sticky footer
+tombol simpan pada
+popup Patr oliBatal / Simpan selalu
+terlihat tanpa scr ollAwaiting appr ov
+Site Supervis
+Awaiting appr ov
+Faculty Superv
+Sh i 3 f3 iActivity Enrichment Server Time: August 6th 2026, 6:49:59 pm RIZKY HAFIYY AN0

@@ -1,0 +1,283 @@
+
+----- PAGE 1 -----
+Learning Plan Log Book Assignment Questionnair e Fin
+ACTIVITY DET AILS
+FEBRU ARY MARCH APRIL MAY JUNE JULY ●
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Fri, 01 May 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sat, 02 May 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sun, 03 May 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Mon, 04 May 2026 08:00 AM 05:00 PM Project Menyusun r encana
+perbaikan modulAppr oved b y S
+SupervisorShow 50  entriesActivity Enrichment Server Time: August 6th 2026, 6:13:06 pm RIZKY HAFIYY AN0
+----- PAGE 2 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+logbook (alur input,
+validasi, dan tampilan
+tabel). Re view
+kebutuhan user dan
+membuat daftar
+prioritas perubahan
+agar implementasi lebih
+terarah.Appr oved b y Fa
+Supervisor
+Tue, 05 May 2026 08:00 AM 05:00 PM ProjectMelakukan r eview
+ringan
+dokumentasi/ﬂo w
+aplikasi dan menyiapkan
+catatan ide perbaikan
+UI/UX.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Wed, 06 May 2026 08:00 AM 05:00 PM ProjectImplementasi perbaikan
+UI pada tabel (posisi
+kontr ol pencarian/limit,
+layout lebih r api) dan
+memastikan tampilan
+konsisten pada mode
+gelap/ter ang.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Thu, 07 May 2026 08:00 AM 05:00 PM ProjectMenangani bug terkait
+data tidak langsung
+muncul setelah tambah
+item. Menambahkan
+proses r efresh state/list
+setelah aksi tambah/edit
+agar data selalu sinkr on.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Fri, 08 May 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:13:06 pm RIZKY HAFIYY AN0
+----- PAGE 3 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Sat, 09 May 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sun, 10 May 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Mon, 11 May 2026 08:00 AM 05:00 PM ProjectOptimasi inter aksi input
+angka (boleh k osong
+saat backspace, lalu
+otomatis jadi 0 saat
+simpan). Menyesuaikan
+validasi agar tidak
+mengganggu user saat
+mengetik.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Tue, 12 May 2026 08:00 AM 05:00 PM ProjectPerbaikan aksesibilitas
+modal (fokus otomatis,
+tab tr ap, tombol Esc
+untuk tutup, dan r estor e
+focus). Pengujian
+navigasi k eyboar d agar
+lebih nyaman.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Wed, 13 May 2026 08:00 AM 05:00 PM ProjectImplementasi
+pagination yang benar
+(Prev/Ne xt + nomor
+halaman + total)
+menggantikan “load
+more”. Menyesuaikan
+API agar
+mengembalikan total
+data untuk hitung
+halaman.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Thu, 14 May 2026 08:00 AM 05:00 PM Project Melakukan pengecekan
+hasil perubahan diAppr oved b y S
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:13:06 pm RIZKY HAFIYY AN0
+----- PAGE 4 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+beber apa modul dan
+mencatat bagian yang
+masih perlu dipoles
+(tampilan pagination,
+empty state, dan pesan
+error).Appr oved b y Fa
+Supervisor
+Fri, 15 May 2026 08:00 AM 05:00 PM ProjectMenyusun struktur data
+logbook dan mer apikan
+format input agar
+konsisten (penamaan
+ﬁeld, trimming spasi,
+dan format
+tanggal/jam).
+Menyiapkan sk enario
+test untuk memastikan
+data masuk sesuai
+aturan.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sat, 16 May 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sun, 17 May 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Mon, 18 May 2026 08:00 AM 05:00 PM ProjectImplementasi dan
+pengecekan perbaikan
+kecil: validasi duplikasi
+data, perbaikan pesan
+notiﬁkasi, serta
+penyesuaian tampilan
+tombol aksi agar lebih
+jelas k etika digunakan di
+tabel.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Tue, 19 May 2026 08:00 AM 05:00 PM Project Mulai implementasi ﬁtur
+inti website Lost &Appr oved b y S
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:13:06 pm RIZKY HAFIYY AN0
+----- PAGE 5 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Found RS. Menyiapkan
+struktur halaman
+browse dan detail item,
+serta memastikan
+routing berjalan normal
+dan tidak ada 404.Appr oved b y Fa
+Supervisor
+Wed, 20 May 2026 08:00 AM 05:00 PM ProjectMelakukan penyesuaian
+tampilan tabel agar data
+lebih r api dan mudah
+dibaca. Menambahkan
+jarak antar k olom,
+memperbaiki alignment
+teks, serta memastikan
+tampilan tetap
+konsisten pada berbagai
+ukur an layar.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Thu, 21 May 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Fri, 22 May 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sat, 23 May 2026 08:00 AM 05:00 PM ProjectMenguji ﬁtur pencarian
+data pada beber apa
+modul. Memastikan
+hasil pencarian sesuai
+dengan kata kunci yang
+dimasukkan, termasuk
+kondisi data k osong,
+huruf besar/k ecil, dan
+pencarian ber dasarkan
+beber apa ﬁeld.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sun, 24 May 2026 OFF OFF OFF OFF Appr oved b y S
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:13:06 pm RIZKY HAFIYY AN0
+----- PAGE 6 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Appr oved b y Fa
+Supervisor
+Mon, 25 May 2026 08:00 AM 05:00 PM ProjectMemperbaiki validasi
+form input agar
+pengguna tidak dapat
+mengirim data k osong
+atau format yang salah.
+Menambahkan pesan
+error yang lebih jelas
+supaya pengguna
+memahami bagian
+mana yang perlu
+diperbaiki.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Tue, 26 May 2026 08:00 AM 05:00 PM ProjectMelakukan pengecekan
+alur tambah data dari
+halaman form hingga
+data berhasil tersimpan.
+Memastikan data yang
+dikirim sesuai dengan
+struktur API dan tampil
+kembali dengan benar
+di halaman daftar.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Wed, 27 May 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Thu, 28 May 2026 08:00 AM 05:00 PM ProjectMenyusun ulang
+beber apa k omponen
+tampilan agar lebih
+reusable dan mudah
+dikelola. Memisahkan
+bagian tabel, tombol
+aksi, dan pesan
+notiﬁkasi agar struktur
+kode lebih r api dan
+mudah diperbaiki.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:13:06 pm RIZKY HAFIYY AN0
+----- PAGE 7 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Fri, 29 May 2026 08:00 AM 05:00 PM ProjectMelakukan pengujian
+ﬁtur edit data pada
+beber apa k ondisi.
+Memastikan data lama
+muncul dengan benar di
+form, perubahan dapat
+disimpan, dan tampilan
+halaman diperbarui
+setelah pr oses berhasil.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sat, 30 May 2026 08:00 AM 05:00 PM ProjectMemeriksa ﬁtur hapus
+data dan menambahkan
+konﬁrmasi sebelum
+proses penghapusan
+dilakukan. Menguji
+pesan sukses dan pesan
+gagal agar sistem
+memberikan feedback
+yang jelas k epada
+pengguna.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sun, 31 May 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:13:06 pm RIZKY HAFIYY AN0
+----- PAGE 8 -----
+Copyright © BINUS University . All rights r eserved.Activity Enrichment Server Time: August 6th 2026, 6:13:06 pm RIZKY HAFIYY AN0

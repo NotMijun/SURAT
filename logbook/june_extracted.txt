@@ -1,0 +1,318 @@
+
+----- PAGE 1 -----
+Learning Plan Log Book Assignment Questionnair e Fin
+ACTIVITY DET AILS
+FEBRU ARY MARCH APRIL MAY JUNE JULY ●
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Mon, 01 Jun 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Tue, 02 Jun 2026 08:00 AM 05:00 PM ProjectMengoptimalkan pr oses
+pemanggilan API agar
+tidak terjadi r equest
+berulang yang tidak
+diperlukan.
+Menyesuaikan loading
+state agar pengguna
+mengetahui saat data
+sedang dipr oses atau
+diambil dari server.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorShow 50  entriesActivity Enrichment Server Time: August 6th 2026, 6:13:16 pm RIZKY HAFIYY AN0
+----- PAGE 2 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Wed, 03 Jun 2026 08:00 AM 05:00 PM ProjectMelakukan pengecekan
+responsivitas halaman
+pada tampilan desktop,
+tablet, dan mobile.
+Memperbaiki bagian
+yang terlalu sempit, teks
+yang terpotong, serta
+tombol yang tidak
+sejajar pada layar k ecil.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Thu, 04 Jun 2026 08:00 AM 05:00 PM ProjectMenambahkan empty
+state pada halaman
+yang belum memiliki
+data. Membuat pesan
+informasi yang lebih
+informatif agar
+pengguna memahami
+bahwa data belum
+tersedia, bukan kar ena
+sistem mengalami err or.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Fri, 05 Jun 2026 08:00 AM 05:00 PM ProjectMelakukan pengecekan
+alur login dan akses
+halaman. Memastikan
+halaman tertentu hanya
+dapat diakses setelah
+pengguna berhasil
+masuk, serta
+mengar ahkan pengguna
+ke halaman yang sesuai
+jika belum login.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sat, 06 Jun 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:13:16 pm RIZKY HAFIYY AN0
+----- PAGE 3 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Sun, 07 Jun 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Mon, 08 Jun 2026 08:00 AM 05:00 PM ProjectMenyesuaikan tampilan
+notiﬁkasi sukses, gagal,
+dan peringatan agar
+lebih k onsisten. Menguji
+notiﬁkasi pada pr oses
+tambah, edit, hapus,
+serta pengambilan data
+dari API.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Tue, 09 Jun 2026 08:00 AM 05:00 PMPerbaikan integr asi
+global sear ch ke modul
+TasksMenambahkan
+dukungan pembacaan
+query par ameter q dari
+URL agar hasil dari
+global sear ch dapat
+langsung mengisi k olom
+pencarian pada
+halaman T asks.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Wed, 10 Jun 2026 08:00 AM 05:00 PMImplementasi ﬁlter
+panel r esponsif mobileMenambahkan state
+dan k ontr ol untuk
+membuka ﬁlter dalam
+bentuk bottom sheet
+pada per angkat mobile,
+sehingga ﬁlter lebih
+mudah digunakan di
+layar k ecil.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Thu, 11 Jun 2026 08:00 AM 05:00 PMPenambahan tombol
+ﬁlter khusus tampilan
+mobileMenambahkan tombol
+Filter pada header
+section T asks untuk
+memudahkan akses
+ﬁlter tanpa harus
+menampilkan seluruh
+panel ﬁlter desktop di
+tampilan smartphone.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:13:16 pm RIZKY HAFIYY AN0
+----- PAGE 4 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Fri, 12 Jun 2026 08:00 AM 05:00 PMPenyesuaian struktur
+ﬁlter T asksMerapikan susunan
+komponen ﬁlter pada
+modul T asks agar
+konsisten dengan modul
+lain serta lebih mudah
+dipelihar a untuk
+pengembangan
+berikutnya.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sat, 13 Jun 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sun, 14 Jun 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Mon, 15 Jun 2026 08:00 AM 05:00 PMSinkr onisasi input
+pencarian dengan state
+halamanMemastikan perubahan
+nilai pencarian pada
+halaman T asks langsung
+memperbarui state yang
+digunakan untuk
+ﬁltering data dan hasil
+list tetap sesuai kata
+kunci aktif.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Tue, 16 Jun 2026 08:00 AM 05:00 PMAdaptasi UI T asks untuk
+mobile car dsMenyesuaikan tampilan
+daftar T asks agar tetap
+nyaman dibaca pada
+perangkat mobile
+melalui pola tampilan
+kartu tanpa mengubah
+tampilan tabel penuh di
+desktop.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Wed, 17 Jun 2026 08:00 AM 05:00 PM Integr asi modal sheet
+untuk ﬁlter T asksMenghubungkan
+komponen Modal varian
+sheet dengan modulAppr oved b y S
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:13:16 pm RIZKY HAFIYY AN0
+----- PAGE 5 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Tasks agar ﬁlter dapat
+muncul sebagai panel
+bawah pada mobile dan
+tetap mudah ditutup
+setelah digunakan.Appr oved b y Fa
+Supervisor
+Thu, 18 Jun 2026 08:00 AM 05:00 PMPenambahan autofocus
+pada input ﬁlter T asksMenambahkan atribut
+autofocus pada input
+pencarian di dalam ﬁlter
+sheet supaya pengguna
+bisa langsung mengetik
+setelah panel ﬁlter
+dibuka.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Fri, 19 Jun 2026 08:00 AM 05:00 PMPenyempurnaan aksi
+terapkan ﬁlterMenambahkan alur
+tombol T erapkan pada
+ﬁlter T asks untuk
+memastikan pengguna
+mobile dapat menutup
+panel ﬁlter setelah
+pengatur an selesai
+dilakukanAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sat, 20 Jun 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sun, 21 Jun 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Mon, 22 Jun 2026 08:00 AM 05:00 PM Refactor awal state dan
+kontr ol ﬁlter modul
+TasksMelakukan r efactor
+pada state pencarian
+dan ﬁlter di T asks.tsx
+sebagai dasar untuk
+mendukung ﬁtur
+responsive ﬁlter,
+integr asi URL query , danAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:13:16 pm RIZKY HAFIYY AN0
+----- PAGE 6 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+penyempurnaan UX
+lintas de vice.
+Tue, 23 Jun 2026 08:00 AM 05:00 PMPerapihan alur
+pembukaan ﬁlter pada
+TasksMenyederhanakan alur
+pembukaan panel ﬁlter
+agar tr ansisi dari
+tampilan utama k e ﬁlter
+sheet lebih k onsisten
+dan tidak
+membingungkan
+pengguna di per angkat
+mobile.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Wed, 24 Jun 2026 08:00 AM 05:00 PMPenyesuaian k ontr ol
+pencarian pada T asksMemperbarui k ontr ol
+pencarian di modul
+Tasks agar lebih selar as
+dengan pola global
+sear ch dan lebih mudah
+digunakan dalam pr oses
+pencarian data tugasAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Thu, 25 Jun 2026 08:00 AM 05:00 PMPenyelar asan UI ﬁlter
+desktop dan mobileMenyesuaikan elemen
+ﬁlter pada tampilan
+desktop dan mobile
+supaya tetap memakai
+data dan state yang
+sama, namun dengan
+bentuk pr esentasi yang
+berbeda sesuai ukur an
+layar.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Fri, 26 Jun 2026 08:00 AM 05:00 PMOptimasi pengalaman
+pengguna pada
+halaman T asksMelakukan
+penyempurnaan
+inter aksi pada halaman
+Tasks agar pr oses
+pencarian, pembukaan
+ﬁlter, dan pembacaan
+daftar tugas ter asa lebih
+cepat dan lebih nyaman.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:13:16 pm RIZKY HAFIYY AN0
+----- PAGE 7 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Sat, 27 Jun 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sun, 28 Jun 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Mon, 29 Jun 2026 08:00 AM 05:00 PMPenataan ulang
+komponen ﬁlter T asksMenata ulang susunan
+input ﬁlter dan tombol
+aksi pada T asks.tsx
+untuk meningkatkan
+keterbacaan k ode serta
+mempermudah
+pengembangan ﬁtur
+berikutnyaAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Tue, 30 Jun 2026 08:00 AM 05:00 PMFinalisasi penyesuaian
+responsif modul T asksMenyelesaikan
+penyesuaian awal
+modul T asks untuk
+kebutuhan tampilan
+lintas per angkat,
+termasuk k esiapan
+penggunaan ﬁlter panel
+responsif dan integr asi
+pencarian berbasis
+query .Appr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:13:16 pm RIZKY HAFIYY AN0
+----- PAGE 8 -----
+Copyright © BINUS University . All rights r eserved.Activity Enrichment Server Time: August 6th 2026, 6:13:16 pm RIZKY HAFIYY AN0

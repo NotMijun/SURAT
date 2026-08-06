@@ -1,0 +1,381 @@
+
+----- PAGE 1 -----
+Learning Plan Log Book Assignment Questionnair e Fin
+ACTIVITY DET AILS
+FEBRU ARY MARCH APRIL MAY JUNE JULY ●
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Sun, 01 Mar 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Mon, 02 Mar 2026 08:00 AM 04:30 PM Penyelesaian Sertiﬁkasi
+Web De velopment dan
+JavaScriptPada hari ini saya
+berhasil menyelesaikan
+dua sertiﬁkasi bidang
+pengembangan web,
+yaitu sertiﬁkasi
+JavaScript (Basic) dari
+Hack erRank dan Legacy
+Responsive W eb Design
+dari fr eeCodeCamp.
+Melalui sertiﬁkasi
+tersebut saya
+mempelajari k onsepAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorShow 50  entriesActivity Enrichment Server Time: August 6th 2026, 6:12:44 pm RIZKY HAFIYY AN0
+----- PAGE 2 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+dasar JavaScri ... Read
+more
+Tue, 03 Mar 2026 08:00 AM 04:30 PMPengenalan Data
+Warehouse & Arsitektur
+Dasarmempelajari k onsep
+dasar data war ehouse
+sebagai pusat data
+terintegr asi untuk
+kebutuhan analitik,
+reporting, dan
+pengambilan
+keputusan. Saya juga
+memahami perbedaan
+OLTP dan OLAP , lalu
+memetakan alur
+arsitektur umum mulai
+dari sumber data,
+proses ingestio ... Read
+moreAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Wed, 04 Mar 2026 08:00 AM 04:30 PMPipeline Data
+(ETL/EL T/ATL)Saya memper dalam
+perbedaan ETL dan EL T,
+serta memahami
+konsep A TL (Analyze–
+Transform–Load) yang
+menekankan ingest data
+lebih cepat untuk
+dianalisis dan dipr oﬁling
+terlebih dahulu sebelum
+transformasi dipatenkan
+dan dipublish k e layer
+ﬁnal.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Thu, 05 Mar 2026 08:00 AM 04:30 PM Belajar Dasar Google
+Look er Studiosaya melakukan
+kegiatan belajar mandiri
+dengan menonton video
+pembelajar an diAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:12:44 pm RIZKY HAFIYY AN0
+----- PAGE 3 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+YouTube mengenai
+Google Look er Studio.
+Kegiatan ini bertujuan
+untuk memahami fungsi
+dasar, car a penggunaan,
+serta pembuatan
+visualisasi data dan
+lapor an inter aktif,
+sehingga dap ... Read
+more
+Fri, 06 Mar 2026 08:00 AM 04:30 PMPengerjaan Assignment
+BINUS dan
+Pembelajar an Dasar
+Data W arehousePada hari ini saya fokus
+mengerjakan dua
+assignment dari BINUS,
+yaitu pada bagian soft
+skills dan technical
+competence, dengan
+menyusun jawaban
+berdasarkan
+pengalaman saya
+selama magang di
+Rumah Sakit BSH Bogor.
+Selain itu, di sela-sela
+pengerjaan tugas, ...
+Read mor eAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sat, 07 Mar 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sun, 08 Mar 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:12:44 pm RIZKY HAFIYY AN0
+----- PAGE 4 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Mon, 09 Mar 2026 08:00 AM 04:30 PMMempelajari Konsep
+ETL/EL T dan Membantu
+Sinkr onisasi Ulang
+Nomor SEP pada Sistem
+Teramedikmempelajari k onsep ETL
+dan EL T sebagai bagian
+dari pemahaman alur
+pengolahan data,
+khususnya terkait
+proses ekstr aksi,
+pemuatan, dan
+transformasi data dalam
+sistem informasi. Selain
+itu, saya juga membantu
+proses pendaftar an
+untuk sinkr onisasi ulang
+nomor ... Read mor eAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Tue, 10 Mar 2026 08:00 AM 04:30 PMMelanjutkan
+Pemahaman Konsep
+Data W arehouse, ETL,
+dan EL Tmelanjutkan pr oses
+pembelajar an dan
+pemahaman mengenai
+konsep data war ehouse
+serta alur ETL dan EL T.
+Fokus k egiatan saya
+adalah memper dalam
+pemahaman tentang
+proses pengambilan,
+transformasi, dan
+pemuatan data, serta
+memahami perbedaan
+mekanisme ETL dan E ...
+Read mor eAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Wed, 11 Mar 2026 08:00 AM 04:30 PM Intervie w Pr oject
+Saya mendapat tugas
+menyiapkan Google
+Form untuk intervie w
+yang akan digunakan
+untuk menggaliAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:12:44 pm RIZKY HAFIYY AN0
+----- PAGE 5 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+informasi terkait
+kebutuhan dan k endala
+dalam pr oses
+pendataan. Form
+tersebut disusun agar
+pertanyaan yang
+diajukan lebih ter arah,
+sistematis, dan
+memudahkan pr o...
+Read mor e
+Thu, 12 Mar 2026 08:00 AM 04:30 PMProject Pr ogram
+LogbookMelanjutkan intervie w
+yang k emarin, bertanya
+langsung k epada
+Komandan Security
+yang sedang ada di
+lokasi Pos IGD , Pak Utas,
+bertanya lebih detail
+mengenai buku catatan
+yang masih dicatat
+secar a manual, dimana
+tim IT ingin
+mendigitalisasikan buku
+catatan t ... Read mor eAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Fri, 13 Mar 2026 08:00 AM 04:30 PM Use Case &amp; Activity
+Diagr amSetelah pr oject berhasil
+dibuat pada tahap awal,
+langkah selanjutnya
+adalah menyusun use
+case diagr am dan
+activity diagr am untuk
+program yang akan
+dikembangkan.
+Pembuatan k edua
+diagr am ini bertujuan
+agar r ancangan sistem
+menjadi lebihAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:12:44 pm RIZKY HAFIYY AN0
+----- PAGE 6 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+terstruktur, sistema ...
+Read mor e
+Sat, 14 Mar 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sun, 15 Mar 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Mon, 16 Mar 2026 08:00 AM 04:30 PMFinalization of Diagr am
+and Certiﬁcate HuntingMemﬁnalisasi diagr am
+saya (Use Case, Activity
+Diagr am) untuk pr oject
+saya yang k emarin, dan
+menggunakan waktu
+luang untuk mencari
+sertiﬁkat lain, dan
+sedang mengerjakan
+sertiﬁkat untuk
+JavaScript.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Tue, 17 Mar 2026 08:00 AM 04:30 PMPembelajar an Mandiri
+Mencari SertiﬁkatMelanjutkan
+pembelajar an JavaScript
+serta mencoba
+mendapatkan
+sertiﬁkatnya.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Wed, 18 Mar 2026 08:00 AM 04:30 PMMendapatkan Sertiﬁkat
+JavaScript
+freeCodeCampKarena hari mendekati
+hari libur, tidak ada yang
+bisa dilakukan selain
+melanjutkan
+pembelajar an saya
+dalam mendapatkan
+sertiﬁktat JavaScript di
+freeCodeCamp.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:12:44 pm RIZKY HAFIYY AN0
+----- PAGE 7 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Thu, 19 Mar 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Fri, 20 Mar 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sat, 21 Mar 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sun, 22 Mar 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Mon, 23 Mar 2026 08:00 AM 05:00 PMProject : Sequence
+Diagr amMelanjutkan pr oject
+dengan r evisi diagr am
+sebelumnhya terlebih-
+dahulu, lalu mulai
+membuat Sequence
+Diagr am (Seq. Diagr am
+Dashboar d, Admin
+Panel, Buku Penitipan
+Kunci, dst.), melatih diri
+dan belajar untuk skripsi
+mendatang.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Tue, 24 Mar 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:12:44 pm RIZKY HAFIYY AN0
+----- PAGE 8 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Wed, 25 Mar 2026 08:00 AM 05:00 PMSequence & ERD
+Diagr amMenyelesaikan
+sequence diagr am,
+mulai membuat ERD
+Diagr am untuk
+memperluaskan materi
+database, mulai dari
+user k e session, user k e
+setiap halaman, dll.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Thu, 26 Mar 2026 08:00 AM 05:00 PMERD Diagr am / Database
+Rumah SakitMemperlihatkan ERD
+Diagr am saya k e IT
+Support serta
+mempelajari database
+dari Rumah Sakit untuk
+Teramedik, dimana
+menjelaskan tipe-tipe
+data dan ukur an data
+yang digunakan agar
+bisa membuat database
+load lebih cepat dan
+mencegah lambatnya
+database.Appr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Fri, 27 Mar 2026 08:00 AM 05:00 PMMemahami Struktur
+Database Pr ojectKarena k emarin saya
+membuat ERD Diagr am
+dengan bantuan AI, saya
+mencoba membuat ERD
+Diagr am dengan alur-
+alur yang jelas serta
+variable-variable yang
+digunakan dengan
+benar, serta alokasi PK,
+FK, UK dengan baik dan
+benarAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Sat, 28 Mar 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:12:44 pm RIZKY HAFIYY AN0
+----- PAGE 9 -----
+DATE CLOCK IN CLOCK OUT ACTIVITY DESCRIPTION ACCEPT ANC
+Sun, 29 Mar 2026 OFF OFF OFF OFFAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Mon, 30 Mar 2026 08:00 AM 05:00 PM IT SupportMerasakan jadi IT
+Support, mendapat
+keluhan dari Ruang
+Labor atorium mengenai
+printer dan
+membawanya balik k e
+ruang IT untuk
+dibenarkan. Saya
+melihat pr oses k erja
+membenarkan printer,
+diperlihatkan
+mekanisme, dll. Di
+waktu luang, saya
+menge xplor e sar an
+dar... Read mor eAppr oved b y S
+Supervisor
+Appr oved b y Fa
+Supervisor
+Tue, 31 Mar 2026 08:00 AM 05:00 PM ProjectMelanjutkan pr oject,
+memperlihatkan pr oject
+dan memperbaiki
+database yang masih
+lokal agar bisa ada di
+cloud/website databaseAppr oved b y S
+Supervisor
+Appr oved b y Fa
+SupervisorActivity Enrichment Server Time: August 6th 2026, 6:12:44 pm RIZKY HAFIYY AN0
+----- PAGE 10 -----
+Copyright © BINUS University . All rights r eserved.Activity Enrichment Server Time: August 6th 2026, 6:12:44 pm RIZKY HAFIYY AN0
